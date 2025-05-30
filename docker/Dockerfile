@@ -1,6 +1,10 @@
 # Ultra-minimal distroless static Dockerfile
 FROM rust:1.82-slim AS builder
 
+# Define build arguments for multiplatform support
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
 # Install required system dependencies for static linking
 RUN apt-get update && apt-get install -y \
     libssl-dev \
@@ -9,8 +13,15 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Add musl target for static linking
-RUN rustup target add x86_64-unknown-linux-musl
+# Set target architecture based on platform
+RUN case "$TARGETPLATFORM" in \
+    "linux/amd64") echo "x86_64-unknown-linux-musl" > /target.txt ;; \
+    "linux/arm64") echo "aarch64-unknown-linux-musl" > /target.txt ;; \
+    *) echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
+    esac
+
+# Add musl targets for static linking
+RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
 # Set working directory
 WORKDIR /app
@@ -21,18 +32,31 @@ COPY Cargo.toml Cargo.lock ./
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies with musl target for static linking
-ENV CC_x86_64_unknown_linux_musl=musl-gcc
+# Build dependencies with the appropriate target for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked
+RUN TARGET=$(cat /target.txt) && \
+    case "$TARGET" in \
+    "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
+    "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
+    esac && \
+    cargo build --release --target $TARGET --locked
 RUN rm src/main.rs
 
 # Copy source code
 COPY src ./src
 COPY Settings.toml ./
 
-# Build the application with static linking
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked
+# Build the application with static linking for the target platform
+RUN TARGET=$(cat /target.txt) && \
+    case "$TARGET" in \
+    "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
+    "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
+    esac && \
+    cargo build --release --target $TARGET --locked
+
+# Copy the binary to a predictable location for the runtime stage
+RUN TARGET=$(cat /target.txt) && \
+    cp /app/target/$TARGET/release/vouchrs /app/vouchrs
 
 # Runtime stage - distroless static (smallest possible)
 FROM gcr.io/distroless/static-debian12:18d48b0eeb51dfb9769b782a97fc868470b7c3c5
@@ -40,8 +64,8 @@ FROM gcr.io/distroless/static-debian12:18d48b0eeb51dfb9769b782a97fc868470b7c3c5
 # Set working directory for the application
 WORKDIR /app
 
-# Copy the statically linked binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/vouchrs /app/vouchrs
+# Copy the statically linked binary from builder stage
+COPY --from=builder /app/vouchrs /app/vouchrs
 
 # Copy static files from builder stage
 COPY --from=builder /app/src/static /app/static
