@@ -1,15 +1,14 @@
 use actix_web::{web, HttpRequest, HttpResponse, Result as ActixResult};
 use reqwest::Client;
-use serde_json::Value;
 use std::collections::HashMap;
+
 use crate::{
     jwt_session::JwtSessionManager,
     models::{VouchrsSession},
-    oauth::OAuthConfig,
+    oauth::{OAuthConfig, check_and_refresh_tokens},
     settings::VouchrsSettings,
-    utils::response_builder::ResponseBuilder,
-    utils::apple_utils,
-    utils::cookie_utils::filter_vouchrs_cookies,
+    utils::response_builder::{ResponseBuilder, is_hop_by_hop_header},
+    utils::user_agent::is_browser_request,
 };
 
 /// HTTP client for making upstream API requests
@@ -39,7 +38,11 @@ pub async fn proxy_generic_api(
     };
 
     // Build and execute upstream request
-    let upstream_url = build_upstream_url(&settings.proxy.upstream_url, req.path());
+    let upstream_url = match ResponseBuilder::build_upstream_url(&settings.proxy.upstream_url, req.path()) {
+        Ok(url) => url,
+        Err(response) => return Ok(response),
+    };
+    
     let upstream_response = match execute_upstream_request(&req, &query_params, &body, &upstream_url).await {
         Ok(response) => response,
         Err(response) => return Ok(response),
@@ -49,10 +52,7 @@ pub async fn proxy_generic_api(
     forward_upstream_response(upstream_response, &req, &settings).await
 }
 
-/// Build the upstream URL by combining base URL with request path
-fn build_upstream_url(base_url: &str, request_path: &str) -> String {
-    format!("{}{}", base_url.trim_end_matches('/'), request_path)
-}
+
 
 /// Execute the upstream request with proper headers and body
 async fn execute_upstream_request(
@@ -61,7 +61,7 @@ async fn execute_upstream_request(
     body: &web::Bytes,
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
-    let reqwest_method = convert_http_method(req.method())?;
+    let reqwest_method = ResponseBuilder::convert_http_method(req.method())?;
     
     let mut request_builder = CLIENT
         .request(reqwest_method, upstream_url)
@@ -70,9 +70,9 @@ async fn execute_upstream_request(
     // Note: Access token functionality removed - requests are forwarded without custom Authorization header
 
     // Forward headers, query params, and body
-    request_builder = forward_request_headers(request_builder, req);
-    request_builder = forward_query_parameters(request_builder, query_params);
-    request_builder = forward_request_body(request_builder, body);
+    request_builder = ResponseBuilder::forward_request_headers(request_builder, req);
+    request_builder = ResponseBuilder::forward_query_parameters(request_builder, query_params);
+    request_builder = ResponseBuilder::forward_request_body(request_builder, body);
 
     // Execute the request
     request_builder.send().await.map_err(|err| {
@@ -84,74 +84,7 @@ async fn execute_upstream_request(
     })
 }
 
-/// Convert Actix HTTP method to reqwest method
-fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Method, HttpResponse> {
-    match method.as_str() {
-        "GET" => Ok(reqwest::Method::GET),
-        "POST" => Ok(reqwest::Method::POST),
-        "PUT" => Ok(reqwest::Method::PUT),
-        "DELETE" => Ok(reqwest::Method::DELETE),
-        "PATCH" => Ok(reqwest::Method::PATCH),
-        "HEAD" => Ok(reqwest::Method::HEAD),
-        "OPTIONS" => Ok(reqwest::Method::OPTIONS),
-        method_str => Err(ResponseBuilder::bad_request_json(&format!("HTTP method '{}' is not supported", method_str))),
-    }
-}
-
-/// Forward request headers (excluding Authorization, Cookie with vouchrs_session, and hop-by-hop headers)
-fn forward_request_headers(
-    mut request_builder: reqwest::RequestBuilder,
-    req: &HttpRequest,
-) -> reqwest::RequestBuilder {
-    for (name, value) in req.headers() {
-        let name_str = name.as_str().to_lowercase();
-        
-        // Skip authorization and hop-by-hop headers
-        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
-            continue;
-        }
-        
-        // Special handling for cookies
-        if name_str == "cookie" {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
-                }
-            }
-            continue;
-        }
-        
-        // Add other headers
-        if let Ok(value_str) = value.to_str() {
-            request_builder = request_builder.header(name.as_str(), value_str);
-        }
-    }
-    request_builder
-}
-
-/// Forward query parameters
-fn forward_query_parameters(
-    mut request_builder: reqwest::RequestBuilder,
-    query_params: &web::Query<HashMap<String, String>>,
-) -> reqwest::RequestBuilder {
-    if !query_params.is_empty() {
-        for (key, value) in query_params.iter() {
-            request_builder = request_builder.query(&[(key, value)]);
-        }
-    }
-    request_builder
-}
-
-/// Forward request body if present
-fn forward_request_body(
-    mut request_builder: reqwest::RequestBuilder,
-    body: &web::Bytes,
-) -> reqwest::RequestBuilder {
-    if !body.is_empty() {
-        request_builder = request_builder.body(body.to_vec());
-    }
-    request_builder
-}
+// Functions have been moved to ResponseBuilder
 
 /// Forward upstream response back to client, handling 401/403 redirects for browsers
 async fn forward_upstream_response(upstream_response: reqwest::Response, req: &HttpRequest, settings: &VouchrsSettings) -> ActixResult<HttpResponse> {
@@ -203,31 +136,6 @@ async fn forward_upstream_response(upstream_response: reqwest::Response, req: &H
     Ok(response_builder.body(response_body))
 }
 
-/// Determine if a request came from a browser vs an API client
-/// Browsers typically send Accept headers that include text/html
-fn is_browser_request(req: &HttpRequest) -> bool {
-    if let Some(accept_header) = req.headers().get("accept") {
-        if let Ok(accept_str) = accept_header.to_str() {
-            // Browser requests typically accept text/html
-            return accept_str.contains("text/html") || accept_str.contains("application/xhtml+xml");
-        }
-    }
-    
-    // Fallback: check User-Agent for common browser patterns
-    if let Some(user_agent) = req.headers().get("user-agent") {
-        if let Ok(ua_str) = user_agent.to_str() {
-            let ua_lower = ua_str.to_lowercase();
-            return ua_lower.contains("mozilla") || 
-                   ua_lower.contains("chrome") || 
-                   ua_lower.contains("safari") || 
-                   ua_lower.contains("firefox") || 
-                   ua_lower.contains("edge");
-        }
-    }
-    
-    false
-}
-
 /// Extract and validate session from encrypted cookie
 async fn extract_session_from_request(
     req: &HttpRequest,
@@ -260,108 +168,7 @@ async fn extract_session_from_request(
     }
 }
 
-/// Check if tokens need refresh and refresh them if necessary
-async fn check_and_refresh_tokens(
-    mut session: VouchrsSession,
-    oauth_config: &OAuthConfig,
-    provider: &str,
-) -> Result<VouchrsSession, HttpResponse> {
-    // Check if tokens need refresh (within 5 minutes of expiry)
-    let now = chrono::Utc::now();
-    let buffer_time = chrono::Duration::minutes(5);
-    if session.expires_at > now + buffer_time {
-        return Ok(session);
-    }
-
-    // Attempt to refresh tokens
-    let refresh_token = session.refresh_token.as_ref().ok_or_else(|| {
-        ResponseBuilder::unauthorized_json("OAuth tokens expired and no refresh token available. Please re-authenticate.")
-    })?;
-
-    // Call refresh_oauth_tokens and update session fields
-    match refresh_oauth_tokens(refresh_token, oauth_config, provider).await {
-        Ok((new_id_token, new_refresh_token, new_expires_at)) => {
-            session.id_token = new_id_token;
-            session.refresh_token = new_refresh_token;
-            session.expires_at = new_expires_at;
-            Ok(session)
-        }
-        Err(err) => Err(ResponseBuilder::unauthorized_json(&format!("Failed to refresh OAuth tokens: {}", err))),
-    }
-}
-
-/// Refresh OAuth tokens using the refresh token
-async fn refresh_oauth_tokens(
-    refresh_token: &str,
-    oauth_config: &OAuthConfig,
-    provider: &str,
-) -> Result<(Option<String>, Option<String>, chrono::DateTime<chrono::Utc>), String> {
-    // Get provider configuration
-    let runtime_provider = oauth_config.providers.get(provider)
-        .ok_or_else(|| format!("Provider {} not configured", provider))?;
-
-    let client_id = runtime_provider.client_id.as_ref()
-        .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
-
-    // Handle client credentials based on provider configuration
-    let client_secret = if let Some(ref secret) = runtime_provider.client_secret {
-        secret.clone()
-    } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
-        // Generate JWT client secret for Apple using apple_utils
-        apple_utils::generate_apple_client_secret_for_refresh(jwt_config, &runtime_provider.settings)
-            .map_err(|e| format!("Failed to generate client secret: {}", e))?
-    } else {
-        return Err(format!("No client secret or JWT signing configuration for provider {}", provider));
-    };
-
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_id", client_id.as_str()),
-        ("client_secret", client_secret.as_str()),
-    ];
-
-    let response = CLIENT
-        .post(&runtime_provider.token_url)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("Token refresh failed with status {}: {}", status, error_text));
-    }
-
-    // Parse token response as before, but extract id_token, refresh_token, expires_at
-    let token_response: Value = response.json().await
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
-
-    let expires_in = token_response["expires_in"]
-        .as_u64()
-        .unwrap_or(3600); // Default to 1 hour
-
-    let new_refresh_token = token_response["refresh_token"]
-        .as_str()
-        .map(|s| s.to_string());
-
-    let new_id_token = token_response["id_token"]
-        .as_str()
-        .map(|s| s.to_string());
-
-    let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
-
-    Ok((new_id_token, new_refresh_token, new_expires_at))
-}
-
-// Place is_hop_by_hop_header above the tests module and make it pub(crate) so both main code and tests can use it
-pub(crate) fn is_hop_by_hop_header(name: &str) -> bool {
-    matches!(name, 
-        "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" |
-        "te" | "trailers" | "transfer-encoding" | "upgrade"
-    )
-}
+// is_hop_by_hop_header function has been moved to utils::response_builder
 
 #[cfg(test)]
 mod tests {
@@ -372,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_hop_by_hop_headers() {
+        use crate::utils::response_builder::is_hop_by_hop_header;
         assert!(is_hop_by_hop_header("connection"));
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("content-type"));
@@ -486,7 +294,7 @@ mod tests {
         let request_builder = client.get("http://example.com");
 
         // Apply header forwarding
-        let modified_builder = forward_request_headers(request_builder, &req);
+        let modified_builder = ResponseBuilder::forward_request_headers(request_builder, &req);
         
         // Since we can't inspect the actual headers directly in the builder,
         // we need to convert it to a request and check the headers

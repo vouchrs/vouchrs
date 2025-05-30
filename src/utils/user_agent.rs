@@ -79,6 +79,31 @@ pub fn derive_platform_from_user_agent(user_agent: &str) -> String {
     }
 }
 
+/// Determine if a request came from a browser vs an API client
+/// Browsers typically send Accept headers that include text/html
+pub fn is_browser_request(req: &HttpRequest) -> bool {
+    if let Some(accept_header) = req.headers().get("accept") {
+        if let Ok(accept_str) = accept_header.to_str() {
+            // Browser requests typically accept text/html
+            return accept_str.contains("text/html") || accept_str.contains("application/xhtml+xml");
+        }
+    }
+    
+    // Fallback: check User-Agent for common browser patterns
+    if let Some(user_agent) = req.headers().get("user-agent") {
+        if let Ok(ua_str) = user_agent.to_str() {
+            let ua_lower = ua_str.to_lowercase();
+            return ua_lower.contains("mozilla") || 
+                   ua_lower.contains("chrome") || 
+                   ua_lower.contains("safari") || 
+                   ua_lower.contains("firefox") || 
+                   ua_lower.contains("edge");
+        }
+    }
+    
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +154,28 @@ mod tests {
         
         // Test unknown platform - now returns "Unknown" instead of None
         assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (Unknown Platform)"), "Unknown".to_string());
+    }
+
+    #[test]
+    fn test_is_browser_request() {
+        // Test browser detection with Accept: text/html
+        let browser_req = TestRequestBuilder::browser_request();
+        assert!(is_browser_request(&browser_req));
+        
+        // Test API client detection with Accept: application/json
+        let api_req = TestRequestBuilder::api_request();
+        assert!(!is_browser_request(&api_req));
+        
+        // Test with a user agent only request
+        let browser_ua_req = TestRequestBuilder::user_agent_request("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        assert!(is_browser_request(&browser_ua_req));
+        
+        // Test API client via User-Agent
+        let api_ua_req = TestRequestBuilder::user_agent_request("curl/7.68.0");
+        assert!(!is_browser_request(&api_ua_req));
+        
+        // Test unknown client (no Accept or User-Agent)
+        let unknown_req = TestRequestBuilder::empty_request();
+        assert!(!is_browser_request(&unknown_req));
     }
 }

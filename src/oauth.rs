@@ -3,14 +3,15 @@
 
 use std::collections::HashMap;
 use std::env;
-use crate::models::{AppleUserInfo};
-use crate::settings::{ProviderSettings, JwtSigningConfig, VouchrsSettings};
+use crate::models::{AppleUserInfo, VouchrsSession};
+use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::logging::LoggingHelper;
+use crate::utils::response_builder::ResponseBuilder;
+use crate::utils::apple_utils;
+use actix_web::HttpResponse;
 use chrono::{Utc};
 use serde::{Deserialize, Serialize};
-use p256::ecdsa::{SigningKey, Signature, signature::Signer}; 
-use p256::pkcs8::DecodePrivateKey;
-use base64::{Engine as _, engine::general_purpose}; 
+use serde_json::Value;
 use log;
 
 // Add missing error type
@@ -209,62 +210,6 @@ impl OAuthConfig {
         Ok(url.to_string())
     }
 
-    fn generate_apple_client_secret(jwt_config: &JwtSigningConfig, client_id: &str) -> Result<String, String> {
-        // Use the new getter methods instead of direct environment variable access
-        let team_id = jwt_config.get_team_id()
-            .ok_or_else(|| "Team ID not configured for Apple provider".to_string())?;
-        let key_id = jwt_config.get_key_id()
-            .ok_or_else(|| "Key ID not configured for Apple provider".to_string())?;
-        let private_key_path = jwt_config.get_private_key_path()
-            .ok_or_else(|| "Private key path not configured for Apple provider".to_string())?;
-
-        let private_key_pem = std::fs::read_to_string(&private_key_path)
-            .map_err(|_| "Failed to read Apple private key file".to_string())?;
-
-        // Use the correct p256 method for parsing PKCS#8 PEM
-        let signing_key = SigningKey::from_pkcs8_pem(&private_key_pem)
-            .map_err(|e| format!("Failed to parse Apple private key: {:?}", e))?;
-
-        // Create JWT header
-        let header = serde_json::json!({
-            "alg": "ES256",
-            "kid": key_id,
-            "typ": "JWT"
-        });
-
-        // Create JWT claims
-        let now = chrono::Utc::now();
-        let exp = now + chrono::Duration::minutes(5);
-        
-        let claims = serde_json::json!({
-            "iss": team_id,
-            "iat": now.timestamp(),
-            "exp": exp.timestamp(),
-            "aud": "https://appleid.apple.com",
-            "sub": client_id
-        });
-
-        // Encode header and payload
-        let header_json = serde_json::to_string(&header)
-            .map_err(|_| "Failed to serialize JWT header".to_string())?;
-        let claims_json = serde_json::to_string(&claims)
-            .map_err(|_| "Failed to serialize JWT claims".to_string())?;
-
-        let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
-        let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
-
-        let message = format!("{}.{}", header_b64, payload_b64);
-
-        // Sign with ES256
-        let signature: Signature = signing_key.sign(message.as_bytes());
-        let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
-
-        let jwt = format!("{}.{}", message, signature_b64);
-        
-        log::debug!("Generated Apple client secret JWT");
-        Ok(jwt)
-    }
-
     /// Exchange OAuth authorization code for OAuth tokens
     /// This manually handles the token exchange to properly capture ID tokens
     /// Returns (OAuthTokens, Option<AppleUserInfo>) for Apple user info fallback
@@ -295,7 +240,7 @@ impl OAuthConfig {
             params.insert("client_secret", secret);
         } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
             // JWT signing (Apple)
-            client_secret = Self::generate_apple_client_secret(jwt_config, &client_id)?;
+            client_secret = crate::utils::apple_utils::generate_apple_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret", &client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
@@ -375,7 +320,6 @@ pub struct OAuthProvider {
     pub name: String,
     pub client_id: String,
     pub client_secret: String,
-    // ... other fields ...
 }
 
 impl OAuthProvider {
@@ -397,4 +341,104 @@ impl OAuthProvider {
             client_secret,
         })
     }
+}
+
+// Static HTTP client for making token refresh requests
+static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::new()
+});
+
+/// Check if tokens need refresh and refresh them if necessary
+pub async fn check_and_refresh_tokens(
+    mut session: VouchrsSession,
+    oauth_config: &OAuthConfig,
+    provider: &str,
+) -> Result<VouchrsSession, HttpResponse> {
+    // Check if tokens need refresh (within 5 minutes of expiry)
+    let now = chrono::Utc::now();
+    let buffer_time = chrono::Duration::minutes(5);
+    if session.expires_at > now + buffer_time {
+        return Ok(session);
+    }
+
+    // Attempt to refresh tokens
+    let refresh_token = session.refresh_token.as_ref().ok_or_else(|| {
+        ResponseBuilder::unauthorized_json("OAuth tokens expired and no refresh token available. Please re-authenticate.")
+    })?;
+
+    // Call refresh_oauth_tokens and update session fields
+    match refresh_oauth_tokens(refresh_token, oauth_config, provider).await {
+        Ok((new_id_token, new_refresh_token, new_expires_at)) => {
+            session.id_token = new_id_token;
+            session.refresh_token = new_refresh_token;
+            session.expires_at = new_expires_at;
+            Ok(session)
+        }
+        Err(err) => Err(ResponseBuilder::unauthorized_json(&format!("Failed to refresh OAuth tokens: {}", err))),
+    }
+}
+
+/// Refresh OAuth tokens using the refresh token
+pub async fn refresh_oauth_tokens(
+    refresh_token: &str,
+    oauth_config: &OAuthConfig,
+    provider: &str,
+) -> Result<(Option<String>, Option<String>, chrono::DateTime<chrono::Utc>), String> {
+    // Get provider configuration
+    let runtime_provider = oauth_config.providers.get(provider)
+        .ok_or_else(|| format!("Provider {} not configured", provider))?;
+
+    let client_id = runtime_provider.client_id.as_ref()
+        .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
+
+    // Handle client credentials based on provider configuration
+    let client_secret = if let Some(ref secret) = runtime_provider.client_secret {
+        secret.clone()
+    } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
+        // Generate JWT client secret for Apple using apple_utils
+        apple_utils::generate_apple_client_secret_for_refresh(jwt_config, &runtime_provider.settings)
+            .map_err(|e| format!("Failed to generate client secret: {}", e))?
+    } else {
+        return Err(format!("No client secret or JWT signing configuration for provider {}", provider));
+    };
+
+    let params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
+    ];
+
+    let response = CLIENT
+        .post(&runtime_provider.token_url)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Token refresh failed with status {}: {}", status, error_text));
+    }
+
+    // Parse token response as before, but extract id_token, refresh_token, expires_at
+    let token_response: Value = response.json().await
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    let expires_in = token_response["expires_in"]
+        .as_u64()
+        .unwrap_or(3600); // Default to 1 hour
+
+    let new_refresh_token = token_response["refresh_token"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    let new_id_token = token_response["id_token"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
+
+    Ok((new_id_token, new_refresh_token, new_expires_at))
 }

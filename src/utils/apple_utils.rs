@@ -55,15 +55,75 @@ pub fn process_apple_callback(
         .or(fallback_info)
 }
 
-/// Generate Apple client secret JWT for token refresh
-///
+/// Generate Apple client secret JWT
 /// This function creates a properly signed JWT that can be used as a client secret
-/// with Apple's OAuth token refresh endpoint.
-pub fn generate_apple_client_secret_for_refresh(jwt_config: &crate::settings::JwtSigningConfig, provider_settings: &crate::settings::ProviderSettings) -> Result<String, String> {
+/// with Apple's OAuth endpoints.
+pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConfig, client_id: &str) -> Result<String, String> {
     use p256::ecdsa::{SigningKey, Signature, signature::Signer};
     use p256::pkcs8::DecodePrivateKey;
     use base64::{Engine as _, engine::general_purpose};
     use chrono::{Utc, Duration};
+    
+    // Get required values using the getter methods
+    let team_id = jwt_config.get_team_id()
+        .ok_or_else(|| "Team ID not configured for Apple provider".to_string())?;
+    let key_id = jwt_config.get_key_id()
+        .ok_or_else(|| "Key ID not configured for Apple provider".to_string())?;
+    let private_key_path = jwt_config.get_private_key_path()
+        .ok_or_else(|| "Private key path not configured for Apple provider".to_string())?;
+
+    // Read the private key file
+    let private_key_pem = std::fs::read_to_string(&private_key_path)
+        .map_err(|_| "Failed to read Apple private key file".to_string())?;
+
+    // Use the correct p256 method for parsing PKCS#8 PEM
+    let signing_key = SigningKey::from_pkcs8_pem(&private_key_pem)
+        .map_err(|e| format!("Failed to parse Apple private key: {:?}", e))?;
+
+    // Create JWT header
+    let header = serde_json::json!({
+        "alg": "ES256",
+        "kid": key_id,
+        "typ": "JWT"
+    });
+
+    // Create JWT claims
+    let now = Utc::now();
+    let exp = now + Duration::minutes(5);
+    
+    let claims = serde_json::json!({
+        "iss": team_id,
+        "iat": now.timestamp(),
+        "exp": exp.timestamp(),
+        "aud": "https://appleid.apple.com",
+        "sub": client_id
+    });
+
+    // Encode header and payload
+    let header_json = serde_json::to_string(&header)
+        .map_err(|_| "Failed to serialize JWT header".to_string())?;
+    let claims_json = serde_json::to_string(&claims)
+        .map_err(|_| "Failed to serialize JWT claims".to_string())?;
+
+    let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
+    let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
+
+    let message = format!("{}.{}", header_b64, payload_b64);
+
+    // Sign with ES256
+    let signature: Signature = signing_key.sign(message.as_bytes());
+    let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
+
+    let jwt = format!("{}.{}", message, signature_b64);
+    
+    log::debug!("Generated Apple client secret JWT");
+    Ok(jwt)
+}
+
+/// Generate Apple client secret JWT for token refresh
+/// This function creates a properly signed JWT that can be used as a client secret
+/// with Apple's OAuth token refresh endpoint.
+pub fn generate_apple_client_secret_for_refresh(jwt_config: &crate::settings::JwtSigningConfig, provider_settings: &crate::settings::ProviderSettings) -> Result<String, String> {
     use serde::{Serialize, Deserialize};
     
     #[derive(Debug, Serialize, Deserialize)]
@@ -75,62 +135,13 @@ pub fn generate_apple_client_secret_for_refresh(jwt_config: &crate::settings::Jw
         sub: String,    // Client ID
     }
 
-    // Get required values using the new getter methods
-    let team_id = jwt_config.get_team_id()
-        .ok_or_else(|| "Team ID not configured for Apple provider".to_string())?;
+    // Get client_id from provider settings
     let client_id = provider_settings.get_client_id()
         .ok_or_else(|| "Client ID not configured for Apple provider".to_string())?;
-    let key_id = jwt_config.get_key_id()
-        .ok_or_else(|| "Key ID not configured for Apple provider".to_string())?;
-    let private_key_path = jwt_config.get_private_key_path()
-        .ok_or_else(|| "Private key path not configured for Apple provider".to_string())?;
-
-    // Read the private key file
-    let private_key_pem = std::fs::read_to_string(&private_key_path)
-        .map_err(|e| format!("Failed to read Apple private key file {}: {}", private_key_path, e))?;
-
-    // Parse the private key
-    let signing_key = SigningKey::from_pkcs8_pem(&private_key_pem)
-        .map_err(|e| format!("Failed to parse Apple private key: {}", e))?;
-
-    // Create JWT header
-    let header = serde_json::json!({
-        "alg": "ES256",
-        "kid": key_id,
-        "typ": "JWT"
-    });
-
-    // Create JWT claims
-    let now = Utc::now();
-    let exp = now + Duration::minutes(5); // Apple recommends 5 minutes max
     
-    let claims = AppleJwtClaims {
-        iss: team_id,
-        iat: now.timestamp(),
-        exp: exp.timestamp(),
-        aud: "https://appleid.apple.com".to_string(),
-        sub: client_id,
-    };
-
-    // Encode header and payload as base64url
-    let header_json = serde_json::to_string(&header)
-        .map_err(|e| format!("Failed to serialize header: {}", e))?;
-    let claims_json = serde_json::to_string(&claims)
-        .map_err(|e| format!("Failed to serialize claims: {}", e))?;
-
-    let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
-    let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
+    // Delegate to the general purpose function
+    let jwt = generate_apple_client_secret(jwt_config, &client_id)?;
     
-    // Create the message to sign (header.payload)
-    let message = format!("{}.{}", header_b64, payload_b64);
-
-    // Sign with ES256 (ECDSA using P-256 and SHA-256)
-    let signature: Signature = signing_key.sign(message.as_bytes());
-    let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
-
-    // Combine into final JWT
-    let jwt = format!("{}.{}", message, signature_b64);
-
     log::debug!("Generated Apple client secret JWT for token refresh");
     Ok(jwt)
 }
