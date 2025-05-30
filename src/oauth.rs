@@ -37,7 +37,7 @@ pub struct OAuthState {
     pub redirect_url: Option<String>,
 }
 
-// JWT Session Management Structures
+// Session Management Structures
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OAuthTokens {
     pub token_type: String,

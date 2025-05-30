@@ -3,7 +3,7 @@ use reqwest::Client;
 use std::collections::HashMap;
 
 use crate::{
-    session::JwtSessionManager,
+    session::SessionManager,
     models::{VouchrsSession},
     oauth::{OAuthConfig, check_and_refresh_tokens},
     settings::VouchrsSettings,
@@ -21,7 +21,7 @@ pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
     body: web::Bytes,
-    jwt_manager: web::Data<JwtSessionManager>,
+    jwt_manager: web::Data<SessionManager>,
     settings: web::Data<VouchrsSettings>,
     oauth_config: web::Data<OAuthConfig>,
 ) -> ActixResult<HttpResponse> {
@@ -138,7 +138,7 @@ async fn forward_upstream_response(upstream_response: reqwest::Response, req: &H
 /// Extract and validate session from encrypted cookie
 async fn extract_session_from_request(
     req: &HttpRequest,
-    jwt_manager: &JwtSessionManager,
+    jwt_manager: &SessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {
     // Helper function to handle authentication errors
     let handle_auth_error = |message: &str| {

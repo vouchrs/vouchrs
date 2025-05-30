@@ -1,5 +1,5 @@
 // OAuth callback handler
-use crate::session::JwtSessionManager;
+use crate::session::SessionManager;
 use crate::oauth::{OAuthConfig, OAuthCallback, OAuthState};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
@@ -27,14 +27,14 @@ pub async fn jwt_oauth_callback(
     form: Option<web::Form<OAuthCallback>>,
     req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
-    jwt_manager: web::Data<JwtSessionManager>,
+    session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract callback data from either query params or form
     let callback_data = extract_callback_data(query, form);
     LoggingHelper::log_callback_debug(&req, &callback_data);
 
     // Validate callback and extract required data
-    let (code, oauth_state) = match validate_callback(&callback_data, &jwt_manager, &req) {
+    let (code, oauth_state) = match validate_callback(&callback_data, &session_manager, &req) {
         Ok(data) => data,
         Err(response) => return Ok(response),
     };
@@ -48,7 +48,7 @@ pub async fn jwt_oauth_callback(
         Ok(result) => result,
         Err(e) => {
             error!("Failed to exchange code for user info: {}", e);
-            let clear_cookie = jwt_manager.create_expired_cookie();
+            let clear_cookie = session_manager.create_expired_cookie();
             return Ok(HttpResponse::Found()
                 .cookie(clear_cookie)
                 .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
@@ -64,7 +64,7 @@ pub async fn jwt_oauth_callback(
     // Build and complete the session
     let result = build_and_finalize_session(
         &req, 
-        &jwt_manager, 
+        &session_manager, 
         SessionFinalizeParams {
             provider: oauth_state.provider, 
             id_token, 
@@ -95,12 +95,12 @@ fn extract_callback_data(
 /// Validate the callback data and extract the required code and OAuth state
 fn validate_callback(
     callback_data: &OAuthCallback, 
-    jwt_manager: &JwtSessionManager, 
+    session_manager: &SessionManager, 
     req: &HttpRequest
 ) -> Result<(String, OAuthState), HttpResponse> {
     // Check for OAuth errors
     if let Some(_error) = &callback_data.error {
-        let clear_cookie = jwt_manager.create_expired_cookie();
+        let clear_cookie = session_manager.create_expired_cookie();
         return Err(HttpResponse::Found()
             .cookie(clear_cookie)
             .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
@@ -112,7 +112,7 @@ fn validate_callback(
         Some(code) => code.clone(),
         None => {
             error!("No authorization code received");
-            let clear_cookie = jwt_manager.create_expired_cookie();
+            let clear_cookie = session_manager.create_expired_cookie();
             return Err(HttpResponse::Found()
                 .cookie(clear_cookie)
                 .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
@@ -125,7 +125,7 @@ fn validate_callback(
         Some(state) => state.clone(),
         None => {
             error!("No state parameter received");
-            let clear_cookie = jwt_manager.create_expired_cookie();
+            let clear_cookie = session_manager.create_expired_cookie();
             return Err(HttpResponse::Found()
                 .cookie(clear_cookie)
                 .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
@@ -134,14 +134,14 @@ fn validate_callback(
     };
 
     // Parse and validate OAuth state
-    match get_oauth_state_from_callback(&received_state, jwt_manager, req) {
+    match get_oauth_state_from_callback(&received_state, session_manager, req) {
         Ok(state) => {
             debug!("OAuth state verified for provider: {}", state.provider);
             Ok((code, state))
         },
         Err(e) => {
             error!("Failed to parse OAuth state: {}", e);
-            let clear_cookie = jwt_manager.create_expired_cookie();
+            let clear_cookie = session_manager.create_expired_cookie();
             Err(HttpResponse::Found()
                 .cookie(clear_cookie)
                 .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
@@ -155,7 +155,7 @@ fn validate_callback(
 /// Build session and finalize the authentication process
 fn build_and_finalize_session(
     req: &HttpRequest,
-    jwt_manager: &JwtSessionManager,
+    session_manager: &SessionManager,
     params: SessionFinalizeParams,
 ) -> HttpResponse {
     // Extract client info
@@ -184,11 +184,11 @@ fn build_and_finalize_session(
             );
             
             // Create both session and user cookies
-            let session_cookie = match jwt_manager.create_session_cookie(&session) {
+            let session_cookie = match session_manager.create_session_cookie(&session) {
                 Ok(cookie) => cookie,
                 Err(e) => {
                     error!("Failed to create session cookie: {}", e);
-                    let clear_cookie = jwt_manager.create_expired_cookie();
+                    let clear_cookie = session_manager.create_expired_cookie();
                     return HttpResponse::Found()
                         .cookie(clear_cookie)
                         .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
@@ -196,11 +196,11 @@ fn build_and_finalize_session(
                 }
             };
             
-            let user_cookie = match jwt_manager.create_user_cookie(&user_data) {
+            let user_cookie = match session_manager.create_user_cookie(&user_data) {
                 Ok(cookie) => cookie,
                 Err(e) => {
                     error!("Failed to create user cookie: {}", e);
-                    let clear_cookie = jwt_manager.create_expired_cookie();
+                    let clear_cookie = session_manager.create_expired_cookie();
                     return HttpResponse::Found()
                         .cookie(clear_cookie)
                         .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
@@ -208,7 +208,7 @@ fn build_and_finalize_session(
                 }
             };
             
-            let clear_temp_cookie = jwt_manager.create_expired_temp_state_cookie();
+            let clear_temp_cookie = session_manager.create_expired_temp_state_cookie();
             let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
             
             // Create response with multiple cookies
@@ -220,7 +220,7 @@ fn build_and_finalize_session(
         },
         Err(e) => {
             error!("Failed to build session from ID token: {}", e);
-            let clear_cookie = jwt_manager.create_expired_cookie();
+            let clear_cookie = session_manager.create_expired_cookie();
             HttpResponse::Found()
                 .cookie(clear_cookie)
                 .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))

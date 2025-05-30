@@ -5,7 +5,7 @@ use vouchrs::{
     api_proxy::proxy_generic_api,
     oauth::OAuthConfig,
     settings::VouchrsSettings,
-    session::JwtSessionManager,
+    session::SessionManager,
 };
 
 #[actix_web::main]
@@ -31,8 +31,8 @@ async fn start_server_with_jwt(
     let bind_address = settings.get_bind_address();
     print_startup_info(&bind_address, "JWT (Stateless)", &settings);
     
-    // Initialize JWT session manager with encryption key from settings
-    let jwt_manager = JwtSessionManager::new(settings.jwt.session_secret.as_bytes(), settings.cookies.secure);
+    // Initialize session manager with encryption key from settings
+    let jwt_manager = SessionManager::new(settings.jwt.session_secret.as_bytes(), settings.cookies.secure);
     
     // Configure CORS for SPAs
     let cors_origins = settings.get_cors_origins();
@@ -75,7 +75,7 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
         .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint
         .route("/ping", web::get().to(health))
-        // Catch-all proxy for any other path - provider determined from JWT session
+        // Catch-all proxy for any other path - provider determined from session
         .default_service(
             web::route()
                 .guard(actix_web::guard::fn_guard(|req| {

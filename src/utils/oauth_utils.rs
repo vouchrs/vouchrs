@@ -6,7 +6,7 @@ use log::debug;
 /// This eliminates provider-specific branching logic by using the stored OAuth state
 pub fn get_oauth_state_from_callback(
     received_state: &str, 
-    jwt_manager: &crate::session::JwtSessionManager,
+    jwt_manager: &crate::session::SessionManager,
     req: &actix_web::HttpRequest
 ) -> Result<crate::oauth::OAuthState, String> {
     debug!("Received OAuth state parameter: '{}'", received_state);

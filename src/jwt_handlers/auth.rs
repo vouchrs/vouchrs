@@ -1,6 +1,7 @@
 // Authentication handlers: sign-in and sign-out
-use crate::session::SessionManager;
-use crate::oauth::{OAuthConfig, OAuthState};
+use crate::jwt_session::JwtSessionManager;
+use crate::models::OAuthState;
+use crate::oauth::OAuthConfig;
 use crate::settings::VouchrsSettings;
 use crate::utils::response_builder::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
@@ -16,10 +17,10 @@ pub async fn jwt_oauth_sign_in(
     _req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
     settings: web::Data<VouchrsSettings>,
-    session_manager: web::Data<SessionManager>,
+    jwt_manager: web::Data<JwtSessionManager>,
 ) -> Result<HttpResponse> {
     // Clear any existing session by setting an expired cookie
-    let clear_cookie = session_manager.create_expired_cookie();
+    let clear_cookie = jwt_manager.create_expired_cookie();
 
     match &query.provider {
         Some(provider) if oauth_config.get_client_configured(provider) => {
@@ -74,7 +75,7 @@ pub async fn jwt_oauth_sign_in(
                 }
                 Err(e) => {
                     error!("Failed to get auth URL for {}: {}", provider, e);
-                    let error_clear_cookie = session_manager.create_expired_cookie();
+                    let error_clear_cookie = jwt_manager.create_expired_cookie();
                     Ok(ResponseBuilder::redirect_with_cookie(
                         "/oauth2/sign_in?error=oauth_config",
                         Some(error_clear_cookie)
@@ -83,7 +84,7 @@ pub async fn jwt_oauth_sign_in(
             }
         }
         Some(provider) => {
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = jwt_manager.create_expired_cookie();
             let error_url = format!("/oauth2/sign_in?error=unsupported_provider&provider={}", provider);
             Ok(ResponseBuilder::redirect_with_cookie(
                 &error_url,
@@ -92,7 +93,7 @@ pub async fn jwt_oauth_sign_in(
         }
         None => {
             // Return login page HTML
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = jwt_manager.create_expired_cookie();
             Ok(HttpResponse::Ok()
                 .cookie(clear_cookie)
                 .content_type("text/html")
@@ -104,17 +105,17 @@ pub async fn jwt_oauth_sign_in(
 pub async fn jwt_oauth_sign_out(
     req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
-    session_manager: web::Data<SessionManager>,
+    jwt_manager: web::Data<JwtSessionManager>,
 ) -> Result<HttpResponse> {
     // Get the user's provider before clearing the session
-    let provider = match session_manager.get_session_from_request(&req) {
+    let provider = match jwt_manager.get_session_from_request(&req) {
         Ok(Some(session)) => Some(session.provider),
         _ => None,
     };
 
     // Create expired cookies to clear both session and user data
-    let clear_session_cookie = session_manager.create_expired_cookie();
-    let clear_user_cookie = session_manager.create_expired_user_cookie();
+    let clear_session_cookie = jwt_manager.create_expired_cookie();
+    let clear_user_cookie = jwt_manager.create_expired_user_cookie();
     info!("User signed out and both session and user data cleared");
 
     // If we have a provider, check if it supports sign-out URL

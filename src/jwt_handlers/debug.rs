@@ -6,7 +6,7 @@ use log::{debug, error, info};
 /// OAuth2 userinfo endpoint - returns user data from encrypted user cookie
 pub async fn jwt_oauth_userinfo(
     req: HttpRequest,
-    session_manager: web::Data<SessionManager>,
+    jwt_manager: web::Data<SessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
 ) -> Result<HttpResponse> {
     use crate::utils::cookie_utils::USER_COOKIE_NAME;
@@ -14,7 +14,7 @@ pub async fn jwt_oauth_userinfo(
     // Get the vouchrs_user cookie directly
     if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
         // Attempt to decrypt the cookie value
-        match session_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
+        match jwt_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
             Ok(user_data) => {
                 info!("Userinfo endpoint: returning raw user data for user: {}", user_data.email);
                 
@@ -41,7 +41,7 @@ pub async fn jwt_oauth_userinfo(
 
 pub async fn jwt_oauth_debug(
     req: HttpRequest,
-    session_manager: web::Data<SessionManager>,
+    jwt_manager: web::Data<JwtSessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
 ) -> Result<HttpResponse> {
     // Check if debug mode is enabled via environment variable
@@ -58,10 +58,10 @@ pub async fn jwt_oauth_debug(
         })));
     }
 
-    match session_manager.get_session_from_request(&req) {
+    match jwt_manager.get_session_from_request(&req) {
         Ok(Some(session)) => {
             // Also try to get user data from user cookie
-            let user_data = session_manager.get_user_data_from_request(&req)
+            let user_data = jwt_manager.get_user_data_from_request(&req)
                 .unwrap_or(None);
             
 

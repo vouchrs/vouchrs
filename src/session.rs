@@ -40,15 +40,15 @@ impl ResponseError for JwtSessionError {
     }
 }
 
-/// JWT Session Manager for stateless encrypted session handling
+/// Session Manager for stateless encrypted session handling
 #[derive(Clone)]
-pub struct JwtSessionManager {
+pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
 }
 
-impl JwtSessionManager {
-    /// Create a new JWT session manager with the provided key and cookie settings
+impl SessionManager {
+    /// Create a new session manager with the provided key and cookie settings
     pub fn new(key: &[u8], cookie_secure: bool) -> Self {
         let mut encryption_key = [0u8; 32];
         let key_len = std::cmp::min(key.len(), 32);
@@ -301,8 +301,8 @@ impl JwtSessionManager {
 }
 
 /// Implementation of ToCookie for VouchrsSession
-impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for VouchrsSession {
-    fn to_cookie(&self, jwt_manager: &JwtSessionManager) -> Result<Cookie<'static>> {
+impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
+    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
         jwt_manager.create_cookie(
             COOKIE_NAME.to_string(),
             Some(self),
@@ -315,8 +315,8 @@ impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for VouchrsSession 
 }
 
 /// Implementation of ToCookie for VouchrsUserData
-impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for VouchrsUserData {
-    fn to_cookie(&self, jwt_manager: &JwtSessionManager) -> Result<Cookie<'static>> {
+impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
+    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
         jwt_manager.create_cookie(
             USER_COOKIE_NAME.to_string(),
             Some(self),
@@ -329,8 +329,8 @@ impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for VouchrsUserData
 }
 
 /// Implementation of ToCookie for OAuthState
-impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for OAuthState {
-    fn to_cookie(&self, jwt_manager: &JwtSessionManager) -> Result<Cookie<'static>> {
+impl crate::utils::cookie_utils::ToCookie<SessionManager> for OAuthState {
+    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
         let options = CookieOptions {
             same_site: actix_web::cookie::SameSite::Lax,
             max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_token_encryption_decryption() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = JwtSessionManager::new(key, false);
+        let manager = SessionManager::new(key, false);
         let session = create_test_session();
 
         // Test encryption with generic method
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_needs_token_refresh() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = JwtSessionManager::new(key, false);
+        let manager = SessionManager::new(key, false);
         // Session with token expiring in 10 minutes (should NOT need refresh)
         let mut session = create_test_session();
         session.expires_at = Utc::now() + Duration::minutes(10);
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn test_cookie_size_reduction() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = JwtSessionManager::new(key, false);
+        let manager = SessionManager::new(key, false);
         let session = create_test_session();
 
         // Create cookie with token data (current approach)
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn test_generic_encryption_decryption() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = JwtSessionManager::new(key, false);
+        let manager = SessionManager::new(key, false);
         let session = create_test_session();
 
         // Test generic encryption
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn test_to_cookie_trait() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = JwtSessionManager::new(key, false);
+        let manager = SessionManager::new(key, false);
         let session = create_test_session();
 
         // Test ToCookie implementation for VouchrsSession

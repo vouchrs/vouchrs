@@ -1,6 +1,6 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::utils::test_helpers::{create_test_session, create_test_settings};
-use vouchrs::session::{JwtSessionManager};
+use vouchrs::session::{SessionManager};
 use vouchrs::utils::user_agent::UserAgentInfo;
 use vouchrs::models::VouchrsUserData;
 
@@ -61,7 +61,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_data.mobile, 0, "Mobile flag should be set");
     
     // Test user cookie encryption/decryption
-    let jwt_manager = JwtSessionManager::new(settings.jwt.session_secret.as_bytes(), false);
+    let jwt_manager = SessionManager::new(settings.jwt.session_secret.as_bytes(), false);
     let user_cookie = jwt_manager.create_user_cookie(&user_data)
         .expect("Should create user cookie");
     
@@ -111,7 +111,7 @@ fn test_minimal_user_data() {
     assert_eq!(user_data.mobile, 0, "Mobile should default to 0");
     
     // Test encryption/decryption with minimal data
-    let jwt_manager = JwtSessionManager::new(settings.jwt.session_secret.as_bytes(), false);
+    let jwt_manager = SessionManager::new(settings.jwt.session_secret.as_bytes(), false);
     let user_cookie = jwt_manager.create_user_cookie(&user_data)
         .expect("Should create user cookie");
     
