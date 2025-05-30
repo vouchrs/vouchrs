@@ -1,9 +1,45 @@
-use actix_web::{web, HttpRequest, HttpResponse, cookie::Cookie};
+// filepath: /workspaces/vouchrs/src/utils/response_builder.rs
+use actix_web::{web, HttpRequest, HttpResponse, cookie::Cookie, http::StatusCode};
 use reqwest;
 use std::collections::HashMap;
 use url;
 
 use crate::utils::cookie_utils::filter_vouchrs_cookies;
+
+// Enum for standard error types with their status codes
+#[derive(Debug, Clone, Copy)]
+pub enum ErrorType {
+    BadRequest,
+    Unauthorized, 
+    Forbidden,
+    NotFound,
+    InternalError,
+    Custom(StatusCode, &'static str),
+}
+
+impl ErrorType {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            Self::BadRequest => StatusCode::BAD_REQUEST,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Custom(status, _) => *status,
+        }
+    }
+    
+    pub fn error_type(&self) -> &str {
+        match self {
+            Self::BadRequest => "bad_request",
+            Self::Unauthorized => "unauthorized",
+            Self::Forbidden => "forbidden",
+            Self::NotFound => "not_found",
+            Self::InternalError => "internal_error",
+            Self::Custom(_, error_type) => error_type,
+        }
+    }
+}
 
 pub struct ResponseBuilder;
 
@@ -16,17 +52,25 @@ pub fn is_hop_by_hop_header(name: &str) -> bool {
 }
 
 impl ResponseBuilder {
-    /// Create a redirect response with optional cookie
-    pub fn redirect_with_cookie(location: &str, cookie: Option<Cookie>) -> HttpResponse {
+    /// Create a redirect response with optional cookies
+    pub fn redirect(location: &str, cookies: Option<Vec<Cookie>>) -> HttpResponse {
         let mut builder = HttpResponse::Found();
         
-        if let Some(cookie) = cookie {
-            builder.cookie(cookie);
+        if let Some(cookies_vec) = cookies {
+            for cookie in cookies_vec {
+                builder.cookie(cookie);
+            }
         }
         
         builder
             .append_header(("Location", location))
             .finish()
+    }
+    
+    /// Create a redirect response with a single cookie
+    pub fn redirect_with_cookie(location: &str, cookie: Option<Cookie>) -> HttpResponse {
+        let cookies = cookie.map(|c| vec![c]);
+        Self::redirect(location, cookies)
     }
 
     /// Create an error redirect response
@@ -37,63 +81,50 @@ impl ResponseBuilder {
             format!("{}?error={}", location, error_param)
         };
         
-        HttpResponse::Found()
-            .append_header(("Location", redirect_url))
-            .finish()
+        Self::redirect(&redirect_url, None)
     }
 
     /// Create a success redirect response with cookie
     pub fn success_redirect_with_cookie(location: &str, cookie: Cookie) -> HttpResponse {
-        HttpResponse::Found()
-            .cookie(cookie)
-            .append_header(("Location", location))
-            .finish()
+        Self::redirect(location, Some(vec![cookie]))
     }
 
     /// Create a success redirect response with multiple cookies
     pub fn success_redirect_with_cookies(location: &str, cookies: Vec<Cookie>) -> HttpResponse {
-        let mut builder = HttpResponse::Found();
-        
-        for cookie in cookies {
-            builder.cookie(cookie);
-        }
-        
-        builder
-            .append_header(("Location", location))
-            .finish()
+        Self::redirect(location, Some(cookies))
     }
-
+    
     /// Create a JSON error response
-    pub fn json_error(status: actix_web::http::StatusCode, error_type: &str, message: &str) -> HttpResponse {
-        HttpResponse::build(status).json(serde_json::json!({
-            "error": error_type,
+    pub fn json_error(error: ErrorType, message: &str) -> HttpResponse {
+        HttpResponse::build(error.status_code()).json(serde_json::json!({
+            "error": error.error_type(),
             "message": message
         }))
     }
 
     /// Create an unauthorized JSON response
     pub fn unauthorized_json(message: &str) -> HttpResponse {
-        Self::json_error(actix_web::http::StatusCode::UNAUTHORIZED, "unauthorized", message)
+        Self::json_error(ErrorType::Unauthorized, message)
     }
 
     /// Create a bad request JSON response
     pub fn bad_request_json(message: &str) -> HttpResponse {
-        Self::json_error(actix_web::http::StatusCode::BAD_REQUEST, "bad_request", message)
+        Self::json_error(ErrorType::BadRequest, message)
     }
 
     /// Create an internal server error JSON response
     pub fn internal_error_json(message: &str) -> HttpResponse {
-        Self::json_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, "internal_error", message)
+        Self::json_error(ErrorType::InternalError, message)
     }
 
     /// Create a forbidden JSON response
     pub fn forbidden_json(message: &str) -> HttpResponse {
-        Self::json_error(actix_web::http::StatusCode::FORBIDDEN, "forbidden", message)
+        Self::json_error(ErrorType::Forbidden, message)
     }
 
     /// Create a not found JSON response
     pub fn not_found_json(message: &str) -> HttpResponse {
-        Self::json_error(actix_web::http::StatusCode::NOT_FOUND, "not_found", message)
+        Self::json_error(ErrorType::NotFound, message)
     }
 
     /// Create a JSON response with custom status and data

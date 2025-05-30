@@ -77,8 +77,10 @@ async fn execute_upstream_request(
     // Execute the request
     request_builder.send().await.map_err(|err| {
         ResponseBuilder::json_error(
-            actix_web::http::StatusCode::BAD_GATEWAY, 
-            "upstream_request_failed", 
+            crate::utils::response_builder::ErrorType::Custom(
+                actix_web::http::StatusCode::BAD_GATEWAY, 
+                "upstream_request_failed"
+            ), 
             &format!("Failed to reach upstream service: {}", err)
         )
     })
