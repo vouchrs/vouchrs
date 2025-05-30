@@ -97,6 +97,23 @@ fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Meth
     }
 }
 
+/// Filter cookies, removing vouchrs_session cookie
+fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
+    let filtered_cookies: Vec<&str> = cookie_str
+        .split(';')
+        .filter(|cookie| {
+            let trimmed = cookie.trim();
+            !trimmed.starts_with(&format!("{}=", crate::utils::cookie_utils::COOKIE_NAME))
+        })
+        .collect();
+    
+    if filtered_cookies.is_empty() {
+        None
+    } else {
+        Some(filtered_cookies.join("; "))
+    }
+}
+
 /// Forward request headers (excluding Authorization, Cookie with vouchrs_session, and hop-by-hop headers)
 fn forward_request_headers(
     mut request_builder: reqwest::RequestBuilder,
@@ -104,26 +121,25 @@ fn forward_request_headers(
 ) -> reqwest::RequestBuilder {
     for (name, value) in req.headers() {
         let name_str = name.as_str().to_lowercase();
-        if name_str != "authorization" && !is_hop_by_hop_header(&name_str) {
-            if name_str == "cookie" {
-                // Filter vouchrs_session cookie from being forwarded upstream
-                if let Ok(cookie_str) = value.to_str() {
-                    let filtered_cookies: Vec<&str> = cookie_str
-                        .split(';')
-                        .filter(|cookie| {
-                            let trimmed = cookie.trim();
-                            !trimmed.starts_with(&format!("{}=", crate::utils::cookie_utils::COOKIE_NAME))
-                        })
-                        .collect();
-                    
-                    // Only add cookie header if we have cookies left after filtering
-                    if !filtered_cookies.is_empty() {
-                        request_builder = request_builder.header(name.as_str(), filtered_cookies.join("; "));
-                    }
+        
+        // Skip authorization and hop-by-hop headers
+        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
+            continue;
+        }
+        
+        // Special handling for cookies
+        if name_str == "cookie" {
+            if let Ok(cookie_str) = value.to_str() {
+                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
+                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
                 }
-            } else if let Ok(value_str) = value.to_str() {
-                request_builder = request_builder.header(name.as_str(), value_str);
             }
+            continue;
+        }
+        
+        // Add other headers
+        if let Ok(value_str) = value.to_str() {
+            request_builder = request_builder.header(name.as_str(), value_str);
         }
     }
     request_builder
