@@ -7,7 +7,7 @@ use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Result, anyhow, Context};
 
-const COOKIE_NAME: &str = "vouchr_session";
+const COOKIE_NAME: &str = "vouchrs_session";
 const NONCE_SIZE: usize = 12; // 96 bits for AES-GCM
 
 // Custom error wrapper for ResponseError implementation

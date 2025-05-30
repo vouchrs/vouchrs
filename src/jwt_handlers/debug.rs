@@ -41,7 +41,7 @@ pub async fn jwt_oauth_debug(
                     "access_token": session.access_token,
                 },
                 "debug_info": {
-                    "cookie_name": "vouchr_session",
+                    "cookie_name": "vouchrs_session",
                     "timestamp": chrono::Utc::now(),
                     "warning": "This endpoint exposes sensitive OAuth tokens and cookie data. Only use in development!"
                 }
@@ -67,7 +67,7 @@ pub async fn jwt_oauth_debug(
 }
 
 fn create_no_session_response(req: &HttpRequest) -> serde_json::Value {
-    let raw_cookie_data = req.cookie("vouchr_session").map(|cookie| {
+    let raw_cookie_data = req.cookie("vouchrs_session").map(|cookie| {
         let cookie_value = cookie.value();
         serde_json::json!({
             "raw_encrypted_data": cookie_value,
@@ -106,7 +106,7 @@ fn create_no_session_response(req: &HttpRequest) -> serde_json::Value {
 }
 
 fn create_session_error_response(req: &HttpRequest, error: &dyn std::fmt::Display) -> serde_json::Value {
-    let raw_cookie_data = req.cookie("vouchr_session").map(|cookie| {
+    let raw_cookie_data = req.cookie("vouchrs_session").map(|cookie| {
         let cookie_value = cookie.value();
         serde_json::json!({
             "raw_encrypted_data": cookie_value,
