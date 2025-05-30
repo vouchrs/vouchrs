@@ -3,6 +3,71 @@ use crate::jwt_session::JwtSessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
+/// OAuth2 userinfo endpoint - returns access_token JWT claims in JSON format
+pub async fn jwt_oauth_userinfo(
+    req: HttpRequest,
+    jwt_manager: web::Data<JwtSessionManager>,
+    _settings: web::Data<crate::settings::VouchrsSettings>,
+) -> Result<HttpResponse> {
+    // Get session from request
+    match jwt_manager.get_session_from_request(&req) {
+        Ok(Some(session)) => {
+            // Check if we have an access_token in the session
+            match &session.access_token {
+                Some(access_token) => {
+                    // Decode the JWT access token to get its claims
+                    match super::helpers::decode_jwt_payload(access_token) {
+                        Ok(claims) => {
+                            info!("Userinfo endpoint: returning access token claims for user: {}", session.user_email);
+                            Ok(HttpResponse::Ok().json(claims))
+                        }
+                        Err(e) => {
+                            error!("Userinfo endpoint: Failed to decode access token JWT: {}", e);
+                            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+                                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                                serde_json::json!({
+                                    "error": "invalid_token",
+                                    "error_description": "Failed to decode access token"
+                                })
+                            ))
+                        }
+                    }
+                }
+                None => {
+                    error!("Userinfo endpoint: No access token found in session for user: {}", session.user_email);
+                    Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+                        actix_web::http::StatusCode::BAD_REQUEST,
+                        serde_json::json!({
+                            "error": "no_access_token",
+                            "error_description": "No access token available in session"
+                        })
+                    ))
+                }
+            }
+        }
+        Ok(None) => {
+            debug!("Userinfo endpoint: No valid JWT session found");
+            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+                actix_web::http::StatusCode::UNAUTHORIZED,
+                serde_json::json!({
+                    "error": "invalid_request",
+                    "error_description": "No valid session found. Please authenticate first."
+                })
+            ))
+        }
+        Err(e) => {
+            error!("Userinfo endpoint: Error retrieving JWT session: {}", e);
+            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+                actix_web::http::StatusCode::UNAUTHORIZED,
+                serde_json::json!({
+                    "error": "invalid_request", 
+                    "error_description": "Session validation failed"
+                })
+            ))
+        }
+    }
+}
+
 pub async fn jwt_oauth_debug(
     req: HttpRequest,
     jwt_manager: web::Data<JwtSessionManager>,

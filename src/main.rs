@@ -2,7 +2,7 @@ use actix_web::{web, App, HttpServer, middleware::Logger};
 use actix_cors::Cors;
 use vouchrs::{
     handlers,
-    jwt_handlers::{jwt_oauth_sign_in, jwt_oauth_sign_out, jwt_oauth_callback, jwt_oauth_debug},
+    jwt_handlers::{jwt_oauth_sign_in, jwt_oauth_sign_out, jwt_oauth_callback, jwt_oauth_debug, jwt_oauth_userinfo},
     api_proxy::proxy_generic_api,
     oauth::OAuthConfig,
     settings::VouchrsSettings,
@@ -71,6 +71,7 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
         .route("/oauth2/callback", web::get().to(jwt_oauth_callback))
         .route("/oauth2/callback", web::post().to(jwt_oauth_callback))
         .route("/oauth2/debug", web::get().to(jwt_oauth_debug))
+        .route("/oauth2/userinfo", web::get().to(jwt_oauth_userinfo))
         // Static files endpoint
         .route("/oauth2/static/{filename:.*}", web::get().to(handlers::serve_static))
         // Health endpoint
