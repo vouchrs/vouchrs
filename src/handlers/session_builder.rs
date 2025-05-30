@@ -13,7 +13,8 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::models::{CompleteSessionData, AppleUserInfo};
+use crate::models::{CompleteSessionData};
+use crate::utils::apple_utils::AppleUserInfo;
 use crate::handlers::helpers::decode_jwt_payload;
 use chrono::{DateTime, Utc, TimeZone};
 use log::{debug, warn, info};
@@ -185,7 +186,7 @@ impl SessionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AppleUserInfo, AppleUserName};
+    use crate::utils::apple_utils::{AppleUserInfo, AppleUserName};
     use chrono::Utc;
     use base64::Engine as _;
     use serde_json::json;

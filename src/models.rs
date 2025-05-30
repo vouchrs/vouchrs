@@ -7,30 +7,6 @@ pub struct HealthResponse {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AppleUserName {
-    #[serde(rename = "firstName")]
-    pub first_name: Option<String>,
-    #[serde(rename = "lastName")]
-    pub last_name: Option<String>,
-}
-
-impl AppleUserName {
-    /// Get the full name by concatenating first and last name with a space
-    pub fn full_name(&self) -> String {
-        format!(
-            "{} {}",
-            self.first_name.as_deref().unwrap_or(""),
-            self.last_name.as_deref().unwrap_or("")
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AppleUserInfo {
-    pub name: AppleUserName,
-    pub email: Option<String>,
-}
 
 /// User data structure for the vouchrs_user cookie
 /// Contains only essential user information (not JWT metadata)

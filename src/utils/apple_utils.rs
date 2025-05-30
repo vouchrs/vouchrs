@@ -1,7 +1,7 @@
 // Apple-specific utility functions
-use crate::models::AppleUserInfo;
 use crate::oauth::OAuthCallback;
 use log::debug;
+use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 /// Parse and process Apple user information from various sources
@@ -15,6 +15,33 @@ use serde_json::Value;
 /// - In the callback data's 'user' parameter (handled here)
 ///
 /// When both sources are provided, the callback data is prioritized
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AppleUserName {
+    #[serde(rename = "firstName")]
+    pub first_name: Option<String>,
+    #[serde(rename = "lastName")]
+    pub last_name: Option<String>,
+}
+
+impl AppleUserName {
+    /// Get the full name by concatenating first and last name with a space
+    pub fn full_name(&self) -> String {
+        format!(
+            "{} {}",
+            self.first_name.as_deref().unwrap_or(""),
+            self.last_name.as_deref().unwrap_or("")
+        )
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AppleUserInfo {
+    pub name: AppleUserName,
+    pub email: Option<String>,
+}
+
+
 pub fn process_apple_user_info(
     source: &Value, 
     fallback_info: Option<AppleUserInfo>
@@ -149,7 +176,6 @@ pub fn generate_apple_client_secret_for_refresh(jwt_config: &crate::settings::Jw
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AppleUserInfo, AppleUserName};
 
     #[test]
     fn test_process_apple_user_info_from_object() {

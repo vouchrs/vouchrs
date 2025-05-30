@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::env;
-use crate::models::{AppleUserInfo, VouchrsSession};
+use crate::models::{VouchrsSession};
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::logging::LoggingHelper;
 use crate::utils::apple_utils;
@@ -72,7 +72,7 @@ struct TokenResponse {
     token_type: String,
     expires_in: Option<u64>,
     scope: Option<String>,
-    user: Option<AppleUserInfo>, // Apple-specific user info field
+    user: Option<apple_utils::AppleUserInfo>, // Apple-specific user info field
 }
 
 // Runtime provider configuration with resolved endpoints
@@ -239,7 +239,7 @@ impl OAuthConfig {
         &self,
         provider: &str,
         code: &str,
-    ) -> Result<(Option<String>, Option<String>, chrono::DateTime<Utc>, Option<crate::models::AppleUserInfo>), String> {
+    ) -> Result<(Option<String>, Option<String>, chrono::DateTime<Utc>, Option<apple_utils::AppleUserInfo>), String> {
         let runtime_provider = self.providers.get(provider)
             .ok_or_else(|| format!("Provider {} not configured", provider))?;
 

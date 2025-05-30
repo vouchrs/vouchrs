@@ -1,6 +1,6 @@
 // Centralized logging utilities to reduce verbose logging patterns
 use log::{info, warn, debug};
-use crate::models::{AppleUserInfo};
+use crate::utils::apple_utils::{AppleUserInfo};
 
 pub struct LoggingHelper;
 
