@@ -61,8 +61,7 @@ async fn execute_upstream_request(
     body: &web::Bytes,
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
-    let reqwest_method = ResponseBuilder::convert_http_method(req.method())
-        .map_err(|err| err)?;
+    let reqwest_method = ResponseBuilder::convert_http_method(req.method())?;
     
     let mut request_builder = CLIENT
         .request(reqwest_method, upstream_url)
