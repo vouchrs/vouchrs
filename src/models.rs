@@ -106,7 +106,7 @@ impl CompleteSessionData {
     }
 
     /// Extract user data as VouchrsUserData with additional context
-    pub fn to_user_data(&self, client_ip: Option<&str>, user_agent_info: Option<&crate::jwt_utils::UserAgentInfo>) -> VouchrsUserData {
+    pub fn to_user_data(&self, client_ip: Option<&str>, user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>) -> VouchrsUserData {
         VouchrsUserData {
             email: self.user_email.clone(),
             name: self.user_name.clone(),

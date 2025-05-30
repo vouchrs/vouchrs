@@ -1,6 +1,14 @@
 // User agent extraction and platform detection utilities
 use actix_web::HttpRequest;
-use crate::jwt_utils::UserAgentInfo;
+
+/// User agent information extracted from HTTP headers
+#[derive(Debug, Clone)]
+pub struct UserAgentInfo {
+    pub user_agent: Option<String>,
+    pub platform: Option<String>,
+    pub lang: Option<String>,
+    pub mobile: u8, // 0 or 1
+}
 
 /// Extract user agent information from HTTP request headers
 /// Uses modern client hints headers first, with fallback to traditional User-Agent header

@@ -3,7 +3,6 @@ pub mod models;
 pub mod oauth;
 pub mod jwt_session;
 pub mod jwt_handlers;
-pub mod jwt_utils;
 pub mod api_proxy;
 pub mod settings;
 pub mod utils;
