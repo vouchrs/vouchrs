@@ -222,16 +222,30 @@ async fn extract_session_from_request(
     req: &HttpRequest,
     jwt_manager: &JwtSessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {
+    // Helper function to handle authentication errors
+    let handle_auth_error = |message: &str| {
+        if is_browser_request(req) {
+            // For browser requests, redirect to sign-in page
+            let sign_in_url = "/oauth2/sign_in";
+            HttpResponse::Found()
+                .insert_header(("Location", sign_in_url))
+                .finish()
+        } else {
+            // For API requests, return JSON error
+            ResponseBuilder::unauthorized_json(message)
+        }
+    };
+
     // Extract session cookie
     let cookie = req.cookie("vouchrs_session")
         .ok_or_else(|| {
-            ResponseBuilder::unauthorized_json("No session cookie found. Please authenticate first.")
+            handle_auth_error("No session cookie found. Please authenticate first.")
         })?;
 
     // Decrypt and validate session
     match jwt_manager.decrypt_and_validate_session(cookie.value()) {
         Ok(session) => Ok(session),
-        Err(_) => Err(ResponseBuilder::unauthorized_json("Session is invalid or expired. Please authenticate again.")),
+        Err(_) => Err(handle_auth_error("Session is invalid or expired. Please authenticate again.")),
     }
 }
 
