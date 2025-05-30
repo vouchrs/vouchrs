@@ -1,4 +1,5 @@
-use crate::models::{VouchrsSession, OAuthState, VouchrsUserData};
+use crate::models::{VouchrsSession, VouchrsUserData};
+use crate::oauth::OAuthState;
 use crate::utils::cookie_utils::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
 use actix_web::{HttpRequest, cookie::Cookie, HttpResponse, ResponseError};
 use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};

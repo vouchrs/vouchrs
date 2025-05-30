@@ -1,12 +1,11 @@
 use actix_web::{web, App, HttpServer, middleware::Logger};
 use actix_cors::Cors;
 use vouchrs::{
-    handlers,
-    jwt_handlers::{jwt_oauth_sign_in, jwt_oauth_sign_out, jwt_oauth_callback, jwt_oauth_debug, jwt_oauth_userinfo},
+    handlers::{health, serve_static, jwt_oauth_sign_in, jwt_oauth_sign_out, jwt_oauth_callback, jwt_oauth_debug, jwt_oauth_userinfo},
     api_proxy::proxy_generic_api,
     oauth::OAuthConfig,
     settings::VouchrsSettings,
-    jwt_session::JwtSessionManager,
+    session::JwtSessionManager,
 };
 
 #[actix_web::main]
@@ -73,9 +72,9 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
         .route("/oauth2/debug", web::get().to(jwt_oauth_debug))
         .route("/oauth2/userinfo", web::get().to(jwt_oauth_userinfo))
         // Static files endpoint
-        .route("/oauth2/static/{filename:.*}", web::get().to(handlers::serve_static))
+        .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint
-        .route("/ping", web::get().to(handlers::health))
+        .route("/ping", web::get().to(health))
         // Catch-all proxy for any other path - provider determined from JWT session
         .default_service(
             web::route()

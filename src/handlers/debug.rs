@@ -1,5 +1,5 @@
 // Debug handler for JWT sessions
-use crate::jwt_session::JwtSessionManager;
+use crate::session::JwtSessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 

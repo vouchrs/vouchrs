@@ -7,20 +7,6 @@ pub struct HealthResponse {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct OAuthState {
-    pub state: String,
-    pub provider: String,
-    pub redirect_url: Option<String>,
-}
-
-// JWT Session Management Structures
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct OAuthTokens {
-    pub token_type: String,
-    pub scope: Option<String>,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppleUserName {
     #[serde(rename = "firstName")]

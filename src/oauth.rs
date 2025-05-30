@@ -13,12 +13,35 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use log;
 
-// Add missing error type
+/// Error types for OAuth operations
 #[derive(Debug)]
 pub enum OAuthError {
     Configuration(String),
     Network(String),
     InvalidResponse(String),
+}
+
+/// OAuth callback structure for handling responses from OAuth providers
+#[derive(Deserialize, Debug)]
+pub struct OAuthCallback {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+    pub user: Option<serde_json::Value>, // Apple sends user info in form POST on first login
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OAuthState {
+    pub state: String,
+    pub provider: String,
+    pub redirect_url: Option<String>,
+}
+
+// JWT Session Management Structures
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OAuthTokens {
+    pub token_type: String,
+    pub scope: Option<String>,
 }
 
 impl std::fmt::Display for OAuthError {

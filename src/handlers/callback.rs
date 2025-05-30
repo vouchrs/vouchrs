@@ -1,12 +1,11 @@
 // OAuth callback handler
-use crate::jwt_session::JwtSessionManager;
+use crate::session::JwtSessionManager;
 use crate::models::AppleUserInfo;
-use crate::oauth::OAuthConfig;
+use crate::oauth::{OAuthConfig, OAuthCallback, OAuthState};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, error};
 
-use super::types::OAuthCallback;
 use super::session_builder::SessionBuilder;
 use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::logging::LoggingHelper;
@@ -99,7 +98,7 @@ fn validate_callback(
     callback_data: &OAuthCallback, 
     jwt_manager: &JwtSessionManager, 
     req: &HttpRequest
-) -> Result<(String, crate::models::OAuthState), HttpResponse> {
+) -> Result<(String, OAuthState), HttpResponse> {
     // Check for OAuth errors
     if let Some(_error) = &callback_data.error {
         let clear_cookie = jwt_manager.create_expired_cookie();

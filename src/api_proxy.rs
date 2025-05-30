@@ -3,7 +3,7 @@ use reqwest::Client;
 use std::collections::HashMap;
 
 use crate::{
-    jwt_session::JwtSessionManager,
+    session::JwtSessionManager,
     models::{VouchrsSession},
     oauth::{OAuthConfig, check_and_refresh_tokens},
     settings::VouchrsSettings,

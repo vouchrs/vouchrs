@@ -119,7 +119,7 @@ impl LoggingHelper {
     }
 
     /// Log OAuth callback details in development mode
-    pub fn log_callback_debug(req: &actix_web::HttpRequest, callback_data: &crate::jwt_handlers::types::OAuthCallback) {
+    pub fn log_callback_debug(req: &actix_web::HttpRequest, callback_data: &crate::oauth::OAuthCallback) {
         debug!("OAuth callback received via {}: {:?}", req.method(), callback_data);
         debug!("Callback request headers: {:?}", req.headers());
         debug!("Callback request connection info: {:?}", req.connection_info());

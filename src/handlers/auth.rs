@@ -1,7 +1,6 @@
 // Authentication handlers: sign-in and sign-out
-use crate::jwt_session::JwtSessionManager;
-use crate::models::OAuthState;
-use crate::oauth::OAuthConfig;
+use crate::session::JwtSessionManager;
+use crate::oauth::{OAuthConfig, OAuthState};
 use crate::settings::VouchrsSettings;
 use crate::utils::response_builder::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};

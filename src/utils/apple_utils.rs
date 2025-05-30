@@ -1,6 +1,6 @@
 // Apple-specific utility functions
 use crate::models::AppleUserInfo;
-use crate::jwt_handlers::types::OAuthCallback;
+use crate::oauth::OAuthCallback;
 use log::debug;
 use serde_json::Value;
 

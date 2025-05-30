@@ -1,6 +1,6 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::utils::test_helpers::{create_test_session, create_test_settings};
-use vouchrs::jwt_session::{JwtSessionManager};
+use vouchrs::session::{JwtSessionManager};
 use vouchrs::utils::user_agent::UserAgentInfo;
 use vouchrs::models::VouchrsUserData;
 

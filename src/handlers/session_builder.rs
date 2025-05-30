@@ -14,7 +14,7 @@
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
 use crate::models::{CompleteSessionData, AppleUserInfo};
-use crate::jwt_handlers::helpers::decode_jwt_payload;
+use crate::handlers::helpers::decode_jwt_payload;
 use chrono::{DateTime, Utc, TimeZone};
 use log::{debug, warn, info};
 use serde_json::Value;

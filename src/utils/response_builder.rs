@@ -158,7 +158,7 @@ impl ResponseBuilder {
             if base_uri.host_str() != final_uri.host_str() {
                 return Err(HttpResponse::BadRequest().json(serde_json::json!({
                     "error": "bad_request",
-                    "message": "Request URL doesn't match configured upstream host. Open relay not permitted."
+                    "message": "Request URL doesn't match configured upstream host"
                 })));
             }
         } else {

@@ -6,9 +6,9 @@ use log::debug;
 /// This eliminates provider-specific branching logic by using the stored OAuth state
 pub fn get_oauth_state_from_callback(
     received_state: &str, 
-    jwt_manager: &crate::jwt_session::JwtSessionManager,
+    jwt_manager: &crate::session::JwtSessionManager,
     req: &actix_web::HttpRequest
-) -> Result<crate::models::OAuthState, String> {
+) -> Result<crate::oauth::OAuthState, String> {
     debug!("Received OAuth state parameter: '{}'", received_state);
     debug!("Received state length: {} characters", received_state.len());
     
@@ -38,7 +38,7 @@ pub fn get_oauth_state_from_callback(
 
 /// Parse OAuth state when no stored state is available (stateless mode)
 /// This handles cases where the provider info needs to be extracted from the state parameter itself
-fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::models::OAuthState, String> {
+fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::oauth::OAuthState, String> {
     debug!("Attempting to parse stateless OAuth state: '{}'", received_state);
     debug!("Contains pipe character: {}", received_state.contains('|'));
     
@@ -64,7 +64,7 @@ fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::models::OA
         
         debug!("Successfully parsed stateless OAuth state for provider: {}", provider);
         
-        Ok(crate::models::OAuthState {
+        Ok(crate::oauth::OAuthState {
             state: csrf_state,
             provider,
             redirect_url,
