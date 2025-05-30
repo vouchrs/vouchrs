@@ -15,12 +15,8 @@ use vouchrs::{
 async fn main() -> std::io::Result<()> {
     // Load configuration from Settings.toml and environment variables
     // This also loads .env file and initializes the logger
-    let settings = VouchrsSettings::load().map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to load settings: {}", e),
-        )
-    })?;
+    let settings = VouchrsSettings::load()
+        .map_err(|e| std::io::Error::other(format!("Failed to load settings: {}", e)))?;
 
     // Initialize OAuth configuration with config-driven providers
     let mut oauth_config = OAuthConfig::new();
@@ -28,10 +24,7 @@ async fn main() -> std::io::Result<()> {
         .initialize_from_settings(&settings)
         .await
         .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to initialize OAuth providers: {}", e),
-            )
+            std::io::Error::other(format!("Failed to initialize OAuth providers: {}", e))
         })?;
 
     println!("✓ Using JWT-based stateless sessions with encrypted cookies");
