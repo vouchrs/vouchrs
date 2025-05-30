@@ -59,3 +59,21 @@ pub fn log_cookies(req: &HttpRequest) {
         }
     }
 }
+
+
+/// Filter cookies, removing vouchrs_session cookie
+pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
+    let filtered_cookies: Vec<&str> = cookie_str
+        .split(';')
+        .filter(|cookie| {
+            let trimmed = cookie.trim();
+            !trimmed.starts_with(&format!("{}=", COOKIE_NAME))
+        })
+        .collect();
+    
+    if filtered_cookies.is_empty() {
+        None
+    } else {
+        Some(filtered_cookies.join("; "))
+    }
+}

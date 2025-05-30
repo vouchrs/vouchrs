@@ -9,6 +9,7 @@ use crate::{
     settings::VouchrsSettings,
     utils::response_builder::ResponseBuilder,
     utils::apple_utils,
+    utils::cookie_utils::filter_vouchrs_cookies,
 };
 
 /// HTTP client for making upstream API requests
@@ -16,7 +17,7 @@ static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(|| {
     Client::new()
 });
 
-/// Generic catch-all proxy handler that forwards requests as-is to upstream with JWT token injection
+/// Generic catch-all proxy handler that forwards requests as-is to upstream
 pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
@@ -94,23 +95,6 @@ fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Meth
         "HEAD" => Ok(reqwest::Method::HEAD),
         "OPTIONS" => Ok(reqwest::Method::OPTIONS),
         method_str => Err(ResponseBuilder::bad_request_json(&format!("HTTP method '{}' is not supported", method_str))),
-    }
-}
-
-/// Filter cookies, removing vouchrs_session cookie
-fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
-    let filtered_cookies: Vec<&str> = cookie_str
-        .split(';')
-        .filter(|cookie| {
-            let trimmed = cookie.trim();
-            !trimmed.starts_with(&format!("{}=", crate::utils::cookie_utils::COOKIE_NAME))
-        })
-        .collect();
-    
-    if filtered_cookies.is_empty() {
-        None
-    } else {
-        Some(filtered_cookies.join("; "))
     }
 }
 
