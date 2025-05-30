@@ -9,47 +9,39 @@ pub async fn jwt_oauth_userinfo(
     jwt_manager: web::Data<JwtSessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
 ) -> Result<HttpResponse> {
-    // Get user data from user cookie
-    match jwt_manager.get_user_data_from_request(&req) {
-        Ok(Some(user_data)) => {
-            info!("Userinfo endpoint: returning user data for user: {}", user_data.email);
-            
-            // Create userinfo response in standard OAuth2 format
-            let userinfo_response = serde_json::json!({
-                "sub": user_data.email,
-                "email": user_data.email,
-                "name": user_data.name,
-                "provider": user_data.provider,
-                "provider_id": user_data.provider_id,
-                "client_ip": user_data.client_ip,
-                "user_agent": user_data.user_agent,
-                "platform": user_data.platform,
-                "lang": user_data.lang,
-                "mobile": user_data.mobile
-            });
-            
-            Ok(HttpResponse::Ok().json(userinfo_response))
+    use crate::utils::cookie_utils::USER_COOKIE_NAME;
+
+    // Get the vouchrs_user cookie directly
+    if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
+        // Attempt to decrypt the cookie value
+        match jwt_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
+            Ok(user_data) => {
+                info!("Userinfo endpoint: returning raw user data for user: {}", user_data.email);
+                
+                // Return the complete user data as raw JSON
+                Ok(HttpResponse::Ok().json(user_data))
+            },
+            Err(e) => {
+                error!("Userinfo endpoint: Error decrypting user cookie: {}", e);
+                Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+                    actix_web::http::StatusCode::UNAUTHORIZED,
+                    serde_json::json!({
+                        "error": "invalid_cookie", 
+                        "error_description": "Failed to decrypt user cookie data",
+                        "details": e.to_string()
+                    })
+                ))
+            }
         }
-        Ok(None) => {
-            debug!("Userinfo endpoint: No user data found in cookies");
-            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                actix_web::http::StatusCode::UNAUTHORIZED,
-                serde_json::json!({
-                    "error": "no_user_data",
-                    "error_description": "No user data cookie found. Please authenticate first."
-                })
-            ))
-        }
-        Err(e) => {
-            error!("Userinfo endpoint: Error retrieving user data: {}", e);
-            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                actix_web::http::StatusCode::UNAUTHORIZED,
-                serde_json::json!({
-                    "error": "invalid_request", 
-                    "error_description": "User data validation failed"
-                })
-            ))
-        }
+    } else {
+        debug!("Userinfo endpoint: No vouchrs_user cookie found");
+        Ok(crate::utils::response_builder::ResponseBuilder::json_response(
+            actix_web::http::StatusCode::UNAUTHORIZED,
+            serde_json::json!({
+                "error": "no_user_data",
+                "error_description": "No user data cookie found. Please authenticate first."
+            })
+        ))
     }
 }
 
@@ -85,13 +77,11 @@ pub async fn jwt_oauth_debug(
                     "id_token": session.id_token,
                     "refresh_token": session.refresh_token,
                 },
-                "user_data": user_data,
                 "debug_info": {
                     "session_cookie_name": "vouchrs_session",
                     "user_cookie_name": "vouchrs_user",
+                    "user_cookie": user_data,
                     "timestamp": chrono::Utc::now(),
-                    "note": "Access tokens no longer stored in sessions - check user_data for user information",
-                    "warning": "This endpoint exposes sensitive OAuth tokens and cookie data. Only use in development!"
                 }
             });
 
