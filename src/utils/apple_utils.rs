@@ -49,8 +49,7 @@ pub fn process_apple_user_info(
     let parse_result = match source {
         Value::Object(_) => serde_json::from_value::<AppleUserInfo>(source.clone()),
         Value::String(s) => serde_json::from_str::<AppleUserInfo>(s),
-        _ => Err(serde_json::Error::io(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        _ => Err(serde_json::Error::io(std::io::Error::other(
             "user field is not an object or JSON string",
         ))),
     };

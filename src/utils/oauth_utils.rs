@@ -121,7 +121,7 @@ mod tests {
     fn test_parse_stateless_oauth_state_with_provider_without_redirect() {
         let state = "csrf_token|google";
 
-        let result = parse_stateless_oauth_state(&state);
+        let result = parse_stateless_oauth_state(state);
 
         // Should succeed with the new format
         assert!(result.is_ok());
