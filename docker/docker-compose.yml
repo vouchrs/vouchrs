@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  vouchrs:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../secrets:/app/secrets:ro  # Mount secrets directory for OAuth credentials and Settings.toml
+      - ../custom-ui:/app/static:ro
+      # Optionally override with custom secrets and config:
+      # - ./custom-secrets:/usr/share/vouchrs/secrets:ro
+    env_file: ../.env  # Load environment variables from .env file
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+    
+    # Restart policy
+    restart: no

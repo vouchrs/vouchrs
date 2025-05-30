@@ -1,0 +1,46 @@
+# Build artifacts
+target/
+# Note: Cargo.lock is needed for --locked builds, so don't exclude it
+
+# IDE files
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Environment files (should be provided at runtime)
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Test files
+tests/
+benches/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose.yml

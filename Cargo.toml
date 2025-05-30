@@ -1,0 +1,57 @@
+[package]
+name = "vouchrs"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight, high-performance OIDC reverse proxy built in Rust"
+license = "MIT"
+authors = ["Michael Burch <me@michaelburch.net>"]
+repository = "https://github.com/vouchrs/vouchrs"
+homepage = "https://github.com/vouchrs/vouchrs"
+documentation = "https://docs.rs/vouchrs"
+keywords = ["oidc", "oauth2", "authentication", "proxy", "rust", "actix-web"]
+categories = ["authentication", "web-programming"]
+
+# Optimize for smaller binaries
+[profile.release]
+opt-level = "z"          # Optimize for size instead of speed
+lto = true               # Enable Link Time Optimization
+codegen-units = 1        # Better optimization with single codegen unit
+panic = "abort"          # Don't include stack unwinding code
+strip = true             # Strip symbols from binary
+
+[features]
+default = []
+
+[dependencies]
+# Core web framework
+actix-web = { version = "4.4", default-features = false, features = ["macros", "compress-gzip", "cookies"] }
+actix-cors = { version = "0.7", default-features = false }
+tokio = { version = "1.0", default-features = false, features = ["macros", "rt-multi-thread"] }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false }
+basic-toml = { version = "0.1", default-features = false }
+
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+url = { version = "2.4", default-features = false }
+
+# Utilities
+base64 = { version = "0.22", default-features = false }
+uuid = { version = "1.0", default-features = false, features = ["v4", "fast-rng"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "std","clock" ] }
+anyhow = { version = "1.0", default-features = false }
+log = { version = "0.4", default-features = false }
+env_logger = { version = "0.10", default-features = false }
+
+# Crypto (keep these for security)
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8"] }
+hmac-sha256 = { version = "1.1", default-features = false }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+
+[dev-dependencies]
+tempfile = "3.20.0"
+

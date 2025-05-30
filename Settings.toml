@@ -1,0 +1,119 @@
+# Vouchrs Configuration
+# This file contains default settings that can be overridden by environment variables
+
+[application]
+# Server bind address and port
+# Environment variables: HOST, PORT
+host = "0.0.0.0"
+port = 8080
+
+# Base URL for OAuth redirects (will have /oauth2/callback appended)
+# Full callback URL will be: {redirect_base_url}/oauth2/callback
+# Environment variable: REDIRECT_BASE_URL
+redirect_base_url = "http://localhost:8080"
+
+# CORS settings - comma-separated list of allowed origins
+# Environment variable: CORS_ORIGINS
+cors_origins = "http://localhost:3000,http://localhost:8080"
+
+[proxy]
+# Upstream service URL
+# Environment variable: UPSTREAM_URL
+upstream_url = "http://localhost:3000"
+
+[static_files]
+# Directory containing static assets (HTML, CSS, JS, images)
+# Environment variable: STATIC_FOLDER_PATH
+assets_folder = "src/static"
+
+[jwt]
+# JWT session expiration in hours
+# Environment variable: JWT_SESSION_DURATION_HOURS
+session_duration_hours = 24
+
+# Session secret for encrypting session cookies
+# Environment variable: SESSION_SECRET
+session_secret = "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+
+# JWT issuer claim (iss) - identifies who issued the token
+# Environment variable: JWT_ISSUER
+issuer = "https://vouchrs.app"
+
+# JWT audience claim (aud) - identifies the intended recipient of the token
+# Environment variable: JWT_AUDIENCE
+audience = "https://api.example.com"
+
+[cookies]
+# Cookie security settings
+# Environment variable: COOKIE_SECURE
+secure = false
+
+[logging]
+# Logging level: error, warn, info, debug, trace
+# Environment variable: RUST_LOG
+level = "info"
+
+# OAuth Provider Configuration
+# At least one provider must be configured for Vouchrs to start
+# Each provider can be customized with discovery URLs, custom endpoints, scopes, etc.
+# 
+# Secret values can be set directly in this file OR via environment variables
+# Environment variables take precedence over direct values
+
+[[providers]]
+name = "google"
+display_name = "Google"
+discovery_url = "https://accounts.google.com/.well-known/openid-configuration"
+signout_url = "https://accounts.google.com/logout"
+scopes = ["openid", "email", "profile"]
+# Direct values (use for development/testing - NOT recommended for production)
+# client_id = "your-google-client-id.googleusercontent.com"
+# client_secret = "your-google-client-secret"
+# Environment variable overrides (recommended for production)
+client_id_env = "GOOGLE_CLIENT_ID"
+client_secret_env = "GOOGLE_CLIENT_SECRET"
+enabled = true
+extra_auth_params = { access_type = "offline", prompt = "consent" }
+
+[[providers]]
+name = "apple"
+display_name = "Apple"
+discovery_url = "https://appleid.apple.com/.well-known/openid-configuration"
+scopes = ["openid", "email", "name"]
+# Direct values (use for development/testing - NOT recommended for production)
+# client_id = "com.yourcompany.yourapp"
+# Environment variable overrides (recommended for production)
+client_id_env = "APPLE_CLIENT_ID"
+enabled = true
+extra_auth_params = { response_mode = "form_post" }
+# JWT signing configuration for Apple
+# Direct values
+# team_id = "ABCD123456", key_id = "XYZ987654", private_key_path = "/path/to/apple-private-key.p8"
+# Environment variable overrides (recommended for production)
+jwt_signing = { team_id_env = "APPLE_TEAM_ID", key_id_env = "APPLE_KEY_ID", private_key_path_env = "APPLE_PRIVATE_KEY_PATH" }
+
+[[providers]]
+name = "microsoft"
+display_name = "Microsoft"
+discovery_url = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+scopes = ["openid", "email", "profile"]
+# Example: Using direct values for development
+client_id = "dev-microsoft-client-id"
+client_secret = "dev-microsoft-client-secret"
+# Environment variable overrides (will take precedence if set)
+client_id_env = "MICROSOFT_CLIENT_ID"
+client_secret_env = "MICROSOFT_CLIENT_SECRET"
+enabled = false  # Set to true to enable
+extra_auth_params = { response_type = "code", response_mode = "query" }
+
+# Example: GitHub provider with mixed configuration
+[[providers]]
+name = "github"
+display_name = "GitHub"
+discovery_url = "https://github.com/.well-known/openid-configuration"
+scopes = ["read:user", "user:email"]
+# Using environment variables only
+client_id_env = "GITHUB_CLIENT_ID"
+client_secret_env = "GITHUB_CLIENT_SECRET"
+enabled = false
+extra_auth_params = { allow_signup = "true" }
