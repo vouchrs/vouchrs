@@ -1,6 +1,6 @@
 // Tests for JWT handlers - now focused on SessionBuilder functionality
-use crate::utils::apple_utils::{AppleUserInfo, AppleUserName};
 use crate::handlers::session_builder::SessionBuilder;
+use crate::utils::apple_utils::{AppleUserInfo, AppleUserName};
 use chrono::Utc;
 
 #[test]
@@ -23,7 +23,7 @@ fn test_session_builder_with_apple_user_info_fallback() {
         expires_at,
         Some(apple_user_info),
     );
-    
+
     assert!(result.is_ok());
     let session = result.unwrap();
     assert_eq!(session.user_email, "fallback@example.com"); // From ID token
@@ -37,13 +37,9 @@ fn test_session_builder_with_google_tokens() {
     let id_token = Some("eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiZW1haWwiOiJnb29nbGVAZXhhbXBsZS5jb20iLCJuYW1lIjoiR29vZ2xlIFVzZXIifQ.invalid".to_string());
     let refresh_token = None;
     let expires_at = Utc::now();
-    let result = SessionBuilder::build_session(
-        "google".to_string(),
-        id_token,
-        refresh_token,
-        expires_at,
-    );
-    
+    let result =
+        SessionBuilder::build_session("google".to_string(), id_token, refresh_token, expires_at);
+
     assert!(result.is_ok());
     let session = result.unwrap();
     assert_eq!(session.user_email, "google@example.com");
@@ -57,13 +53,9 @@ fn test_session_builder_with_invalid_token() {
     let id_token = Some("completely.invalid.token".to_string());
     let refresh_token = None;
     let expires_at = Utc::now();
-    let result = SessionBuilder::build_session(
-        "test".to_string(),
-        id_token,
-        refresh_token,
-        expires_at,
-    );
-    
+    let result =
+        SessionBuilder::build_session("test".to_string(), id_token, refresh_token, expires_at);
+
     // This should fail because the token format is invalid
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Base64 decode failed"));
@@ -75,13 +67,9 @@ fn test_session_builder_without_id_token() {
     let id_token = None;
     let refresh_token = None;
     let expires_at = Utc::now();
-    let result = SessionBuilder::build_session(
-        "test".to_string(),
-        id_token,
-        refresh_token,
-        expires_at,
-    );
-    
+    let result =
+        SessionBuilder::build_session("test".to_string(), id_token, refresh_token, expires_at);
+
     // This should fail because no ID token is available
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("No ID token available"));

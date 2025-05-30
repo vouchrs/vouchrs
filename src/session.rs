@@ -1,14 +1,17 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
 use crate::utils::cookie_utils::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
-use actix_web::{HttpRequest, cookie::Cookie, HttpResponse, ResponseError};
-use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
-use base64::{Engine as _, engine::general_purpose};
+use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
+};
+use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use rand::Rng;
+use serde::{de::DeserializeOwned, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use anyhow::{Result, anyhow, Context};
-use serde::{Serialize, de::DeserializeOwned};
 
 const NONCE_SIZE: usize = 12; // 96 bits for AES-GCM
 
@@ -31,7 +34,7 @@ impl From<anyhow::Error> for JwtSessionError {
 impl ResponseError for JwtSessionError {
     fn error_response(&self) -> HttpResponse {
         let error_msg = self.0.to_string();
-        
+
         if error_msg.contains("Session expired") || error_msg.contains("Session not found") {
             HttpResponse::Unauthorized().json("Authentication required")
         } else {
@@ -53,15 +56,15 @@ impl SessionManager {
         let mut encryption_key = [0u8; 32];
         let key_len = std::cmp::min(key.len(), 32);
         encryption_key[..key_len].copy_from_slice(&key[..key_len]);
-        
+
         // If key is shorter than 32 bytes, derive the rest using a simple hash
         if key_len < 32 {
             for i in key_len..32 {
                 encryption_key[i] = encryption_key[i % key_len].wrapping_add(i as u8);
             }
         }
-        
-        Self { 
+
+        Self {
             encryption_key,
             cookie_secure,
         }
@@ -82,12 +85,12 @@ impl SessionManager {
             .to_string();
 
         let session: VouchrsSession = self.decrypt_data(&cookie_value)?;
-        
+
         // Check if tokens are expired
         if session.expires_at <= Utc::now() {
             return Err(anyhow!("Session expired"));
         }
-        
+
         Ok(session)
     }
 
@@ -115,20 +118,29 @@ impl SessionManager {
     }
 
     /// Create a temporary cookie for storing OAuth state during the OAuth flow
-    pub fn create_temporary_state_cookie(&self, oauth_state: &OAuthState) -> Result<Cookie<'static>> {
+    pub fn create_temporary_state_cookie(
+        &self,
+        oauth_state: &OAuthState,
+    ) -> Result<Cookie<'static>> {
         // Use the ToCookie trait implementation
         oauth_state.to_cookie(self)
     }
 
     /// Get OAuth state from temporary cookie in request
-    pub fn get_temporary_state_from_request(&self, req: &HttpRequest) -> Result<Option<OAuthState>> {
+    pub fn get_temporary_state_from_request(
+        &self,
+        req: &HttpRequest,
+    ) -> Result<Option<OAuthState>> {
         log::info!("Looking for temporary state cookie 'vouchr_oauth_state'");
-        
+
         // Log all cookies in the request for debugging
         crate::utils::cookie_utils::log_cookies(req);
-        
+
         if let Some(cookie) = req.cookie("vouchr_oauth_state") {
-            log::info!("Found temporary state cookie with value length: {}", cookie.value().len());
+            log::info!(
+                "Found temporary state cookie with value length: {}",
+                cookie.value().len()
+            );
             match self.decrypt_data::<OAuthState>(cookie.value()) {
                 Ok(oauth_state) => Ok(Some(oauth_state)),
                 Err(e) => {
@@ -151,10 +163,13 @@ impl SessionManager {
                     if session.expires_at <= Utc::now() {
                         return Ok(None);
                     }
-                    
+
                     // Check if session needs token refresh (5 minutes before expiration)
                     if session.expires_at - chrono::Duration::minutes(5) <= Utc::now() {
-                        log::warn!("OAuth token needs refresh for provider: {}", session.provider);
+                        log::warn!(
+                            "OAuth token needs refresh for provider: {}",
+                            session.provider
+                        );
                     }
                     Ok(Some(session))
                 }
@@ -176,17 +191,21 @@ impl SessionManager {
     /// Decrypt and validate session from cookie value
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
         let session: VouchrsSession = self.decrypt_data(cookie_value)?;
-        
+
         // Check if session has expired
         if session.expires_at <= Utc::now() {
             return Err(anyhow!("Session expired"));
         }
-        
+
         Ok(session)
     }
 
     /// Get OAuth state from either temporary cookie (Google) or stateless JWT (Apple)
-    pub fn get_oauth_state_from_request(&self, req: &HttpRequest, _received_state: &str) -> Result<Option<OAuthState>> {
+    pub fn get_oauth_state_from_request(
+        &self,
+        req: &HttpRequest,
+        _received_state: &str,
+    ) -> Result<Option<OAuthState>> {
         // Only try cookie-based state (works for both Google and Apple if you handle Apple differently)
         self.get_temporary_state_from_request(req)
     }
@@ -231,12 +250,17 @@ impl SessionManager {
     // No longer needed - replaced with generic encrypt_data and decrypt_data methods
 
     /// Generic method to create a cookie with encrypted data
-    pub fn create_cookie<T: Serialize>(&self, name: String, data: Option<&T>, options: CookieOptions) -> Result<Cookie<'static>> {
+    pub fn create_cookie<T: Serialize>(
+        &self,
+        name: String,
+        data: Option<&T>,
+        options: CookieOptions,
+    ) -> Result<Cookie<'static>> {
         let value = match data {
             Some(data) => self.encrypt_data(data)?,
             None => String::new(),
         };
-        
+
         Ok(Cookie::build(name, value)
             .http_only(options.http_only)
             .secure(self.cookie_secure && options.secure)
@@ -249,8 +273,7 @@ impl SessionManager {
     /// Generic encryption function for any serializable data
     pub fn encrypt_data<T: Serialize>(&self, data: &T) -> Result<String> {
         // Serialize the data to JSON
-        let json_data = serde_json::to_string(data)
-            .context("Failed to serialize data")?;
+        let json_data = serde_json::to_string(data).context("Failed to serialize data")?;
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; NONCE_SIZE];
@@ -302,46 +325,50 @@ impl SessionManager {
 
 /// Implementation of ToCookie for VouchrsSession
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
-    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
-        jwt_manager.create_cookie(
+    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
+        session_manager.create_cookie(
             COOKIE_NAME.to_string(),
             Some(self),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
                 ..Default::default()
-            }
+            },
         )
     }
 }
 
 /// Implementation of ToCookie for VouchrsUserData
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
-    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
-        jwt_manager.create_cookie(
+    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
+        session_manager.create_cookie(
             USER_COOKIE_NAME.to_string(),
             Some(self),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
                 ..Default::default()
-            }
+            },
         )
     }
 }
 
 /// Implementation of ToCookie for OAuthState
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for OAuthState {
-    fn to_cookie(&self, jwt_manager: &SessionManager) -> Result<Cookie<'static>> {
+    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         let options = CookieOptions {
             same_site: actix_web::cookie::SameSite::Lax,
             max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
             ..Default::default()
         };
-        
-        let cookie = jwt_manager.create_cookie("vouchr_oauth_state".to_string(), Some(self), options)?;
-        
-        log::info!("Creating temporary state cookie: secure={}, name=vouchr_oauth_state, encrypted_len={}", 
-                  jwt_manager.cookie_secure, cookie.value().len());
-                  
+
+        let cookie =
+            session_manager.create_cookie("vouchr_oauth_state".to_string(), Some(self), options)?;
+
+        log::info!(
+            "Creating temporary state cookie: secure={}, name=vouchr_oauth_state, encrypted_len={}",
+            session_manager.cookie_secure,
+            cookie.value().len()
+        );
+
         Ok(cookie)
     }
 }
@@ -357,8 +384,8 @@ pub fn current_timestamp() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
     use crate::utils::test_helpers::create_test_session;
+    use chrono::Duration;
 
     #[test]
     fn test_token_encryption_decryption() {
@@ -409,7 +436,7 @@ mod tests {
 
         println!("Token JSON size: {} bytes", token_json.len());
         println!("Token cookie size: {} bytes", token_size);
-        
+
         // Log the compact nature of the token data
         assert!(!token_json.is_empty());
         assert!(!token_cookie.value().is_empty());
@@ -443,7 +470,7 @@ mod tests {
         let cookie = session.to_cookie(&manager).unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
-        
+
         // Verify we can decrypt the cookie
         let decrypted: VouchrsSession = manager.decrypt_data(cookie.value()).unwrap();
         assert_eq!(session.provider, decrypted.provider);

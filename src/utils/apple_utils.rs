@@ -1,7 +1,7 @@
 // Apple-specific utility functions
 use crate::oauth::OAuthCallback;
 use log::debug;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Parse and process Apple user information from various sources
@@ -41,27 +41,26 @@ pub struct AppleUserInfo {
     pub email: Option<String>,
 }
 
-
 pub fn process_apple_user_info(
-    source: &Value, 
-    fallback_info: Option<AppleUserInfo>
+    source: &Value,
+    fallback_info: Option<AppleUserInfo>,
 ) -> Option<AppleUserInfo> {
     // Try to parse the Apple user info from the JSON value
     let parse_result = match source {
         Value::Object(_) => serde_json::from_value::<AppleUserInfo>(source.clone()),
         Value::String(s) => serde_json::from_str::<AppleUserInfo>(s),
         _ => Err(serde_json::Error::io(std::io::Error::new(
-            std::io::ErrorKind::Other, 
-            "user field is not an object or JSON string"
-        )))
+            std::io::ErrorKind::Other,
+            "user field is not an object or JSON string",
+        ))),
     };
-    
+
     // Return the parsed value or fall back to existing info
     match parse_result {
         Ok(parsed_user) => {
             debug!("Parsed Apple user info: {:?}", parsed_user);
             Some(parsed_user)
-        },
+        }
         Err(_) => {
             debug!("Failed to parse Apple user info, using fallback if available");
             fallback_info
@@ -75,9 +74,11 @@ pub fn process_apple_user_info(
 /// extracting the user JSON from the callback data
 pub fn process_apple_callback(
     callback_data: &OAuthCallback,
-    fallback_info: Option<AppleUserInfo>
+    fallback_info: Option<AppleUserInfo>,
 ) -> Option<AppleUserInfo> {
-    callback_data.user.as_ref()
+    callback_data
+        .user
+        .as_ref()
         .and_then(|user_json| process_apple_user_info(user_json, None))
         .or(fallback_info)
 }
@@ -85,18 +86,24 @@ pub fn process_apple_callback(
 /// Generate Apple client secret JWT
 /// This function creates a properly signed JWT that can be used as a client secret
 /// with Apple's OAuth endpoints.
-pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConfig, client_id: &str) -> Result<String, String> {
-    use p256::ecdsa::{SigningKey, Signature, signature::Signer};
+pub fn generate_apple_client_secret(
+    jwt_config: &crate::settings::JwtSigningConfig,
+    client_id: &str,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
+    use chrono::{Duration, Utc};
+    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
     use p256::pkcs8::DecodePrivateKey;
-    use base64::{Engine as _, engine::general_purpose};
-    use chrono::{Utc, Duration};
-    
+
     // Get required values using the getter methods
-    let team_id = jwt_config.get_team_id()
+    let team_id = jwt_config
+        .get_team_id()
         .ok_or_else(|| "Team ID not configured for Apple provider".to_string())?;
-    let key_id = jwt_config.get_key_id()
+    let key_id = jwt_config
+        .get_key_id()
         .ok_or_else(|| "Key ID not configured for Apple provider".to_string())?;
-    let private_key_path = jwt_config.get_private_key_path()
+    let private_key_path = jwt_config
+        .get_private_key_path()
         .ok_or_else(|| "Private key path not configured for Apple provider".to_string())?;
 
     // Read the private key file
@@ -117,7 +124,7 @@ pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConf
     // Create JWT claims
     let now = Utc::now();
     let exp = now + Duration::minutes(5);
-    
+
     let claims = serde_json::json!({
         "iss": team_id,
         "iat": now.timestamp(),
@@ -127,10 +134,10 @@ pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConf
     });
 
     // Encode header and payload
-    let header_json = serde_json::to_string(&header)
-        .map_err(|_| "Failed to serialize JWT header".to_string())?;
-    let claims_json = serde_json::to_string(&claims)
-        .map_err(|_| "Failed to serialize JWT claims".to_string())?;
+    let header_json =
+        serde_json::to_string(&header).map_err(|_| "Failed to serialize JWT header".to_string())?;
+    let claims_json =
+        serde_json::to_string(&claims).map_err(|_| "Failed to serialize JWT claims".to_string())?;
 
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
@@ -142,7 +149,7 @@ pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConf
     let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
 
     let jwt = format!("{}.{}", message, signature_b64);
-    
+
     log::debug!("Generated Apple client secret JWT");
     Ok(jwt)
 }
@@ -150,25 +157,29 @@ pub fn generate_apple_client_secret(jwt_config: &crate::settings::JwtSigningConf
 /// Generate Apple client secret JWT for token refresh
 /// This function creates a properly signed JWT that can be used as a client secret
 /// with Apple's OAuth token refresh endpoint.
-pub fn generate_apple_client_secret_for_refresh(jwt_config: &crate::settings::JwtSigningConfig, provider_settings: &crate::settings::ProviderSettings) -> Result<String, String> {
-    use serde::{Serialize, Deserialize};
-    
+pub fn generate_apple_client_secret_for_refresh(
+    jwt_config: &crate::settings::JwtSigningConfig,
+    provider_settings: &crate::settings::ProviderSettings,
+) -> Result<String, String> {
+    use serde::{Deserialize, Serialize};
+
     #[derive(Debug, Serialize, Deserialize)]
     struct AppleJwtClaims {
-        iss: String,    // Team ID
-        iat: i64,       // Issued at time
-        exp: i64,       // Expiration time
-        aud: String,    // Audience (always "https://appleid.apple.com")
-        sub: String,    // Client ID
+        iss: String, // Team ID
+        iat: i64,    // Issued at time
+        exp: i64,    // Expiration time
+        aud: String, // Audience (always "https://appleid.apple.com")
+        sub: String, // Client ID
     }
 
     // Get client_id from provider settings
-    let client_id = provider_settings.get_client_id()
+    let client_id = provider_settings
+        .get_client_id()
         .ok_or_else(|| "Client ID not configured for Apple provider".to_string())?;
-    
+
     // Delegate to the general purpose function
     let jwt = generate_apple_client_secret(jwt_config, &client_id)?;
-    
+
     log::debug!("Generated Apple client secret JWT for token refresh");
     Ok(jwt)
 }
@@ -186,10 +197,10 @@ mod tests {
             },
             email: Some("john.doe@apple.com".to_string()),
         };
-        
+
         let value = serde_json::to_value(&apple_user_info).unwrap();
         let parsed = process_apple_user_info(&value, None).unwrap();
-        
+
         assert_eq!(parsed.email, Some("john.doe@apple.com".to_string()));
         assert_eq!(parsed.name.first_name, Some("John".to_string()));
         assert_eq!(parsed.name.last_name, Some("Doe".to_string()));
@@ -204,11 +215,11 @@ mod tests {
             },
             email: Some("jane.smith@apple.com".to_string()),
         };
-        
+
         let json_string = serde_json::to_string(&apple_user_info).unwrap();
         let value = Value::String(json_string);
         let parsed = process_apple_user_info(&value, None).unwrap();
-        
+
         assert_eq!(parsed.email, Some("jane.smith@apple.com".to_string()));
         assert_eq!(parsed.name.first_name, Some("Jane".to_string()));
         assert_eq!(parsed.name.last_name, Some("Smith".to_string()));
@@ -224,10 +235,10 @@ mod tests {
             },
             email: Some("fallback@example.com".to_string()),
         };
-        
+
         let value = Value::Number(serde_json::Number::from(42));
         let result = process_apple_user_info(&value, Some(fallback.clone()));
-        
+
         assert!(result.is_some());
         let user = result.unwrap();
         assert_eq!(user.email, Some("fallback@example.com".to_string()));

@@ -13,11 +13,11 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::models::{CompleteSessionData};
-use crate::utils::apple_utils::AppleUserInfo;
 use crate::handlers::helpers::decode_jwt_payload;
-use chrono::{DateTime, Utc, TimeZone};
-use log::{debug, warn, info};
+use crate::models::CompleteSessionData;
+use crate::utils::apple_utils::AppleUserInfo;
+use chrono::{DateTime, TimeZone, Utc};
+use log::{debug, info, warn};
 use serde_json::Value;
 
 pub struct SessionBuilder;
@@ -42,32 +42,39 @@ impl SessionBuilder {
         expires_at: DateTime<Utc>,
         apple_user_info: Option<AppleUserInfo>,
     ) -> Result<CompleteSessionData, String> {
-        let id_token_ref = id_token.as_ref()
-            .ok_or("No ID token available")?;
+        let id_token_ref = id_token.as_ref().ok_or("No ID token available")?;
 
         let claims = decode_jwt_payload(id_token_ref)
             .map_err(|e| format!("Failed to decode ID token: {}", e))?;
 
-        info!("Building session from ID token claims for provider: {}", provider);
-        debug!("ID token claims: {}", serde_json::to_string_pretty(&claims).unwrap_or_default());
+        info!(
+            "Building session from ID token claims for provider: {}",
+            provider
+        );
+        debug!(
+            "ID token claims: {}",
+            serde_json::to_string_pretty(&claims).unwrap_or_default()
+        );
 
         // Extract required claims
         let provider_id = Self::extract_subject(&claims)?;
-        let user_email = Self::extract_email(&claims).or_else(|| {
-            // Fallback to Apple user info if email not in token
-            if let Some(ref apple_info) = apple_user_info {
-                if let Some(ref email) = apple_info.email {
-                    debug!("Using Apple user info email as fallback: {}", email);
-                    return Some(email.clone());
+        let user_email = Self::extract_email(&claims)
+            .or_else(|| {
+                // Fallback to Apple user info if email not in token
+                if let Some(ref apple_info) = apple_user_info {
+                    if let Some(ref email) = apple_info.email {
+                        debug!("Using Apple user info email as fallback: {}", email);
+                        return Some(email.clone());
+                    }
                 }
-            }
-            debug!("No email found in ID token or Apple user info, using default");
-            Some("user@example.com".to_string())
-        }).unwrap(); // This unwrap is safe because we provide a default
-        
+                debug!("No email found in ID token or Apple user info, using default");
+                Some("user@example.com".to_string())
+            })
+            .unwrap(); // This unwrap is safe because we provide a default
+
         // Extract optional claims
         let mut user_name = Self::extract_name(&claims);
-        
+
         // Use Apple user info name as fallback if name not found in ID token
         if user_name.is_none() {
             if let Some(ref apple_info) = apple_user_info {
@@ -84,8 +91,10 @@ impl SessionBuilder {
         // Normalize provider name from issuer if available
         let normalized_provider = Self::normalize_provider(&provider, &claims);
 
-        info!("Session built successfully - Email: {}, Provider: {}, Provider ID: {}, Name: {:?}", 
-              user_email, normalized_provider, provider_id, user_name);
+        info!(
+            "Session built successfully - Email: {}, Provider: {}, Provider ID: {}, Name: {:?}",
+            user_email, normalized_provider, provider_id, user_name
+        );
 
         Ok(CompleteSessionData {
             user_email,
@@ -101,7 +110,8 @@ impl SessionBuilder {
 
     /// Extract the subject (sub) claim - maps to provider_id
     fn extract_subject(claims: &Value) -> Result<String, String> {
-        claims.get("sub")
+        claims
+            .get("sub")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .ok_or("Missing or invalid 'sub' claim in ID token".to_string())
@@ -109,7 +119,8 @@ impl SessionBuilder {
 
     /// Extract the email claim - maps to user_email (returns Option for fallback logic)
     pub fn extract_email(claims: &Value) -> Option<String> {
-        claims.get("email")
+        claims
+            .get("email")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
     }
@@ -117,7 +128,7 @@ impl SessionBuilder {
     /// Extract the name claim - maps to user_name (optional)
     fn extract_name(claims: &Value) -> Option<String> {
         // Try different name claim formats used by different providers
-        
+
         // Google uses 'name' field directly
         if let Some(name) = claims.get("name").and_then(|v| v.as_str()) {
             if !name.trim().is_empty() {
@@ -127,13 +138,22 @@ impl SessionBuilder {
         }
 
         // Apple and others might use given_name + family_name
-        let given_name = claims.get("given_name").and_then(|v| v.as_str()).unwrap_or("");
-        let family_name = claims.get("family_name").and_then(|v| v.as_str()).unwrap_or("");
-        
+        let given_name = claims
+            .get("given_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let family_name = claims
+            .get("family_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
         if !given_name.is_empty() || !family_name.is_empty() {
             let full_name = format!("{} {}", given_name, family_name).trim().to_string();
             if !full_name.is_empty() {
-                debug!("Extracted name from given_name + family_name: {}", full_name);
+                debug!(
+                    "Extracted name from given_name + family_name: {}",
+                    full_name
+                );
                 return Some(full_name);
             }
         }
@@ -144,18 +164,23 @@ impl SessionBuilder {
 
     /// Generic timestamp extraction helper
     fn extract_timestamp(claims: &Value, field_name: &str) -> Option<DateTime<Utc>> {
-        claims.get(field_name)
+        claims
+            .get(field_name)
             .and_then(|v| v.as_i64())
-            .and_then(|timestamp| {
-                match Utc.timestamp_opt(timestamp, 0) {
-                    chrono::LocalResult::Single(dt) => {
-                        debug!("Extracted {} from '{}' claim: {}", field_name, field_name, dt);
-                        Some(dt)
-                    }
-                    _ => {
-                        warn!("Invalid '{}' timestamp in ID token: {}", field_name, timestamp);
-                        None
-                    }
+            .and_then(|timestamp| match Utc.timestamp_opt(timestamp, 0) {
+                chrono::LocalResult::Single(dt) => {
+                    debug!(
+                        "Extracted {} from '{}' claim: {}",
+                        field_name, field_name, dt
+                    );
+                    Some(dt)
+                }
+                _ => {
+                    warn!(
+                        "Invalid '{}' timestamp in ID token: {}",
+                        field_name, timestamp
+                    );
+                    None
                 }
             })
     }
@@ -169,7 +194,7 @@ impl SessionBuilder {
     fn normalize_provider(provider: &str, claims: &Value) -> String {
         if let Some(issuer) = claims.get("iss").and_then(|v| v.as_str()) {
             debug!("Found issuer claim: {}", issuer);
-            
+
             // Map common issuer values to normalized provider names
             if issuer.contains("accounts.google.com") {
                 return "google".to_string();
@@ -177,7 +202,7 @@ impl SessionBuilder {
                 return "apple".to_string();
             }
         }
-        
+
         // Fall back to the provider passed in from the state
         provider.to_string()
     }
@@ -187,14 +212,15 @@ impl SessionBuilder {
 mod tests {
     use super::*;
     use crate::utils::apple_utils::{AppleUserInfo, AppleUserName};
-    use chrono::Utc;
     use base64::Engine as _;
+    use chrono::Utc;
     use serde_json::json;
 
     fn minimal_id_token(sub: &str) -> String {
         // JWT with only 'sub' claim, base64-encoded header and payload, signature ignored
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"none\"}");
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!("{{\"sub\":\"{}\"}}", sub).as_bytes());
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(format!("{{\"sub\":\"{}\"}}", sub).as_bytes());
         format!("{}.{}.ignored", header, payload)
     }
 
@@ -217,9 +243,13 @@ mod tests {
             refresh_token.clone(),
             expires_at,
             Some(apple_user_info.clone()),
-        ).expect("Session should be built");
+        )
+        .expect("Session should be built");
         assert_eq!(session.user_email, apple_user_info.email.clone().unwrap());
-        assert_eq!(session.user_name.clone().unwrap(), apple_user_info.name.full_name());
+        assert_eq!(
+            session.user_name.clone().unwrap(),
+            apple_user_info.name.full_name()
+        );
         assert_eq!(session.provider, "apple");
         assert_eq!(session.provider_id, "apple-sub-123");
 
@@ -235,7 +265,7 @@ mod tests {
             "sub": "12345",
             "email": "test@example.com"
         });
-        
+
         assert_eq!(SessionBuilder::extract_subject(&claims).unwrap(), "12345");
     }
 
@@ -244,7 +274,7 @@ mod tests {
         let claims = json!({
             "email": "test@example.com"
         });
-        
+
         assert!(SessionBuilder::extract_subject(&claims).is_err());
     }
 
@@ -253,8 +283,11 @@ mod tests {
         let claims = json!({
             "name": "John Doe"
         });
-        
-        assert_eq!(SessionBuilder::extract_name(&claims), Some("John Doe".to_string()));
+
+        assert_eq!(
+            SessionBuilder::extract_name(&claims),
+            Some("John Doe".to_string())
+        );
     }
 
     #[test]
@@ -263,8 +296,11 @@ mod tests {
             "given_name": "John",
             "family_name": "Doe"
         });
-        
-        assert_eq!(SessionBuilder::extract_name(&claims), Some("John Doe".to_string()));
+
+        assert_eq!(
+            SessionBuilder::extract_name(&claims),
+            Some("John Doe".to_string())
+        );
     }
 
     #[test]
@@ -273,7 +309,7 @@ mod tests {
             "sub": "12345",
             "email": "test@example.com"
         });
-        
+
         assert_eq!(SessionBuilder::extract_name(&claims), None);
     }
 }

@@ -5,30 +5,35 @@ use base64::{engine::general_purpose, Engine as _};
 // Helper function to get sign-in page HTML (reused from original handlers)
 pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
     let html_path = format!("{}/sign-in.html", settings.static_files.assets_folder);
-    std::fs::read_to_string(&html_path).unwrap_or_else(|_| {
-        generate_dynamic_sign_in_page(settings)
-    })
+    std::fs::read_to_string(&html_path).unwrap_or_else(|_| generate_dynamic_sign_in_page(settings))
 }
 
 // Generate dynamic sign-in page with providers from configuration
 pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
     let enabled_providers = settings.get_enabled_providers();
-    
+
     let provider_buttons = if enabled_providers.is_empty() {
         "<p>No OAuth providers are configured. Please check your configuration.</p>".to_string()
     } else {
-        enabled_providers.iter().map(|provider| {
-            let class = format!("{}-btn", provider.name);
-            format!(
-                r#"<a href="/oauth2/sign_in?provider={}" class="provider-btn {}">
+        enabled_providers
+            .iter()
+            .map(|provider| {
+                let class = format!("{}-btn", provider.name);
+                format!(
+                    r#"<a href="/oauth2/sign_in?provider={}" class="provider-btn {}">
             Sign in with {}
         </a>"#,
-                provider.name, class, provider.display_name.as_deref().unwrap_or(&provider.name)
-            )
-        }).collect::<Vec<_>>().join("\n        ")
+                    provider.name,
+                    class,
+                    provider.display_name.as_deref().unwrap_or(&provider.name)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n        ")
     };
 
-    format!(r#"<!DOCTYPE html>
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -118,7 +123,9 @@ pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
         </div>
     </div>
 </body>
-</html>"#, provider_buttons)
+</html>"#,
+        provider_buttons
+    )
 }
 
 // Helper function to decode JWT token payload without verification
@@ -128,16 +135,14 @@ pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
     if parts.len() != 3 {
         return Err("Invalid JWT format".to_string());
     }
-    
+
     let payload_b64 = parts[1];
     let payload_bytes = general_purpose::URL_SAFE_NO_PAD
         .decode(payload_b64)
         .or_else(|_| general_purpose::STANDARD.decode(payload_b64))
         .map_err(|_| "Base64 decode failed")?;
-    
-    let payload_str = String::from_utf8(payload_bytes)
-        .map_err(|_| "UTF-8 decode failed")?;
-    
-    serde_json::from_str(&payload_str)
-        .map_err(|_| "JSON parse failed".to_string())
+
+    let payload_str = String::from_utf8(payload_bytes).map_err(|_| "UTF-8 decode failed")?;
+
+    serde_json::from_str(&payload_str).map_err(|_| "JSON parse failed".to_string())
 }

@@ -1,5 +1,5 @@
 use actix_web::{cookie::Cookie, HttpRequest};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log;
 
 /// Common cookie names used across the application
@@ -55,11 +55,14 @@ pub fn create_expired_cookie(name: &str, secure: bool) -> Cookie<'static> {
 pub fn log_cookies(req: &HttpRequest) {
     if let Ok(cookies) = req.cookies() {
         for cookie in cookies.iter() {
-            log::info!("Found cookie: name='{}', secure={:?}", cookie.name(), cookie.secure());
+            log::info!(
+                "Found cookie: name='{}', secure={:?}",
+                cookie.name(),
+                cookie.secure()
+            );
         }
     }
 }
-
 
 /// Filter cookies, removing vouchrs_session cookie
 pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
@@ -70,7 +73,7 @@ pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
             !trimmed.starts_with(&format!("{}=", COOKIE_NAME))
         })
         .collect();
-    
+
     if filtered_cookies.is_empty() {
         None
     } else {

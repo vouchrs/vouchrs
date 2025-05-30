@@ -1,17 +1,17 @@
 // Config-driven OAuth implementation using provider configurations from settings
 // Supports dynamic discovery endpoints and customizable provider configurations
 
-use std::collections::HashMap;
-use std::env;
-use crate::models::{VouchrsSession};
+use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
-use crate::utils::logging::LoggingHelper;
 use crate::utils::apple_utils;
+use crate::utils::logging::LoggingHelper;
 use actix_web::HttpResponse;
-use chrono::{Utc};
+use chrono::Utc;
+use log;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use log;
+use std::collections::HashMap;
+use std::env;
 
 /// Error types for OAuth operations
 #[derive(Debug)]
@@ -58,11 +58,11 @@ impl std::error::Error for OAuthError {}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AppleJwtClaims {
-    iss: String,    // Team ID
-    iat: i64,       // Issued at time
-    exp: i64,       // Expiration time
-    aud: String,    // Audience (always "https://appleid.apple.com")
-    sub: String,    // Client ID
+    iss: String, // Team ID
+    iat: i64,    // Issued at time
+    exp: i64,    // Expiration time
+    aud: String, // Audience (always "https://appleid.apple.com")
+    sub: String, // Client ID
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,9 +95,12 @@ impl RuntimeProvider {
         let (auth_url, token_url) = if let Some(ref discovery_url) = settings.discovery_url {
             Self::resolve_from_discovery(discovery_url).await?
         } else {
-            let auth_url = settings.authorization_endpoint.clone()
-                .ok_or_else(|| format!("Provider {} missing authorization_endpoint", settings.name))?;
-            let token_url = settings.token_endpoint.clone()
+            let auth_url = settings.authorization_endpoint.clone().ok_or_else(|| {
+                format!("Provider {} missing authorization_endpoint", settings.name)
+            })?;
+            let token_url = settings
+                .token_endpoint
+                .clone()
                 .ok_or_else(|| format!("Provider {} missing token_endpoint", settings.name))?;
             (auth_url, token_url)
         };
@@ -112,20 +115,24 @@ impl RuntimeProvider {
     }
 
     async fn resolve_from_discovery(discovery_url: &str) -> Result<(String, String), String> {
-        let resp = reqwest::get(discovery_url).await.map_err(|e| e.to_string())?;
+        let resp = reqwest::get(discovery_url)
+            .await
+            .map_err(|e| e.to_string())?;
         let doc: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        let auth_url = doc["authorization_endpoint"].as_str()
+        let auth_url = doc["authorization_endpoint"]
+            .as_str()
             .ok_or_else(|| "Missing authorization_endpoint in discovery document".to_string())?
             .to_string();
-        let token_url = doc["token_endpoint"].as_str()
+        let token_url = doc["token_endpoint"]
+            .as_str()
             .ok_or_else(|| "Missing token_endpoint in discovery document".to_string())?
             .to_string();
         Ok((auth_url, token_url))
     }
 
     pub fn is_configured(&self) -> bool {
-        self.client_id.is_some() && 
-        (self.client_secret.is_some() || self.settings.jwt_signing.is_some())
+        self.client_id.is_some()
+            && (self.client_secret.is_some() || self.settings.jwt_signing.is_some())
     }
 }
 
@@ -145,8 +152,8 @@ impl Default for OAuthConfig {
 
 impl OAuthConfig {
     pub fn new() -> Self {
-        let redirect_base_url = env::var("REDIRECT_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let redirect_base_url =
+            env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
         Self {
             providers: HashMap::new(),
@@ -156,9 +163,12 @@ impl OAuthConfig {
     }
 
     /// Initialize providers from settings
-    pub async fn initialize_from_settings(&mut self, settings: &VouchrsSettings) -> Result<(), String> {
+    pub async fn initialize_from_settings(
+        &mut self,
+        settings: &VouchrsSettings,
+    ) -> Result<(), String> {
         LoggingHelper::log_oauth_provider_initialization();
-        
+
         for provider_settings in &settings.providers {
             if !provider_settings.enabled {
                 LoggingHelper::log_oauth_provider_disabled(&provider_settings.name);
@@ -169,22 +179,32 @@ impl OAuthConfig {
                 Ok(runtime_provider) => {
                     if runtime_provider.is_configured() {
                         LoggingHelper::log_oauth_provider_configured(
-                            provider_settings.display_name.as_deref().unwrap_or(&provider_settings.name),
-                            &provider_settings.name
+                            provider_settings
+                                .display_name
+                                .as_deref()
+                                .unwrap_or(&provider_settings.name),
+                            &provider_settings.name,
                         );
-                        self.providers.insert(provider_settings.name.clone(), runtime_provider);
+                        self.providers
+                            .insert(provider_settings.name.clone(), runtime_provider);
                     } else {
                         LoggingHelper::log_oauth_provider_not_configured(
-                            provider_settings.display_name.as_deref().unwrap_or(&provider_settings.name)
+                            provider_settings
+                                .display_name
+                                .as_deref()
+                                .unwrap_or(&provider_settings.name),
                         );
                     }
-                },
+                }
                 Err(e) => {
-                    log::error!("❌ Failed to initialize provider {}: {}", 
-                        provider_settings.name, e);
+                    log::error!(
+                        "❌ Failed to initialize provider {}: {}",
+                        provider_settings.name,
+                        e
+                    );
                 }
             }
-        }        
+        }
         if self.providers.is_empty() {
             return Err("No OAuth providers are configured. Please configure at least one provider in Settings.toml and set the required environment variables.".to_string());
         } else {
@@ -196,23 +216,28 @@ impl OAuthConfig {
     }
 
     pub fn get_client_configured(&self, provider: &str) -> bool {
-        self.providers.get(provider)
+        self.providers
+            .get(provider)
             .map(|p| p.is_configured())
             .unwrap_or(false)
     }
 
     pub async fn get_auth_url(&self, provider: &str, state: &str) -> Result<String, String> {
-        let runtime_provider = self.providers.get(provider)
+        let runtime_provider = self
+            .providers
+            .get(provider)
             .ok_or_else(|| format!("Provider {} not configured", provider))?;
 
         // Get client ID using the new getter method
-        let client_id = runtime_provider.settings.get_client_id()
+        let client_id = runtime_provider
+            .settings
+            .get_client_id()
             .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
 
         // Build authorization URL
         let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
         let scopes = runtime_provider.settings.scopes.join(" ");
-        
+
         // Start with base parameters
         let mut url = url::Url::parse(&runtime_provider.auth_url).map_err(|e| e.to_string())?;
         url.query_pairs_mut()
@@ -221,14 +246,18 @@ impl OAuthConfig {
             .append_pair("response_type", "code")
             .append_pair("scope", &scopes)
             .append_pair("state", state);
-        
+
         // Add provider-specific extra parameters
         for (key, value) in &runtime_provider.settings.extra_auth_params {
             url.query_pairs_mut().append_pair(key, value);
         }
-        
-        LoggingHelper::log_oauth_url_built(provider, &scopes, &runtime_provider.settings.extra_auth_params);
-        
+
+        LoggingHelper::log_oauth_url_built(
+            provider,
+            &scopes,
+            &runtime_provider.settings.extra_auth_params,
+        );
+
         Ok(url.to_string())
     }
 
@@ -239,8 +268,18 @@ impl OAuthConfig {
         &self,
         provider: &str,
         code: &str,
-    ) -> Result<(Option<String>, Option<String>, chrono::DateTime<Utc>, Option<apple_utils::AppleUserInfo>), String> {
-        let runtime_provider = self.providers.get(provider)
+    ) -> Result<
+        (
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<Utc>,
+            Option<apple_utils::AppleUserInfo>,
+        ),
+        String,
+    > {
+        let runtime_provider = self
+            .providers
+            .get(provider)
             .ok_or_else(|| format!("Provider {} not configured", provider))?;
 
         // Prepare token exchange request
@@ -252,9 +291,11 @@ impl OAuthConfig {
 
         // Handle client credentials based on provider configuration
         let client_secret;
-        let client_id = runtime_provider.settings.get_client_id()
+        let client_id = runtime_provider
+            .settings
+            .get_client_id()
             .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
-        
+
         params.insert("client_id", &client_id);
 
         if let Some(ref secret) = runtime_provider.client_secret {
@@ -262,7 +303,8 @@ impl OAuthConfig {
             params.insert("client_secret", secret);
         } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
             // JWT signing (Apple)
-            client_secret = crate::utils::apple_utils::generate_apple_client_secret(jwt_config, &client_id)?;
+            client_secret =
+                crate::utils::apple_utils::generate_apple_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret", &client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
@@ -270,7 +312,8 @@ impl OAuthConfig {
 
         // Make token exchange request
         LoggingHelper::log_token_exchange_start(provider);
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&runtime_provider.token_url)
             .form(&params)
             .send()
@@ -279,21 +322,29 @@ impl OAuthConfig {
 
         let status = response.status();
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(format!("Token exchange failed with status {}: {}", status, error_text));
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!(
+                "Token exchange failed with status {}: {}",
+                status, error_text
+            ));
         }
-        
+
         // Get the raw response text for debugging
-        let response_text = response.text().await
+        let response_text = response
+            .text()
+            .await
             .map_err(|e| format!("Failed to read response text: {}", e))?;
-        
+
         // Log the raw token response for debugging (especially for Apple)
         if provider == "apple" {
             LoggingHelper::log_apple_token_response_raw(&response_text);
         } else {
             LoggingHelper::log_token_response_raw(provider, &response_text);
         }
-        
+
         let token_response: TokenResponse = serde_json::from_str(&response_text)
             .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
@@ -312,7 +363,7 @@ impl OAuthConfig {
             token_response.id_token.as_ref(),
             &token_response.token_type,
             token_response.scope.as_ref(),
-            token_response.user.is_some()
+            token_response.user.is_some(),
         );
 
         let id_token = token_response.id_token;
@@ -322,7 +373,8 @@ impl OAuthConfig {
     }
 
     pub fn get_signout_url(&self, provider: &str) -> Option<String> {
-        self.providers.get(provider)
+        self.providers
+            .get(provider)
             .and_then(|p| p.settings.signout_url.clone())
     }
 
@@ -333,7 +385,8 @@ impl OAuthConfig {
 
     /// Get provider display name
     pub fn get_provider_display_name(&self, provider: &str) -> Option<&str> {
-        self.providers.get(provider)
+        self.providers
+            .get(provider)
             .and_then(|p| p.settings.display_name.as_deref())
     }
 }
@@ -347,16 +400,20 @@ pub struct OAuthProvider {
 impl OAuthProvider {
     pub fn from_settings(settings: &ProviderSettings) -> Result<Self, OAuthError> {
         // Use the new getter methods instead of direct field access
-        let client_id = settings.get_client_id()
-            .ok_or_else(|| OAuthError::Configuration(
-                format!("Client ID not configured for provider '{}'", settings.name)
-            ))?;
-            
-        let client_secret = settings.get_client_secret()
-            .ok_or_else(|| OAuthError::Configuration(
-                format!("Client secret not configured for provider '{}'", settings.name)
-            ))?;
-        
+        let client_id = settings.get_client_id().ok_or_else(|| {
+            OAuthError::Configuration(format!(
+                "Client ID not configured for provider '{}'",
+                settings.name
+            ))
+        })?;
+
+        let client_secret = settings.get_client_secret().ok_or_else(|| {
+            OAuthError::Configuration(format!(
+                "Client secret not configured for provider '{}'",
+                settings.name
+            ))
+        })?;
+
         Ok(Self {
             name: settings.name.clone(),
             client_id,
@@ -366,9 +423,8 @@ impl OAuthProvider {
 }
 
 // Static HTTP client for making token refresh requests
-static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
-    reqwest::Client::new()
-});
+static CLIENT: std::sync::LazyLock<reqwest::Client> =
+    std::sync::LazyLock::new(|| reqwest::Client::new());
 
 /// Check if tokens need refresh and refresh them if necessary
 pub async fn check_and_refresh_tokens(
@@ -411,12 +467,23 @@ pub async fn refresh_oauth_tokens(
     refresh_token: &str,
     oauth_config: &OAuthConfig,
     provider: &str,
-) -> Result<(Option<String>, Option<String>, chrono::DateTime<chrono::Utc>), String> {
+) -> Result<
+    (
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    ),
+    String,
+> {
     // Get provider configuration
-    let runtime_provider = oauth_config.providers.get(provider)
+    let runtime_provider = oauth_config
+        .providers
+        .get(provider)
         .ok_or_else(|| format!("Provider {} not configured", provider))?;
 
-    let client_id = runtime_provider.client_id.as_ref()
+    let client_id = runtime_provider
+        .client_id
+        .as_ref()
         .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
 
     // Handle client credentials based on provider configuration
@@ -424,10 +491,16 @@ pub async fn refresh_oauth_tokens(
         secret.clone()
     } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
         // Generate JWT client secret for Apple using apple_utils
-        apple_utils::generate_apple_client_secret_for_refresh(jwt_config, &runtime_provider.settings)
-            .map_err(|e| format!("Failed to generate client secret: {}", e))?
+        apple_utils::generate_apple_client_secret_for_refresh(
+            jwt_config,
+            &runtime_provider.settings,
+        )
+        .map_err(|e| format!("Failed to generate client secret: {}", e))?
     } else {
-        return Err(format!("No client secret or JWT signing configuration for provider {}", provider));
+        return Err(format!(
+            "No client secret or JWT signing configuration for provider {}",
+            provider
+        ));
     };
 
     let params = [
@@ -446,25 +519,29 @@ pub async fn refresh_oauth_tokens(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("Token refresh failed with status {}: {}", status, error_text));
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!(
+            "Token refresh failed with status {}: {}",
+            status, error_text
+        ));
     }
 
     // Parse token response extracting id_token, refresh_token, expires_at
-    let token_response: Value = response.json().await
+    let token_response: Value = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
-    let expires_in = token_response["expires_in"]
-        .as_u64()
-        .unwrap_or(3600); // Default to 1 hour
+    let expires_in = token_response["expires_in"].as_u64().unwrap_or(3600); // Default to 1 hour
 
     let new_refresh_token = token_response["refresh_token"]
         .as_str()
         .map(|s| s.to_string());
 
-    let new_id_token = token_response["id_token"]
-        .as_str()
-        .map(|s| s.to_string());
+    let new_id_token = token_response["id_token"].as_str().map(|s| s.to_string());
 
     let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
 

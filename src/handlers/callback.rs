@@ -1,15 +1,15 @@
 // OAuth callback handler
+use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState};
 use crate::session::SessionManager;
-use crate::oauth::{OAuthConfig, OAuthCallback, OAuthState};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, error};
 
 use super::session_builder::SessionBuilder;
-use crate::utils::response_builder::ResponseBuilder;
-use crate::utils::logging::LoggingHelper;
 use crate::utils::apple_utils::{process_apple_callback, AppleUserInfo};
+use crate::utils::logging::LoggingHelper;
 use crate::utils::oauth_utils::get_oauth_state_from_callback;
+use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::user_agent::extract_user_agent_info;
 
 /// Parameters for session finalization
@@ -55,33 +55,33 @@ pub async fn jwt_oauth_callback(
                 .finish());
         }
     };
-    
+
     LoggingHelper::log_oauth_token_response(&oauth_state.provider, apple_user_info.as_ref());
-    
+
     // Process additional Apple user info if available
     let processed_apple_info = process_apple_callback(&callback_data, apple_user_info);
-    
+
     // Build and complete the session
     let result = build_and_finalize_session(
-        &req, 
-        &session_manager, 
+        &req,
+        &session_manager,
         SessionFinalizeParams {
-            provider: oauth_state.provider, 
-            id_token, 
-            refresh_token, 
-            expires_at, 
+            provider: oauth_state.provider,
+            id_token,
+            refresh_token,
+            expires_at,
             apple_user_info: processed_apple_info,
             redirect_url: oauth_state.redirect_url,
-        }
+        },
     );
-    
+
     Ok(result)
 }
 
 /// Extract callback data from either query parameters or form submission
 fn extract_callback_data(
-    query: web::Query<OAuthCallback>, 
-    form: Option<web::Form<OAuthCallback>>
+    query: web::Query<OAuthCallback>,
+    form: Option<web::Form<OAuthCallback>>,
 ) -> OAuthCallback {
     if let Some(form_data) = form {
         debug!("OAuth callback received via form_post: {:?}", form_data);
@@ -94,9 +94,9 @@ fn extract_callback_data(
 
 /// Validate the callback data and extract the required code and OAuth state
 fn validate_callback(
-    callback_data: &OAuthCallback, 
-    session_manager: &SessionManager, 
-    req: &HttpRequest
+    callback_data: &OAuthCallback,
+    session_manager: &SessionManager,
+    req: &HttpRequest,
 ) -> Result<(String, OAuthState), HttpResponse> {
     // Check for OAuth errors
     if let Some(_error) = &callback_data.error {
@@ -138,7 +138,7 @@ fn validate_callback(
         Ok(state) => {
             debug!("OAuth state verified for provider: {}", state.provider);
             Ok((code, state))
-        },
+        }
         Err(e) => {
             error!("Failed to parse OAuth state: {}", e);
             let clear_cookie = session_manager.create_expired_cookie();
@@ -159,10 +159,12 @@ fn build_and_finalize_session(
     params: SessionFinalizeParams,
 ) -> HttpResponse {
     // Extract client info
-    let client_ip = req.connection_info().realip_remote_addr()
+    let client_ip = req
+        .connection_info()
+        .realip_remote_addr()
         .map(|s| s.to_string());
     let user_agent_info = extract_user_agent_info(req);
-    
+
     // Build the session (without access token)
     let session_result = SessionBuilder::build_session_with_apple_info(
         params.provider.clone(),
@@ -171,18 +173,16 @@ fn build_and_finalize_session(
         params.expires_at,
         params.apple_user_info,
     );
-    
+
     match session_result {
         Ok(complete_session) => {
             LoggingHelper::log_session_created(&complete_session.user_email, &params.provider);
-            
+
             // Split complete session into token data and user data
             let session = complete_session.to_session();
-            let user_data = complete_session.to_user_data(
-                client_ip.as_deref(),
-                Some(&user_agent_info),
-            );
-            
+            let user_data =
+                complete_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
+
             // Create both session and user cookies
             let session_cookie = match session_manager.create_session_cookie(&session) {
                 Ok(cookie) => cookie,
@@ -195,7 +195,7 @@ fn build_and_finalize_session(
                         .finish();
                 }
             };
-            
+
             let user_cookie = match session_manager.create_user_cookie(&user_data) {
                 Ok(cookie) => cookie,
                 Err(e) => {
@@ -207,17 +207,16 @@ fn build_and_finalize_session(
                         .finish();
                 }
             };
-            
+
             let clear_temp_cookie = session_manager.create_expired_temp_state_cookie();
             let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
-            
+
             // Create response with multiple cookies
-            ResponseBuilder::success_redirect_with_cookies(&redirect_to, vec![
-                session_cookie,
-                user_cookie,
-                clear_temp_cookie,
-            ])
-        },
+            ResponseBuilder::success_redirect_with_cookies(
+                &redirect_to,
+                vec![session_cookie, user_cookie, clear_temp_cookie],
+            )
+        }
         Err(e) => {
             error!("Failed to build session from ID token: {}", e);
             let clear_cookie = session_manager.create_expired_cookie();
@@ -228,5 +227,3 @@ fn build_and_finalize_session(
         }
     }
 }
-
-

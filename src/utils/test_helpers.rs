@@ -1,6 +1,6 @@
 // Test utilities shared across modules
 use crate::models::VouchrsSession;
-use crate::settings::{ApplicationSettings, ProxySettings, JwtSettings, VouchrsSettings};
+use crate::settings::{ApplicationSettings, JwtSettings, ProxySettings, VouchrsSettings};
 use chrono::{Duration, Utc};
 
 /// Create a test session for use in unit tests

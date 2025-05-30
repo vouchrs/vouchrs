@@ -1,6 +1,6 @@
 // Centralized logging utilities to reduce verbose logging patterns
-use log::{info, warn, debug};
-use crate::utils::apple_utils::{AppleUserInfo};
+use crate::utils::apple_utils::AppleUserInfo;
+use log::{debug, info, warn};
 
 pub struct LoggingHelper;
 
@@ -23,7 +23,10 @@ impl LoggingHelper {
         if let Some(user_info) = apple_user_info {
             info!("Apple user info email: {:?}", user_info.email);
             info!("Apple user info name: {:?}", user_info.name.full_name());
-            info!("Apple user info first_name: {:?}", user_info.name.first_name);
+            info!(
+                "Apple user info first_name: {:?}",
+                user_info.name.first_name
+            );
             info!("Apple user info last_name: {:?}", user_info.name.last_name);
 
             // Log raw JSON serialization for complete debugging
@@ -42,7 +45,10 @@ impl LoggingHelper {
         if configured {
             info!("✅ {} OAuth2 configured ({})", name, provider_name);
         } else {
-            info!("❌ {} OAuth2 not configured - missing environment variables", name);
+            info!(
+                "❌ {} OAuth2 not configured - missing environment variables",
+                name
+            );
         }
     }
 
@@ -63,7 +69,10 @@ impl LoggingHelper {
 
     /// Log that a provider is not configured
     pub fn log_oauth_provider_not_configured(display_name: &str) {
-        info!("❌ {} OAuth2 not configured - missing environment variables", display_name);
+        info!(
+            "❌ {} OAuth2 not configured - missing environment variables",
+            display_name
+        );
     }
 
     /// Log summary of configured OAuth providers
@@ -72,14 +81,23 @@ impl LoggingHelper {
     }
 
     /// Log OAuth URL building
-    pub fn log_oauth_url_built(provider: &str, scopes: &str, extra_params: &std::collections::HashMap<String, String>) {
-        info!("🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}", 
-            provider, scopes, extra_params);
+    pub fn log_oauth_url_built(
+        provider: &str,
+        scopes: &str,
+        extra_params: &std::collections::HashMap<String, String>,
+    ) {
+        info!(
+            "🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}",
+            provider, scopes, extra_params
+        );
     }
 
     /// Log token exchange start
     pub fn log_token_exchange_start(provider: &str) {
-        info!("🔄 Exchanging authorization code for tokens with {}", provider);
+        info!(
+            "🔄 Exchanging authorization code for tokens with {}",
+            provider
+        );
     }
 
     /// Log raw Apple token response for debugging
@@ -101,7 +119,7 @@ impl LoggingHelper {
         id_token: Option<&String>,
         token_type: &str,
         scope: Option<&String>,
-        user_info_present: bool
+        user_info_present: bool,
     ) {
         info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, scope={:?}, user_info={}", 
             provider,
@@ -115,13 +133,26 @@ impl LoggingHelper {
 
     /// Log session creation success
     pub fn log_session_created(user_email: &str, provider: &str) {
-        info!("Successfully built session for user: {} (provider: {})", user_email, provider);
+        info!(
+            "Successfully built session for user: {} (provider: {})",
+            user_email, provider
+        );
     }
 
     /// Log OAuth callback details in development mode
-    pub fn log_callback_debug(req: &actix_web::HttpRequest, callback_data: &crate::oauth::OAuthCallback) {
-        debug!("OAuth callback received via {}: {:?}", req.method(), callback_data);
+    pub fn log_callback_debug(
+        req: &actix_web::HttpRequest,
+        callback_data: &crate::oauth::OAuthCallback,
+    ) {
+        debug!(
+            "OAuth callback received via {}: {:?}",
+            req.method(),
+            callback_data
+        );
         debug!("Callback request headers: {:?}", req.headers());
-        debug!("Callback request connection info: {:?}", req.connection_info());
+        debug!(
+            "Callback request connection info: {:?}",
+            req.connection_info()
+        );
     }
 }

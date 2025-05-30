@@ -1,8 +1,8 @@
-use actix_web::{HttpResponse, Result, web};
 use crate::models::HealthResponse;
 use crate::settings::VouchrsSettings;
-use std::fs;
+use actix_web::{web, HttpResponse, Result};
 use log::debug;
+use std::fs;
 
 pub async fn health() -> Result<HttpResponse> {
     let response = HealthResponse {
@@ -18,9 +18,9 @@ pub async fn serve_static(
 ) -> Result<HttpResponse> {
     let filename = path.into_inner();
     let file_path = format!("{}/{}", settings.static_files.assets_folder, filename);
-    
+
     debug!("Attempting to serve static file: {}", file_path);
-    
+
     match fs::read(&file_path) {
         Ok(contents) => {
             let content_type = match file_path.split('.').next_back() {
@@ -34,10 +34,8 @@ pub async fn serve_static(
                 Some("ico") => "image/x-icon",
                 _ => "text/plain",
             };
-            
-            Ok(HttpResponse::Ok()
-                .content_type(content_type)
-                .body(contents))
+
+            Ok(HttpResponse::Ok().content_type(content_type).body(contents))
         }
         Err(_) => {
             debug!("Static file not found: {}", file_path);

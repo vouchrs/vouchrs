@@ -7,7 +7,6 @@ pub struct HealthResponse {
     pub message: String,
 }
 
-
 /// User data structure for the vouchrs_user cookie
 /// Contains only essential user information (not JWT metadata)
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -69,7 +68,11 @@ impl CompleteSessionData {
     }
 
     /// Extract user data as VouchrsUserData with additional context
-    pub fn to_user_data(&self, client_ip: Option<&str>, user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>) -> VouchrsUserData {
+    pub fn to_user_data(
+        &self,
+        client_ip: Option<&str>,
+        user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
+    ) -> VouchrsUserData {
         VouchrsUserData {
             email: self.user_email.clone(),
             name: self.user_name.clone(),

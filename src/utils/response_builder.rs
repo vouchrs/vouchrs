@@ -1,5 +1,5 @@
 // filepath: /workspaces/vouchrs/src/utils/response_builder.rs
-use actix_web::{web, HttpRequest, HttpResponse, cookie::Cookie};
+use actix_web::{cookie::Cookie, web, HttpRequest, HttpResponse};
 use reqwest;
 use std::collections::HashMap;
 use url;
@@ -10,9 +10,16 @@ pub struct ResponseBuilder;
 
 // Helper function to check for hop-by-hop headers
 pub fn is_hop_by_hop_header(name: &str) -> bool {
-    matches!(name, 
-        "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" |
-        "te" | "trailers" | "transfer-encoding" | "upgrade"
+    matches!(
+        name,
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
     )
 }
 
@@ -20,18 +27,16 @@ impl ResponseBuilder {
     /// Create a redirect response with optional cookies
     pub fn redirect(location: &str, cookies: Option<Vec<Cookie>>) -> HttpResponse {
         let mut builder = HttpResponse::Found();
-        
+
         if let Some(cookies_vec) = cookies {
             for cookie in cookies_vec {
                 builder.cookie(cookie);
             }
         }
-        
-        builder
-            .append_header(("Location", location))
-            .finish()
+
+        builder.append_header(("Location", location)).finish()
     }
-    
+
     /// Create a redirect response with a single cookie
     pub fn redirect_with_cookie(location: &str, cookie: Option<Cookie>) -> HttpResponse {
         let cookies = cookie.map(|c| vec![c]);
@@ -45,7 +50,7 @@ impl ResponseBuilder {
         } else {
             format!("{}?error={}", location, error_param)
         };
-        
+
         Self::redirect(&redirect_url, None)
     }
 
@@ -58,9 +63,11 @@ impl ResponseBuilder {
     pub fn success_redirect_with_cookies(location: &str, cookies: Vec<Cookie>) -> HttpResponse {
         Self::redirect(location, Some(cookies))
     }
-    
+
     /// Convert Actix HTTP method to reqwest method
-    pub fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Method, HttpResponse> {
+    pub fn convert_http_method(
+        method: &actix_web::http::Method,
+    ) -> Result<reqwest::Method, HttpResponse> {
         match method.as_str() {
             "GET" => Ok(reqwest::Method::GET),
             "POST" => Ok(reqwest::Method::POST),
@@ -83,12 +90,12 @@ impl ResponseBuilder {
     ) -> reqwest::RequestBuilder {
         for (name, value) in req.headers() {
             let name_str = name.as_str().to_lowercase();
-            
+
             // Skip authorization and hop-by-hop headers
             if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
                 continue;
             }
-            
+
             // Special handling for cookies
             if name_str == "cookie" {
                 if let Ok(cookie_str) = value.to_str() {
@@ -98,7 +105,7 @@ impl ResponseBuilder {
                 }
                 continue;
             }
-            
+
             // Add other headers
             if let Ok(value_str) = value.to_str() {
                 request_builder = request_builder.header(name.as_str(), value_str);
@@ -151,10 +158,16 @@ impl ResponseBuilder {
             .join("/");
 
         // Construct the final URL
-        let final_url = format!("{}/{}", base_url.trim_end_matches('/'), normalized_path.trim_start_matches('/'));
-        
+        let final_url = format!(
+            "{}/{}",
+            base_url.trim_end_matches('/'),
+            normalized_path.trim_start_matches('/')
+        );
+
         // For extra security, validate the final URL is under the base_url domain
-        if let (Ok(base_uri), Ok(final_uri)) = (url::Url::parse(base_url), url::Url::parse(&final_url)) {
+        if let (Ok(base_uri), Ok(final_uri)) =
+            (url::Url::parse(base_url), url::Url::parse(&final_url))
+        {
             if base_uri.host_str() != final_uri.host_str() {
                 return Err(HttpResponse::BadRequest().json(serde_json::json!({
                     "error": "bad_request",

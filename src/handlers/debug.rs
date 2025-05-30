@@ -16,15 +16,18 @@ pub async fn jwt_oauth_userinfo(
         // Attempt to decrypt the cookie value
         match session_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
             Ok(user_data) => {
-                info!("Userinfo endpoint: returning raw user data for user: {}", user_data.email);
-                
+                info!(
+                    "Userinfo endpoint: returning raw user data for user: {}",
+                    user_data.email
+                );
+
                 // Return the complete user data as raw JSON
                 Ok(HttpResponse::Ok().json(user_data))
-            },
+            }
             Err(e) => {
                 error!("Userinfo endpoint: Error decrypting user cookie: {}", e);
                 Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "invalid_cookie", 
+                    "error": "invalid_cookie",
                     "error_description": "Failed to decrypt user cookie data",
                     "details": e.to_string()
                 })))
@@ -61,9 +64,9 @@ pub async fn jwt_oauth_debug(
     match session_manager.get_session_from_request(&req) {
         Ok(Some(session)) => {
             // Also try to get user data from user cookie
-            let user_data = session_manager.get_user_data_from_request(&req)
+            let user_data = session_manager
+                .get_user_data_from_request(&req)
                 .unwrap_or(None);
-            
 
             let debug_response = serde_json::json!({
                 "session_data": {
@@ -132,7 +135,10 @@ fn create_no_session_response(req: &HttpRequest) -> serde_json::Value {
     })
 }
 
-fn create_session_error_response(req: &HttpRequest, error: &dyn std::fmt::Display) -> serde_json::Value {
+fn create_session_error_response(
+    req: &HttpRequest,
+    error: &dyn std::fmt::Display,
+) -> serde_json::Value {
     let raw_cookie_data = req.cookie("vouchrs_session").map(|cookie| {
         let cookie_value = cookie.value();
         serde_json::json!({

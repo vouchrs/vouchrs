@@ -3,56 +3,55 @@ use reqwest::Client;
 use std::collections::HashMap;
 
 use crate::{
+    models::VouchrsSession,
+    oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
-    models::{VouchrsSession},
-    oauth::{OAuthConfig, check_and_refresh_tokens},
     settings::VouchrsSettings,
-    utils::response_builder::{ResponseBuilder, is_hop_by_hop_header},
+    utils::response_builder::{is_hop_by_hop_header, ResponseBuilder},
     utils::user_agent::is_browser_request,
 };
 
 /// HTTP client for making upstream API requests
-static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(|| {
-    Client::new()
-});
+static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(|| Client::new());
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
 pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
     body: web::Bytes,
-    jwt_manager: web::Data<SessionManager>,
+    session_manager: web::Data<SessionManager>,
     settings: web::Data<VouchrsSettings>,
     oauth_config: web::Data<OAuthConfig>,
 ) -> ActixResult<HttpResponse> {
     // Extract and validate session from encrypted cookie
-    let session = match extract_session_from_request(&req, &jwt_manager).await {
+    let session = match extract_session_from_request(&req, &session_manager).await {
         Ok(session) => session,
         Err(response) => return Ok(response),
     };
 
     // Check and refresh tokens if necessary
-    let _tokens = match check_and_refresh_tokens(session.clone(), &oauth_config, &session.provider).await {
-        Ok(tokens) => tokens,
-        Err(response) => return Ok(response),
-    };
+    let _tokens =
+        match check_and_refresh_tokens(session.clone(), &oauth_config, &session.provider).await {
+            Ok(tokens) => tokens,
+            Err(response) => return Ok(response),
+        };
 
     // Build and execute upstream request
-    let upstream_url = match ResponseBuilder::build_upstream_url(&settings.proxy.upstream_url, req.path()) {
-        Ok(url) => url,
-        Err(response) => return Ok(response),
-    };
-    
-    let upstream_response = match execute_upstream_request(&req, &query_params, &body, &upstream_url).await {
-        Ok(response) => response,
-        Err(response) => return Ok(response),
-    };
+    let upstream_url =
+        match ResponseBuilder::build_upstream_url(&settings.proxy.upstream_url, req.path()) {
+            Ok(url) => url,
+            Err(response) => return Ok(response),
+        };
+
+    let upstream_response =
+        match execute_upstream_request(&req, &query_params, &body, &upstream_url).await {
+            Ok(response) => response,
+            Err(response) => return Ok(response),
+        };
 
     // Forward upstream response back to client
     forward_upstream_response(upstream_response, &req, &settings).await
 }
-
-
 
 /// Execute the upstream request with proper headers and body
 async fn execute_upstream_request(
@@ -62,11 +61,11 @@ async fn execute_upstream_request(
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
     let reqwest_method = ResponseBuilder::convert_http_method(req.method())?;
-    
+
     let mut request_builder = CLIENT
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
-    
+
     // Forward headers, query params, and body
     request_builder = ResponseBuilder::forward_request_headers(request_builder, req);
     request_builder = ResponseBuilder::forward_query_parameters(request_builder, query_params);
@@ -85,9 +84,13 @@ async fn execute_upstream_request(
 // Functions have been moved to ResponseBuilder
 
 /// Forward upstream response back to client, handling 401/403 redirects for browsers
-async fn forward_upstream_response(upstream_response: reqwest::Response, req: &HttpRequest, settings: &VouchrsSettings) -> ActixResult<HttpResponse> {
+async fn forward_upstream_response(
+    upstream_response: reqwest::Response,
+    req: &HttpRequest,
+    settings: &VouchrsSettings,
+) -> ActixResult<HttpResponse> {
     let status_code = upstream_response.status();
-    
+
     // Check if this is a 401 Unauthorized response
     if status_code == reqwest::StatusCode::UNAUTHORIZED {
         // Determine if this is a browser request vs API request
@@ -110,11 +113,11 @@ async fn forward_upstream_response(upstream_response: reqwest::Response, req: &H
             })));
         }
     }
-    
+
     // For all other status codes, forward the response as-is
     let actix_status = actix_web::http::StatusCode::from_u16(status_code.as_u16())
         .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
-    
+
     let mut response_builder = HttpResponse::build(actix_status);
 
     // Forward relevant headers (excluding hop-by-hop headers)
@@ -138,7 +141,7 @@ async fn forward_upstream_response(upstream_response: reqwest::Response, req: &H
 /// Extract and validate session from encrypted cookie
 async fn extract_session_from_request(
     req: &HttpRequest,
-    jwt_manager: &SessionManager,
+    session_manager: &SessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {
     // Helper function to handle authentication errors
     let handle_auth_error = |message: &str| {
@@ -158,15 +161,16 @@ async fn extract_session_from_request(
     };
 
     // Extract session cookie
-    let cookie = req.cookie("vouchrs_session")
-        .ok_or_else(|| {
-            handle_auth_error("No session cookie found. Please authenticate first.")
-        })?;
+    let cookie = req
+        .cookie("vouchrs_session")
+        .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
 
     // Decrypt and validate session
-    match jwt_manager.decrypt_and_validate_session(cookie.value()) {
+    match session_manager.decrypt_and_validate_session(cookie.value()) {
         Ok(session) => Ok(session),
-        Err(_) => Err(handle_auth_error("Session is invalid or expired. Please authenticate again.")),
+        Err(_) => Err(handle_auth_error(
+            "Session is invalid or expired. Please authenticate again.",
+        )),
     }
 }
 
@@ -177,7 +181,7 @@ mod tests {
     use super::*;
     use crate::utils::test_helpers::create_test_settings;
     use crate::utils::test_request_builder::TestRequestBuilder;
-    use crate::utils::user_agent::{extract_user_agent_info, derive_platform_from_user_agent};
+    use crate::utils::user_agent::{derive_platform_from_user_agent, extract_user_agent_info};
 
     #[test]
     fn test_hop_by_hop_headers() {
@@ -192,20 +196,26 @@ mod tests {
     fn test_user_agent_extraction() {
         // Test with modern client hints headers
         let req = TestRequestBuilder::client_hints_request();
-        
+
         let user_agent_info = extract_user_agent_info(&req);
-        
-        assert_eq!(user_agent_info.user_agent, Some("\"Google Chrome\";v=\"91\", \"Chromium\";v=\"91\"".to_string()));
+
+        assert_eq!(
+            user_agent_info.user_agent,
+            Some("\"Google Chrome\";v=\"91\", \"Chromium\";v=\"91\"".to_string())
+        );
         assert_eq!(user_agent_info.platform, Some("Windows".to_string()));
         assert_eq!(user_agent_info.lang, Some("en-US".to_string()));
         assert_eq!(user_agent_info.mobile, 0);
-        
+
         // Test with fallback to User-Agent header
         let req = TestRequestBuilder::macos_french_request();
-        
+
         let user_agent_info = extract_user_agent_info(&req);
-        
-        assert_eq!(user_agent_info.user_agent, Some("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36".to_string()));
+
+        assert_eq!(
+            user_agent_info.user_agent,
+            Some("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36".to_string())
+        );
         assert_eq!(user_agent_info.platform, Some("macOS".to_string())); // Derived from User-Agent
         assert_eq!(user_agent_info.lang, Some("fr-FR".to_string()));
         assert_eq!(user_agent_info.mobile, 0); // Default when not specified
@@ -214,45 +224,75 @@ mod tests {
     #[test]
     fn test_platform_derivation_from_user_agent() {
         // Test Windows detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"), "Windows".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"),
+            "Windows".to_string()
+        );
+
         // Test macOS detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), "macOS".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"),
+            "macOS".to_string()
+        );
+
         // Test Linux detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (X11; Linux x86_64)"), "Linux".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (X11; Linux x86_64)"),
+            "Linux".to_string()
+        );
+
         // Test Android detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (Linux; Android 11; SM-G991B)"), "Android".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (Linux; Android 11; SM-G991B)"),
+            "Android".to_string()
+        );
+
         // Test iOS detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"), "iOS".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
+            ),
+            "iOS".to_string()
+        );
+
         // Test Chrome OS detection
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)"), "Chrome OS".to_string());
-        
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)"),
+            "Chrome OS".to_string()
+        );
+
         // Test unknown platform - now returns "Unknown" instead of None
-        assert_eq!(derive_platform_from_user_agent("Mozilla/5.0 (Unknown Platform)"), "Unknown".to_string());
+        assert_eq!(
+            derive_platform_from_user_agent("Mozilla/5.0 (Unknown Platform)"),
+            "Unknown".to_string()
+        );
     }
 
     #[tokio::test]
     async fn test_401_redirect_for_browser_requests() {
         // Test browser request (Accept: text/html)
         let browser_req = TestRequestBuilder::browser_request();
-        
+
         let settings = create_test_settings();
-        
+
         // Test that browser requests are properly detected
-        assert!(is_browser_request(&browser_req), "Should detect browser request");
-        
+        assert!(
+            is_browser_request(&browser_req),
+            "Should detect browser request"
+        );
+
         // Test API request (Accept: application/json)
         let api_req = TestRequestBuilder::api_request();
-        
+
         assert!(!is_browser_request(&api_req), "Should detect API request");
-        
+
         // Test that the redirect URL is properly constructed
-        let expected_redirect_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-        assert_eq!(expected_redirect_url, "http://localhost:8080/oauth2/sign_in");
+        let expected_redirect_url =
+            format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
+        assert_eq!(
+            expected_redirect_url,
+            "http://localhost:8080/oauth2/sign_in"
+        );
     }
 
     #[test]
@@ -260,19 +300,21 @@ mod tests {
         // Test browser detection with Accept: text/html
         let browser_req = TestRequestBuilder::browser_request();
         assert!(is_browser_request(&browser_req));
-        
+
         // Test API client detection with Accept: application/json
         let api_req = TestRequestBuilder::api_request();
         assert!(!is_browser_request(&api_req));
-        
+
         // Test browser detection via User-Agent fallback
-        let browser_ua_req = TestRequestBuilder::user_agent_request("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        let browser_ua_req = TestRequestBuilder::user_agent_request(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        );
         assert!(is_browser_request(&browser_ua_req));
-        
+
         // Test API client via User-Agent
         let api_ua_req = TestRequestBuilder::user_agent_request("curl/7.68.0");
         assert!(!is_browser_request(&api_ua_req));
-        
+
         // Test unknown client (no Accept or User-Agent)
         let unknown_req = TestRequestBuilder::empty_request();
         assert!(!is_browser_request(&unknown_req));
@@ -288,7 +330,8 @@ mod tests {
     #[tokio::test]
     async fn test_cookie_filtering() {
         // Create a mock HTTP request with cookies
-        let cookies = "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
+        let cookies =
+            "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
         let req = TestRequestBuilder::with_cookies(cookies);
 
         // Create a reqwest RequestBuilder
@@ -297,18 +340,29 @@ mod tests {
 
         // Apply header forwarding
         let modified_builder = ResponseBuilder::forward_request_headers(request_builder, &req);
-        
+
         // Since we can't inspect the actual headers directly in the builder,
         // we need to convert it to a request and check the headers
         let request = modified_builder.build().expect("Failed to build request");
         let headers = request.headers();
-        
+
         // Check that the Cookie header exists but doesn't contain vouchrs_session
         if let Some(cookie_header) = headers.get(reqwest::header::COOKIE) {
-            let cookie_str = cookie_header.to_str().expect("Failed to convert cookie header to string");
-            assert!(!cookie_str.contains("vouchrs_session="), "Cookie header should not contain vouchrs_session");
-            assert!(cookie_str.contains("another_cookie=value"), "Cookie header should contain other cookies");
-            assert!(cookie_str.contains("third_cookie=value3"), "Cookie header should contain other cookies");
+            let cookie_str = cookie_header
+                .to_str()
+                .expect("Failed to convert cookie header to string");
+            assert!(
+                !cookie_str.contains("vouchrs_session="),
+                "Cookie header should not contain vouchrs_session"
+            );
+            assert!(
+                cookie_str.contains("another_cookie=value"),
+                "Cookie header should contain other cookies"
+            );
+            assert!(
+                cookie_str.contains("third_cookie=value3"),
+                "Cookie header should contain other cookies"
+            );
         } else {
             panic!("Cookie header is missing");
         }

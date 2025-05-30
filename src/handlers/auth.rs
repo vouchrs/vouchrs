@@ -1,6 +1,6 @@
 // Authentication handlers: sign-in and sign-out
-use crate::session::SessionManager;
 use crate::oauth::{OAuthConfig, OAuthState};
+use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
 use crate::utils::response_builder::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
@@ -8,8 +8,8 @@ use base64::Engine as _;
 use log::{debug, error, info};
 use uuid::Uuid;
 
-use super::types::SignInQuery;
 use super::helpers::get_sign_in_page;
+use super::types::SignInQuery;
 
 pub async fn jwt_oauth_sign_in(
     query: web::Query<SignInQuery>,
@@ -55,9 +55,8 @@ pub async fn jwt_oauth_sign_in(
             let actual_state = state_with_redirect;
 
             debug!(
-                "Generated OAuth state for provider {}: '{}'", 
-                provider, 
-                actual_state
+                "Generated OAuth state for provider {}: '{}'",
+                provider, actual_state
             );
             debug!(
                 "Stored OAuth state for provider: {}, using direct state parameter (no cookies)",
@@ -77,17 +76,20 @@ pub async fn jwt_oauth_sign_in(
                     let error_clear_cookie = session_manager.create_expired_cookie();
                     Ok(ResponseBuilder::redirect_with_cookie(
                         "/oauth2/sign_in?error=oauth_config",
-                        Some(error_clear_cookie)
+                        Some(error_clear_cookie),
                     ))
                 }
             }
         }
         Some(provider) => {
             let clear_cookie = session_manager.create_expired_cookie();
-            let error_url = format!("/oauth2/sign_in?error=unsupported_provider&provider={}", provider);
+            let error_url = format!(
+                "/oauth2/sign_in?error=unsupported_provider&provider={}",
+                provider
+            );
             Ok(ResponseBuilder::redirect_with_cookie(
                 &error_url,
-                Some(clear_cookie)
+                Some(clear_cookie),
             ))
         }
         None => {
@@ -121,10 +123,10 @@ pub async fn jwt_oauth_sign_out(
     if let Some(provider_name) = provider {
         if let Some(signout_url) = oauth_config.get_signout_url(&provider_name) {
             info!("Redirecting to {} sign-out: {}", provider_name, signout_url);
-            return Ok(ResponseBuilder::success_redirect_with_cookies(&signout_url, vec![
-                clear_session_cookie,
-                clear_user_cookie,
-            ]));
+            return Ok(ResponseBuilder::success_redirect_with_cookies(
+                &signout_url,
+                vec![clear_session_cookie, clear_user_cookie],
+            ));
         } else {
             debug!(
                 "Provider {} does not support automatic sign-out",
@@ -134,8 +136,8 @@ pub async fn jwt_oauth_sign_out(
     }
 
     // Default: redirect to login page
-    Ok(ResponseBuilder::success_redirect_with_cookies("/oauth2/sign_in", vec![
-        clear_session_cookie,
-        clear_user_cookie,
-    ]))
+    Ok(ResponseBuilder::success_redirect_with_cookies(
+        "/oauth2/sign_in",
+        vec![clear_session_cookie, clear_user_cookie],
+    ))
 }

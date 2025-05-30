@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
 
 // Additional imports for environment and logging setup
 
@@ -62,15 +62,15 @@ pub struct ProviderSettings {
     pub jwks_uri: Option<String>,
     pub signout_url: Option<String>,
     pub scopes: Vec<String>,
-    
+
     // Direct values (can be overridden by environment variables)
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
-    
+
     // Environment variable names for overrides
     pub client_id_env: Option<String>,
     pub client_secret_env: Option<String>,
-    
+
     pub enabled: bool,
     pub extra_auth_params: HashMap<String, String>,
     pub jwt_signing: Option<JwtSigningConfig>,
@@ -82,7 +82,7 @@ pub struct JwtSigningConfig {
     pub team_id: Option<String>,
     pub key_id: Option<String>,
     pub private_key_path: Option<String>,
-    
+
     // Environment variable names for overrides
     pub team_id_env: Option<String>,
     pub key_id_env: Option<String>,
@@ -120,7 +120,8 @@ impl Default for JwtSettings {
     fn default() -> Self {
         Self {
             session_duration_hours: 24,
-            session_secret: "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256".to_string(),
+            session_secret: "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+                .to_string(),
             issuer: "https://vouchrs.app".to_string(),
             audience: "https://api.example.com".to_string(),
         }
@@ -170,10 +171,10 @@ impl VouchrsSettings {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize environment and logging
         Self::initialize_environment()?;
-        
+
         // Load base settings from TOML or defaults
         let mut settings = Self::load_base_settings()?;
-        
+
         // Apply environment variable overrides
         Self::apply_env_overrides(&mut settings);
 
@@ -196,33 +197,40 @@ impl VouchrsSettings {
     fn load_base_settings() -> Result<VouchrsSettings, Box<dyn std::error::Error>> {
         // 1. Start with default settings
         let mut settings = VouchrsSettings::default();
-        
+
         // 2. Try to load from Settings.toml in current directory (lower priority)
         let default_config_path = std::path::PathBuf::from("Settings.toml");
         if default_config_path.exists() {
             let toml_content = fs::read_to_string(&default_config_path)?;
             settings = basic_toml::from_str(&toml_content)?;
-            println!("✓ Loaded base settings from {}", default_config_path.display());
+            println!(
+                "✓ Loaded base settings from {}",
+                default_config_path.display()
+            );
         }
-        
+
         // 3. If VOUCHRS_SECRETS_DIR is set and contains Settings.toml, override with those settings (higher priority)
         if let Ok(secrets_dir) = std::env::var("VOUCHRS_SECRETS_DIR") {
             let secrets_path = std::path::Path::new(&secrets_dir).join("Settings.toml");
             if secrets_path.exists() {
                 let secrets_toml_content = fs::read_to_string(&secrets_path)?;
-                let secrets_settings: VouchrsSettings = basic_toml::from_str(&secrets_toml_content)?;
-                
+                let secrets_settings: VouchrsSettings =
+                    basic_toml::from_str(&secrets_toml_content)?;
+
                 println!("✓ Overriding settings from {}", secrets_path.display());
-                
+
                 // Replace settings with those from secrets directory
                 settings = secrets_settings;
             } else {
-                println!("ℹ VOUCHRS_SECRETS_DIR set but no Settings.toml found at: {}", secrets_path.display());
+                println!(
+                    "ℹ VOUCHRS_SECRETS_DIR set but no Settings.toml found at: {}",
+                    secrets_path.display()
+                );
             }
         }
-        
+
         // Environment variables will be applied next, after this function returns
-        
+
         Ok(settings)
     }
 
@@ -318,7 +326,8 @@ impl VouchrsSettings {
     }
 
     pub fn get_cors_origins(&self) -> Vec<String> {
-        self.application.cors_origins
+        self.application
+            .cors_origins
             .split(',')
             .map(|s| s.trim().to_string())
             .collect()
@@ -345,7 +354,7 @@ impl ProviderSettings {
         }
         self.client_id.clone()
     }
-    
+
     /// Get the client secret, checking environment variable first, then falling back to direct value
     pub fn get_client_secret(&self) -> Option<String> {
         if let Some(env_var) = &self.client_secret_env {
@@ -367,7 +376,7 @@ impl JwtSigningConfig {
         }
         self.team_id.clone()
     }
-    
+
     /// Get the key ID, checking environment variable first, then falling back to direct value
     pub fn get_key_id(&self) -> Option<String> {
         if let Some(env_var) = &self.key_id_env {
@@ -377,7 +386,7 @@ impl JwtSigningConfig {
         }
         self.key_id.clone()
     }
-    
+
     /// Get the private key path, checking environment variable first, then falling back to direct value
     pub fn get_private_key_path(&self) -> Option<String> {
         if let Some(env_var) = &self.private_key_path_env {
@@ -397,7 +406,10 @@ mod tests {
     fn test_session_secret_configuration() {
         // Test default value
         let default_jwt_settings = JwtSettings::default();
-        assert_eq!(default_jwt_settings.session_secret, "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256");
+        assert_eq!(
+            default_jwt_settings.session_secret,
+            "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+        );
         assert_eq!(default_jwt_settings.session_duration_hours, 24);
         assert_eq!(default_jwt_settings.issuer, "https://vouchrs.app");
     }
@@ -413,12 +425,12 @@ mod tests {
 
         // Set environment variable
         std::env::set_var("SESSION_SECRET", "env-override-secret");
-        
+
         // Apply environment overrides
         VouchrsSettings::apply_jwt_env_overrides(&mut jwt_settings);
-        
+
         assert_eq!(jwt_settings.session_secret, "env-override-secret");
-        
+
         // Clean up
         std::env::remove_var("SESSION_SECRET");
     }
@@ -434,13 +446,13 @@ mod tests {
 
         // Set environment variable
         std::env::set_var("JWT_SESSION_DURATION_HOURS", "48");
-        
+
         // Apply environment overrides
         VouchrsSettings::apply_jwt_env_overrides(&mut jwt_settings);
-        
+
         assert_eq!(jwt_settings.session_duration_hours, 48);
         assert_eq!(jwt_settings.session_secret, "test-secret"); // Should remain unchanged
-        
+
         // Clean up
         std::env::remove_var("JWT_SESSION_DURATION_HOURS");
     }
@@ -457,14 +469,14 @@ mod tests {
         // Set environment variables
         std::env::set_var("JWT_ISSUER", "https://env-override-issuer.app");
         std::env::set_var("JWT_AUDIENCE", "https://env-override-audience.app");
-        
+
         // Apply environment overrides
         VouchrsSettings::apply_jwt_env_overrides(&mut jwt_settings);
-        
+
         assert_eq!(jwt_settings.issuer, "https://env-override-issuer.app");
         assert_eq!(jwt_settings.audience, "https://env-override-audience.app");
         assert_eq!(jwt_settings.session_secret, "test-secret"); // Should remain unchanged
-        
+
         // Clean up
         std::env::remove_var("JWT_ISSUER");
         std::env::remove_var("JWT_AUDIENCE");
@@ -475,7 +487,7 @@ mod tests {
         // Setup temp dirs for testing
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path();
-        
+
         // Create a Settings.toml in the root with specific values
         let root_settings_content = r#"
 [jwt]
@@ -483,32 +495,35 @@ session_secret = "root-secret-key"
 issuer = "https://root.example.com"
 audience = "https://root-audience.example.com"
 "#;
-        
+
         // Create a Settings.toml in the "secrets" dir with different values
         let secrets_dir = temp_path.join("secrets");
         std::fs::create_dir_all(&secrets_dir).unwrap();
-        
+
         let secrets_settings_content = r#"
 [jwt]
 session_secret = "secrets-secret-key"
 issuer = "https://secrets.example.com"
 audience = "https://secrets-audience.example.com"
 "#;
-        
+
         // Write the files
         std::fs::write(temp_path.join("Settings.toml"), root_settings_content).unwrap();
         std::fs::write(secrets_dir.join("Settings.toml"), secrets_settings_content).unwrap();
-        
+
         // First test: No VOUCHR_SECRETS_DIR set, should use root Settings.toml
         std::env::remove_var("VOUCHR_SECRETS_DIR");
-        
+
         // Mock the load_base_settings to use our temp paths
         let actual_settings = VouchrsSettings::load_base_settings().unwrap();
-        
+
         // Validate default values were not overridden in this mock test
         // This is a limitation of the test due to searching in current directory
-        assert_eq!(actual_settings.jwt.session_secret, "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256");
-        
+        assert_eq!(
+            actual_settings.jwt.session_secret,
+            "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+        );
+
         // Add a proper integration test that would validate this behavior in a controlled environment
         // For now, we'll just document how it should work
         println!("Note: Full precedence testing requires integration tests with file path control");
@@ -519,35 +534,41 @@ audience = "https://secrets-audience.example.com"
         // This is a conceptual test illustrating the expected behavior
         // of the settings precedence. A full integration test would require
         // more control over the file system.
-        
+
         // Mock settings from root Settings.toml
         let mut mock_root_settings = VouchrsSettings::default();
         mock_root_settings.jwt.session_secret = "root-secret-key".to_string();
         mock_root_settings.jwt.issuer = "https://root.example.com".to_string();
-        
+
         // Mock settings from VOUCHR_SECRETS_DIR Settings.toml
         let mut mock_secrets_settings = VouchrsSettings::default();
         mock_secrets_settings.jwt.session_secret = "secrets-secret-key".to_string();
         mock_secrets_settings.jwt.issuer = "https://secrets.example.com".to_string();
-        
+
         // Scenario 1: No VOUCHR_SECRETS_DIR, use root settings
         assert_eq!(mock_root_settings.jwt.session_secret, "root-secret-key");
         assert_eq!(mock_root_settings.jwt.issuer, "https://root.example.com");
-        
+
         // Scenario 2: With VOUCHR_SECRETS_DIR, prefer settings from secrets dir
-        assert_eq!(mock_secrets_settings.jwt.session_secret, "secrets-secret-key");
-        assert_eq!(mock_secrets_settings.jwt.issuer, "https://secrets.example.com");
-        
+        assert_eq!(
+            mock_secrets_settings.jwt.session_secret,
+            "secrets-secret-key"
+        );
+        assert_eq!(
+            mock_secrets_settings.jwt.issuer,
+            "https://secrets.example.com"
+        );
+
         // Scenario 3: Environment variables override both
         let mut settings_with_env = mock_secrets_settings.clone();
         std::env::set_var("SESSION_SECRET", "env-secret-key");
         std::env::set_var("JWT_ISSUER", "https://env.example.com");
-        
+
         VouchrsSettings::apply_jwt_env_overrides(&mut settings_with_env.jwt);
-        
+
         assert_eq!(settings_with_env.jwt.session_secret, "env-secret-key");
         assert_eq!(settings_with_env.jwt.issuer, "https://env.example.com");
-        
+
         // Clean up
         std::env::remove_var("SESSION_SECRET");
         std::env::remove_var("JWT_ISSUER");
