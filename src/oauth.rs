@@ -6,7 +6,6 @@ use std::env;
 use crate::models::{AppleUserInfo, VouchrsSession};
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::logging::LoggingHelper;
-use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::apple_utils;
 use actix_web::HttpResponse;
 use chrono::{Utc};
@@ -363,7 +362,10 @@ pub async fn check_and_refresh_tokens(
 
     // Attempt to refresh tokens
     let refresh_token = session.refresh_token.as_ref().ok_or_else(|| {
-        ResponseBuilder::unauthorized_json("OAuth tokens expired and no refresh token available. Please re-authenticate.")
+        HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "unauthorized",
+            "message": "OAuth tokens expired and no refresh token available. Please re-authenticate."
+        }))
     })?;
 
     // Call refresh_oauth_tokens and update session fields
@@ -374,7 +376,10 @@ pub async fn check_and_refresh_tokens(
             session.expires_at = new_expires_at;
             Ok(session)
         }
-        Err(err) => Err(ResponseBuilder::unauthorized_json(&format!("Failed to refresh OAuth tokens: {}", err))),
+        Err(err) => Err(HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "token_refresh_failed",
+            "message": format!("Failed to refresh OAuth tokens: {}", err)
+        }))),
     }
 }
 
@@ -422,7 +427,7 @@ pub async fn refresh_oauth_tokens(
         return Err(format!("Token refresh failed with status {}: {}", status, error_text));
     }
 
-    // Parse token response as before, but extract id_token, refresh_token, expires_at
+    // Parse token response extracting id_token, refresh_token, expires_at
     let token_response: Value = response.json().await
         .map_err(|e| format!("Failed to parse token response: {}", e))?;
 

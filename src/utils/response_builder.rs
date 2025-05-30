@@ -1,45 +1,10 @@
 // filepath: /workspaces/vouchrs/src/utils/response_builder.rs
-use actix_web::{web, HttpRequest, HttpResponse, cookie::Cookie, http::StatusCode};
+use actix_web::{web, HttpRequest, HttpResponse, cookie::Cookie};
 use reqwest;
 use std::collections::HashMap;
 use url;
 
 use crate::utils::cookie_utils::filter_vouchrs_cookies;
-
-// Enum for standard error types with their status codes
-#[derive(Debug, Clone, Copy)]
-pub enum ErrorType {
-    BadRequest,
-    Unauthorized, 
-    Forbidden,
-    NotFound,
-    InternalError,
-    Custom(StatusCode, &'static str),
-}
-
-impl ErrorType {
-    pub fn status_code(&self) -> StatusCode {
-        match self {
-            Self::BadRequest => StatusCode::BAD_REQUEST,
-            Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Forbidden => StatusCode::FORBIDDEN,
-            Self::NotFound => StatusCode::NOT_FOUND,
-            Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::Custom(status, _) => *status,
-        }
-    }
-    
-    pub fn error_type(&self) -> &str {
-        match self {
-            Self::BadRequest => "bad_request",
-            Self::Unauthorized => "unauthorized",
-            Self::Forbidden => "forbidden",
-            Self::NotFound => "not_found",
-            Self::InternalError => "internal_error",
-            Self::Custom(_, error_type) => error_type,
-        }
-    }
-}
 
 pub struct ResponseBuilder;
 
@@ -94,44 +59,6 @@ impl ResponseBuilder {
         Self::redirect(location, Some(cookies))
     }
     
-    /// Create a JSON error response
-    pub fn json_error(error: ErrorType, message: &str) -> HttpResponse {
-        HttpResponse::build(error.status_code()).json(serde_json::json!({
-            "error": error.error_type(),
-            "message": message
-        }))
-    }
-
-    /// Create an unauthorized JSON response
-    pub fn unauthorized_json(message: &str) -> HttpResponse {
-        Self::json_error(ErrorType::Unauthorized, message)
-    }
-
-    /// Create a bad request JSON response
-    pub fn bad_request_json(message: &str) -> HttpResponse {
-        Self::json_error(ErrorType::BadRequest, message)
-    }
-
-    /// Create an internal server error JSON response
-    pub fn internal_error_json(message: &str) -> HttpResponse {
-        Self::json_error(ErrorType::InternalError, message)
-    }
-
-    /// Create a forbidden JSON response
-    pub fn forbidden_json(message: &str) -> HttpResponse {
-        Self::json_error(ErrorType::Forbidden, message)
-    }
-
-    /// Create a not found JSON response
-    pub fn not_found_json(message: &str) -> HttpResponse {
-        Self::json_error(ErrorType::NotFound, message)
-    }
-
-    /// Create a JSON response with custom status and data
-    pub fn json_response<T: serde::Serialize>(status: actix_web::http::StatusCode, data: T) -> HttpResponse {
-        HttpResponse::build(status).json(data)
-    }
-
     /// Convert Actix HTTP method to reqwest method
     pub fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Method, HttpResponse> {
         match method.as_str() {
@@ -142,7 +69,10 @@ impl ResponseBuilder {
             "PATCH" => Ok(reqwest::Method::PATCH),
             "HEAD" => Ok(reqwest::Method::HEAD),
             "OPTIONS" => Ok(reqwest::Method::OPTIONS),
-            method_str => Err(ResponseBuilder::bad_request_json(&format!("HTTP method '{}' is not supported", method_str))),
+            method_str => Err(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "bad_request",
+                "message": format!("HTTP method '{}' is not supported", method_str)
+            }))),
         }
     }
 
@@ -207,9 +137,10 @@ impl ResponseBuilder {
     pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, HttpResponse> {
         // Validate that the request path doesn't contain suspicious patterns
         if request_path.contains("..") || request_path.contains("://") {
-            return Err(ResponseBuilder::bad_request_json(
-                "Invalid request path. Path traversal or URL protocol specifications are not allowed."
-            ));
+            return Err(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "bad_request",
+                "message": "Invalid request path. Path traversal or URL protocol specifications are not allowed."
+            })));
         }
 
         // Normalize the path to prevent path traversal attempts
@@ -225,14 +156,16 @@ impl ResponseBuilder {
         // For extra security, validate the final URL is under the base_url domain
         if let (Ok(base_uri), Ok(final_uri)) = (url::Url::parse(base_url), url::Url::parse(&final_url)) {
             if base_uri.host_str() != final_uri.host_str() {
-                return Err(ResponseBuilder::bad_request_json(
-                    "Request URL doesn't match configured upstream host. Open relay not permitted."
-                ));
+                return Err(HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "bad_request",
+                    "message": "Request URL doesn't match configured upstream host. Open relay not permitted."
+                })));
             }
         } else {
-            return Err(ResponseBuilder::internal_error_json(
-                "Failed to parse URL for security validation"
-            ));
+            return Err(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "internal_error",
+                "message": "Failed to parse URL for security validation"
+            })));
         }
 
         Ok(final_url)

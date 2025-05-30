@@ -8,7 +8,6 @@ use log::{debug, error};
 
 use super::types::OAuthCallback;
 use super::session_builder::SessionBuilder;
-use crate::utils::error_handler::ErrorHandler;
 use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::logging::LoggingHelper;
 use crate::utils::apple_utils::process_apple_callback;
@@ -51,7 +50,11 @@ pub async fn jwt_oauth_callback(
         Ok(result) => result,
         Err(e) => {
             error!("Failed to exchange code for user info: {}", e);
-            return Ok(ErrorHandler::auth_failed(&jwt_manager));
+            let clear_cookie = jwt_manager.create_expired_cookie();
+            return Ok(HttpResponse::Found()
+                .cookie(clear_cookie)
+                .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+                .finish());
         }
     };
     
@@ -99,7 +102,11 @@ fn validate_callback(
 ) -> Result<(String, crate::models::OAuthState), HttpResponse> {
     // Check for OAuth errors
     if let Some(_error) = &callback_data.error {
-        return Err(ErrorHandler::auth_failed(jwt_manager));
+        let clear_cookie = jwt_manager.create_expired_cookie();
+        return Err(HttpResponse::Found()
+            .cookie(clear_cookie)
+            .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+            .finish());
     }
 
     // Get authorization code
@@ -107,7 +114,11 @@ fn validate_callback(
         Some(code) => code.clone(),
         None => {
             error!("No authorization code received");
-            return Err(ErrorHandler::auth_failed(jwt_manager));
+            let clear_cookie = jwt_manager.create_expired_cookie();
+            return Err(HttpResponse::Found()
+                .cookie(clear_cookie)
+                .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+                .finish());
         }
     };
 
@@ -116,7 +127,11 @@ fn validate_callback(
         Some(state) => state.clone(),
         None => {
             error!("No state parameter received");
-            return Err(ErrorHandler::oauth_state_error(jwt_manager));
+            let clear_cookie = jwt_manager.create_expired_cookie();
+            return Err(HttpResponse::Found()
+                .cookie(clear_cookie)
+                .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
+                .finish());
         }
     };
 
@@ -128,7 +143,11 @@ fn validate_callback(
         },
         Err(e) => {
             error!("Failed to parse OAuth state: {}", e);
-            Err(ErrorHandler::oauth_state_error(jwt_manager))
+            let clear_cookie = jwt_manager.create_expired_cookie();
+            Err(HttpResponse::Found()
+                .cookie(clear_cookie)
+                .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
+                .finish())
         }
     }
 }
@@ -171,7 +190,11 @@ fn build_and_finalize_session(
                 Ok(cookie) => cookie,
                 Err(e) => {
                     error!("Failed to create session cookie: {}", e);
-                    return ErrorHandler::session_build_error(jwt_manager);
+                    let clear_cookie = jwt_manager.create_expired_cookie();
+                    return HttpResponse::Found()
+                        .cookie(clear_cookie)
+                        .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
+                        .finish();
                 }
             };
             
@@ -179,7 +202,11 @@ fn build_and_finalize_session(
                 Ok(cookie) => cookie,
                 Err(e) => {
                     error!("Failed to create user cookie: {}", e);
-                    return ErrorHandler::session_build_error(jwt_manager);
+                    let clear_cookie = jwt_manager.create_expired_cookie();
+                    return HttpResponse::Found()
+                        .cookie(clear_cookie)
+                        .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
+                        .finish();
                 }
             };
             
@@ -195,7 +222,11 @@ fn build_and_finalize_session(
         },
         Err(e) => {
             error!("Failed to build session from ID token: {}", e);
-            ErrorHandler::session_build_error(jwt_manager)
+            let clear_cookie = jwt_manager.create_expired_cookie();
+            HttpResponse::Found()
+                .cookie(clear_cookie)
+                .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
+                .finish()
         }
     }
 }

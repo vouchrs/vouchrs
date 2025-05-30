@@ -41,7 +41,10 @@ pub async fn serve_static(
         }
         Err(_) => {
             debug!("Static file not found: {}", file_path);
-            Ok(crate::utils::response_builder::ResponseBuilder::not_found_json("File not found"))
+            Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "not_found",
+                "message": "File not found"
+            })))
         }
     }
 }

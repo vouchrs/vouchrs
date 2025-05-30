@@ -23,25 +23,19 @@ pub async fn jwt_oauth_userinfo(
             },
             Err(e) => {
                 error!("Userinfo endpoint: Error decrypting user cookie: {}", e);
-                Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                    actix_web::http::StatusCode::UNAUTHORIZED,
-                    serde_json::json!({
-                        "error": "invalid_cookie", 
-                        "error_description": "Failed to decrypt user cookie data",
-                        "details": e.to_string()
-                    })
-                ))
+                Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "invalid_cookie", 
+                    "error_description": "Failed to decrypt user cookie data",
+                    "details": e.to_string()
+                })))
             }
         }
     } else {
         debug!("Userinfo endpoint: No vouchrs_user cookie found");
-        Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-            actix_web::http::StatusCode::UNAUTHORIZED,
-            serde_json::json!({
-                "error": "no_user_data",
-                "error_description": "No user data cookie found. Please authenticate first."
-            })
-        ))
+        Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "no_user_data",
+            "error_description": "No user data cookie found. Please authenticate first."
+        })))
     }
 }
 
@@ -58,9 +52,10 @@ pub async fn jwt_oauth_debug(
 
     if !debug_enabled {
         error!("OAuth debug endpoint accessed but OAUTH_DEBUG_ENABLED is not set to true");
-        return Ok(crate::utils::response_builder::ResponseBuilder::forbidden_json(
-            "Debug endpoint disabled. Set OAUTH_DEBUG_ENABLED=true to enable this endpoint"
-        ));
+        return Ok(HttpResponse::Ok().json(serde_json::json!({
+            "error": "debug_disabled",
+            "error_description": "Debug endpoint disabled. Set OAUTH_DEBUG_ENABLED=true to enable this endpoint"
+        })));
     }
 
     match jwt_manager.get_session_from_request(&req) {
@@ -89,17 +84,11 @@ pub async fn jwt_oauth_debug(
         }
         Ok(None) => {
             debug!("Debug endpoint: No valid JWT session found");
-            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                actix_web::http::StatusCode::UNAUTHORIZED,
-                create_no_session_response(&req)
-            ))
+            Ok(HttpResponse::Unauthorized().json(create_no_session_response(&req)))
         }
         Err(e) => {
             error!("Debug endpoint: Error retrieving JWT session: {}", e);
-            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                actix_web::http::StatusCode::UNAUTHORIZED,
-                create_session_error_response(&req, &e)
-            ))
+            Ok(HttpResponse::Unauthorized().json(create_session_error_response(&req, &e)))
         }
     }
 }

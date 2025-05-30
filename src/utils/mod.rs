@@ -1,5 +1,4 @@
 pub mod response_builder;
-pub mod error_handler;
 pub mod logging;
 pub mod user_agent;
 pub mod apple_utils;

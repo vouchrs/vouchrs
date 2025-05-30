@@ -61,14 +61,13 @@ async fn execute_upstream_request(
     body: &web::Bytes,
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
-    let reqwest_method = ResponseBuilder::convert_http_method(req.method())?;
+    let reqwest_method = ResponseBuilder::convert_http_method(req.method())
+        .map_err(|err| err)?;
     
     let mut request_builder = CLIENT
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
     
-    // Note: Access token functionality removed - requests are forwarded without custom Authorization header
-
     // Forward headers, query params, and body
     request_builder = ResponseBuilder::forward_request_headers(request_builder, req);
     request_builder = ResponseBuilder::forward_query_parameters(request_builder, query_params);
@@ -76,13 +75,11 @@ async fn execute_upstream_request(
 
     // Execute the request
     request_builder.send().await.map_err(|err| {
-        ResponseBuilder::json_error(
-            crate::utils::response_builder::ErrorType::Custom(
-                actix_web::http::StatusCode::BAD_GATEWAY, 
-                "upstream_request_failed"
-            ), 
-            &format!("Failed to reach upstream service: {}", err)
-        )
+        // Return a simple error response
+        HttpResponse::BadGateway().json(serde_json::json!({
+            "error": "upstream_error",
+            "message": format!("Failed to reach upstream service: {}", err)
+        }))
     })
 }
 
@@ -108,9 +105,10 @@ async fn forward_upstream_response(upstream_response: reqwest::Response, req: &H
         }
         // For API requests, return 401 with JSON error
         else {
-            return Ok(ResponseBuilder::unauthorized_json(
-                "Authentication required. Please obtain a valid session cookie or bearer token."
-            ));
+            return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": "Authentication required. Please obtain a valid session cookie or bearer token."
+            })));
         }
     }
     
@@ -153,7 +151,10 @@ async fn extract_session_from_request(
                 .finish()
         } else {
             // For API requests, return JSON error
-            ResponseBuilder::unauthorized_json(message)
+            HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": message
+            }))
         }
     };
 

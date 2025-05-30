@@ -29,14 +29,12 @@ impl From<anyhow::Error> for JwtSessionError {
 
 impl ResponseError for JwtSessionError {
     fn error_response(&self) -> HttpResponse {
-        use crate::utils::response_builder::ResponseBuilder;
-        
         let error_msg = self.0.to_string();
         
         if error_msg.contains("Session expired") || error_msg.contains("Session not found") {
-            ResponseBuilder::unauthorized_json("Authentication required")
+            HttpResponse::Unauthorized().json("Authentication required")
         } else {
-            ResponseBuilder::internal_error_json("Internal server error")
+            HttpResponse::InternalServerError().json("Internal server error")
         }
     }
 }
