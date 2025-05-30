@@ -2,7 +2,6 @@
 use crate::jwt_session::JwtSessionManager;
 use crate::models::AppleUserInfo;
 use crate::oauth::OAuthConfig;
-use crate::settings::VouchrsSettings;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, error};
@@ -15,15 +14,6 @@ use crate::utils::logging::LoggingHelper;
 use crate::utils::apple_utils::process_apple_callback;
 use crate::utils::oauth_utils::get_oauth_state_from_callback;
 use crate::utils::user_agent::extract_user_agent_info;
-
-/// Parameters for session building
-struct SessionBuildParams {
-    provider: String,
-    id_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_at: DateTime<Utc>,
-    apple_user_info: Option<AppleUserInfo>,
-}
 
 /// Parameters for session finalization
 struct SessionFinalizeParams {
@@ -151,79 +141,63 @@ fn build_and_finalize_session(
     jwt_manager: &JwtSessionManager,
     params: SessionFinalizeParams,
 ) -> HttpResponse {
-    // Extract settings and client info
-    let settings = req.app_data::<web::Data<VouchrsSettings>>()
-        .map(|s| s.get_ref().clone());
+    // Extract client info
     let client_ip = req.connection_info().realip_remote_addr()
         .map(|s| s.to_string());
     let user_agent_info = extract_user_agent_info(req);
     
-    // Build the session
-    let session_result = build_session_with_access_token(
-        SessionBuildParams {
-            provider: params.provider.clone(),
-            id_token: params.id_token,
-            refresh_token: params.refresh_token,
-            expires_at: params.expires_at,
-            apple_user_info: params.apple_user_info,
-        },
-        settings.as_ref(),
-        client_ip.as_deref(),
-        &user_agent_info,
+    // Build the session (without access token)
+    let session_result = SessionBuilder::build_session_with_apple_info(
+        params.provider.clone(),
+        params.id_token,
+        params.refresh_token,
+        params.expires_at,
+        params.apple_user_info,
     );
     
     match session_result {
-        Ok(session) => {
-            LoggingHelper::log_session_created(&session.user_email, &params.provider);
+        Ok(complete_session) => {
+            LoggingHelper::log_session_created(&complete_session.user_email, &params.provider);
             
-            // Create JWT session cookie
-            match jwt_manager.create_session_cookie(&session) {
-                Ok(session_cookie) => {
-                    let _clear_temp_cookie = jwt_manager.create_expired_temp_state_cookie();
-                    let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
-                    ResponseBuilder::success_redirect_with_cookie(&redirect_to, session_cookie)
-                },
+            // Split complete session into token data and user data
+            let session = complete_session.to_session();
+            let user_data = complete_session.to_user_data(
+                client_ip.as_deref(),
+                Some(&user_agent_info),
+            );
+            
+            // Create both session and user cookies
+            let session_cookie = match jwt_manager.create_session_cookie(&session) {
+                Ok(cookie) => cookie,
                 Err(e) => {
-                    error!("Failed to create JWT session cookie: {}", e);
-                    ErrorHandler::session_build_error(jwt_manager)
+                    error!("Failed to create session cookie: {}", e);
+                    return ErrorHandler::session_build_error(jwt_manager);
                 }
-            }
+            };
+            
+            let user_cookie = match jwt_manager.create_user_cookie(&user_data) {
+                Ok(cookie) => cookie,
+                Err(e) => {
+                    error!("Failed to create user cookie: {}", e);
+                    return ErrorHandler::session_build_error(jwt_manager);
+                }
+            };
+            
+            let clear_temp_cookie = jwt_manager.create_expired_temp_state_cookie();
+            let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
+            
+            // Create response with multiple cookies
+            ResponseBuilder::success_redirect_with_cookies(&redirect_to, vec![
+                session_cookie,
+                user_cookie,
+                clear_temp_cookie,
+            ])
         },
         Err(e) => {
             error!("Failed to build session from ID token: {}", e);
             ErrorHandler::session_build_error(jwt_manager)
         }
     }
-}
-
-/// Build session and generate access token in one step
-fn build_session_with_access_token(
-    params: SessionBuildParams,
-    settings: Option<&VouchrsSettings>,
-    client_ip: Option<&str>,
-    user_agent_info: &crate::jwt_utils::UserAgentInfo,
-) -> Result<crate::models::VouchrsSession, String> {
-    // Build the basic session
-    let mut session = SessionBuilder::build_session_with_apple_info(
-        params.provider,
-        params.id_token,
-        params.refresh_token,
-        params.expires_at,
-        params.apple_user_info,
-        None, // access token will be generated below
-    )?;
-    
-    // Generate access token if settings are available
-    if let Some(settings) = settings {
-        session.access_token = crate::jwt_utils::create_access_token(
-            &session,
-            settings,
-            client_ip,
-            Some(user_agent_info),
-        ).ok();
-    }
-    
-    Ok(session)
 }
 
 

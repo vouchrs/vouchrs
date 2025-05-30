@@ -38,7 +38,7 @@ pub async fn proxy_generic_api(
 
     // Build and execute upstream request
     let upstream_url = build_upstream_url(&settings.proxy.upstream_url, req.path());
-    let upstream_response = match execute_upstream_request(&req, &query_params, &body, &session, &upstream_url).await {
+    let upstream_response = match execute_upstream_request(&req, &query_params, &body, &upstream_url).await {
         Ok(response) => response,
         Err(response) => return Ok(response),
     };
@@ -57,7 +57,6 @@ async fn execute_upstream_request(
     req: &HttpRequest,
     query_params: &web::Query<HashMap<String, String>>,
     body: &web::Bytes,
-    session: &VouchrsSession,
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
     let reqwest_method = convert_http_method(req.method())?;
@@ -66,12 +65,7 @@ async fn execute_upstream_request(
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
     
-    // Create and add Authorization header with vouchrs JWT from session
-    if let Some(access_token) = &session.access_token {
-        request_builder = request_builder.header("Authorization", format!("Bearer {}", access_token));
-    } else {
-        return Err(ResponseBuilder::internal_error_json("No access token found in session. Please re-authenticate."));
-    }
+    // Note: Access token functionality removed - requests are forwarded without custom Authorization header
 
     // Forward headers, query params, and body
     request_builder = forward_request_headers(request_builder, req);
@@ -264,7 +258,7 @@ async fn check_and_refresh_tokens(
 
     // Attempt to refresh tokens
     let refresh_token = session.refresh_token.as_ref().ok_or_else(|| {
-        ResponseBuilder::unauthorized_json("Access token expired and no refresh token available. Please re-authenticate.")
+        ResponseBuilder::unauthorized_json("OAuth tokens expired and no refresh token available. Please re-authenticate.")
     })?;
 
     // Call refresh_oauth_tokens and update session fields
@@ -275,7 +269,7 @@ async fn check_and_refresh_tokens(
             session.expires_at = new_expires_at;
             Ok(session)
         }
-        Err(err) => Err(ResponseBuilder::unauthorized_json(&format!("Failed to refresh access token: {}", err))),
+        Err(err) => Err(ResponseBuilder::unauthorized_json(&format!("Failed to refresh OAuth tokens: {}", err))),
     }
 }
 
@@ -432,11 +426,9 @@ pub(crate) fn is_hop_by_hop_header(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_helpers::{create_test_session, create_test_settings};
-    use crate::jwt_utils::create_access_token;
+    use crate::utils::test_helpers::create_test_settings;
     use crate::utils::test_request_builder::TestRequestBuilder;
     use crate::utils::user_agent::{extract_user_agent_info, derive_platform_from_user_agent};
-    use base64::{Engine as _, engine::general_purpose};
     // Import is_hop_by_hop_header for tests
     use super::is_hop_by_hop_header;
 
@@ -446,39 +438,6 @@ mod tests {
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("content-type"));
         assert!(!is_hop_by_hop_header("authorization"));
-    }
-
-    #[test]
-    fn test_access_token_creation_in_proxy() {
-        let session = create_test_session();
-        let settings = create_test_settings();
-        
-        // Test that we can create an access token from session and settings
-        let jwt_result = create_access_token(&session, &settings, Some("192.168.1.100"), None);
-        assert!(jwt_result.is_ok(), "JWT creation should succeed");
-        
-        let jwt = jwt_result.unwrap();
-        
-        // JWT should have 3 parts separated by dots
-        let parts: Vec<&str> = jwt.split('.').collect();
-        assert_eq!(parts.len(), 3, "JWT should have header.payload.signature format");
-        
-        // Decode and verify the payload contains the expected claims
-        let payload_b64 = parts[1];
-        let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload_b64).unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&payload_bytes).unwrap();
-        
-        // Verify all expected claims are present
-        assert_eq!(payload["iss"], "https://vouchrs.app", "Issuer should match JWT issuer setting");
-        assert_eq!(payload["aud"], "http://localhost:3000", "Audience should match JWT audience setting");
-        assert_eq!(payload["sub"], "test@example.com", "Subject should match user_email");
-        assert_eq!(payload["idp"], "google", "Identity provider should match session provider");
-        assert_eq!(payload["idp_id"], "123456789", "Provider ID should match session provider_id");
-        assert_eq!(payload["name"], "Test User", "Name should match session user_name");
-        
-        // Verify timestamps are present and reasonable
-        assert!(payload["iat"].is_number(), "Issued at timestamp should be present");
-        assert!(payload["exp"].is_number(), "Expiration timestamp should be present");
     }
 
     #[test]

@@ -22,7 +22,6 @@ fn test_session_builder_with_apple_user_info_fallback() {
         refresh_token,
         expires_at,
         Some(apple_user_info),
-        None,
     );
     
     assert!(result.is_ok());
@@ -43,7 +42,6 @@ fn test_session_builder_with_google_tokens() {
         id_token,
         refresh_token,
         expires_at,
-        None,
     );
     
     assert!(result.is_ok());
@@ -64,7 +62,6 @@ fn test_session_builder_with_invalid_token() {
         id_token,
         refresh_token,
         expires_at,
-        None,
     );
     
     // This should fail because the token format is invalid
@@ -83,7 +80,6 @@ fn test_session_builder_without_id_token() {
         id_token,
         refresh_token,
         expires_at,
-        None,
     );
     
     // This should fail because no ID token is available

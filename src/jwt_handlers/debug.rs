@@ -3,65 +3,50 @@ use crate::jwt_session::JwtSessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
-/// OAuth2 userinfo endpoint - returns access_token JWT claims in JSON format
+/// OAuth2 userinfo endpoint - returns user data from encrypted user cookie
 pub async fn jwt_oauth_userinfo(
     req: HttpRequest,
     jwt_manager: web::Data<JwtSessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
 ) -> Result<HttpResponse> {
-    // Get session from request
-    match jwt_manager.get_session_from_request(&req) {
-        Ok(Some(session)) => {
-            // Check if we have an access_token in the session
-            match &session.access_token {
-                Some(access_token) => {
-                    // Decode the JWT access token to get its claims
-                    match super::helpers::decode_jwt_payload(access_token) {
-                        Ok(claims) => {
-                            info!("Userinfo endpoint: returning access token claims for user: {}", session.user_email);
-                            Ok(HttpResponse::Ok().json(claims))
-                        }
-                        Err(e) => {
-                            error!("Userinfo endpoint: Failed to decode access token JWT: {}", e);
-                            Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                serde_json::json!({
-                                    "error": "invalid_token",
-                                    "error_description": "Failed to decode access token"
-                                })
-                            ))
-                        }
-                    }
-                }
-                None => {
-                    error!("Userinfo endpoint: No access token found in session for user: {}", session.user_email);
-                    Ok(crate::utils::response_builder::ResponseBuilder::json_response(
-                        actix_web::http::StatusCode::BAD_REQUEST,
-                        serde_json::json!({
-                            "error": "no_access_token",
-                            "error_description": "No access token available in session"
-                        })
-                    ))
-                }
-            }
+    // Get user data from user cookie
+    match jwt_manager.get_user_data_from_request(&req) {
+        Ok(Some(user_data)) => {
+            info!("Userinfo endpoint: returning user data for user: {}", user_data.email);
+            
+            // Create userinfo response in standard OAuth2 format
+            let userinfo_response = serde_json::json!({
+                "sub": user_data.email,
+                "email": user_data.email,
+                "name": user_data.name,
+                "provider": user_data.provider,
+                "provider_id": user_data.provider_id,
+                "client_ip": user_data.client_ip,
+                "user_agent": user_data.user_agent,
+                "platform": user_data.platform,
+                "lang": user_data.lang,
+                "mobile": user_data.mobile
+            });
+            
+            Ok(HttpResponse::Ok().json(userinfo_response))
         }
         Ok(None) => {
-            debug!("Userinfo endpoint: No valid JWT session found");
+            debug!("Userinfo endpoint: No user data found in cookies");
             Ok(crate::utils::response_builder::ResponseBuilder::json_response(
                 actix_web::http::StatusCode::UNAUTHORIZED,
                 serde_json::json!({
-                    "error": "invalid_request",
-                    "error_description": "No valid session found. Please authenticate first."
+                    "error": "no_user_data",
+                    "error_description": "No user data cookie found. Please authenticate first."
                 })
             ))
         }
         Err(e) => {
-            error!("Userinfo endpoint: Error retrieving JWT session: {}", e);
+            error!("Userinfo endpoint: Error retrieving user data: {}", e);
             Ok(crate::utils::response_builder::ResponseBuilder::json_response(
                 actix_web::http::StatusCode::UNAUTHORIZED,
                 serde_json::json!({
                     "error": "invalid_request", 
-                    "error_description": "Session validation failed"
+                    "error_description": "User data validation failed"
                 })
             ))
         }
@@ -88,26 +73,24 @@ pub async fn jwt_oauth_debug(
 
     match jwt_manager.get_session_from_request(&req) {
         Ok(Some(session)) => {
-            info!(
-                "Debug endpoint: returning complete session data for user: {}",
-                session.user_email
-            );
+            // Also try to get user data from user cookie
+            let user_data = jwt_manager.get_user_data_from_request(&req)
+                .unwrap_or(None);
+            
 
             let debug_response = serde_json::json!({
                 "session_data": {
-                    "user_email": session.user_email,
-                    "user_name": session.user_name,
                     "provider": session.provider,
-                    "provider_id": session.provider_id,
-                    "created_at": session.created_at,
                     "expires_at": session.expires_at,
                     "id_token": session.id_token,
                     "refresh_token": session.refresh_token,
-                    "access_token": session.access_token,
                 },
+                "user_data": user_data,
                 "debug_info": {
-                    "cookie_name": "vouchrs_session",
+                    "session_cookie_name": "vouchrs_session",
+                    "user_cookie_name": "vouchrs_user",
                     "timestamp": chrono::Utc::now(),
+                    "note": "Access tokens no longer stored in sessions - check user_data for user information",
                     "warning": "This endpoint exposes sensitive OAuth tokens and cookie data. Only use in development!"
                 }
             });

@@ -137,7 +137,7 @@ Vouchrs creates and injects custom JWTs instead of using the OAuth provider's `i
 #### 1. **Added JWT Utilities Module** (`src/jwt_utils.rs`)
 - **Function**: `hmac_sha256()` - Proper HMAC-SHA256 implementation using the `hmac-sha256` crate
 - **Function**: `create_jwt()` - Generic JWT creation with HS256 signing
-- **Function**: `create_access_token()` - Creates access token (JWT) from VouchrSession and settings
+- **Function**: `create_user_cookie()` - Creates encrypted user data cookie from VouchrsUserData and client context
 - **Tests**: Comprehensive test suite validating JWT structure and claims
 
 #### 2. **Updated Dependencies** (`Cargo.toml`)

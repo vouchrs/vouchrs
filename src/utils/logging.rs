@@ -97,16 +97,14 @@ impl LoggingHelper {
     /// Log token exchange summary
     pub fn log_token_exchange_summary(
         provider: &str,
-        access_token_len: usize,
         refresh_token: Option<&String>,
         id_token: Option<&String>,
         token_type: &str,
         scope: Option<&String>,
         user_info_present: bool
     ) {
-        info!("🔍 Token exchange summary for {}: access_token_len={}, refresh_token={}, id_token={}, token_type={}, scope={:?}, user_info={}", 
+        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, scope={:?}, user_info={}", 
             provider,
-            access_token_len,
             refresh_token.map(|_| "present").unwrap_or("missing"),
             id_token.map(|_| "present").unwrap_or("missing"),
             token_type,

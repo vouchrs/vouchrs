@@ -13,7 +13,7 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::models::{VouchrsSession, AppleUserInfo};
+use crate::models::{CompleteSessionData, AppleUserInfo};
 use crate::jwt_handlers::helpers::decode_jwt_payload;
 use chrono::{DateTime, Utc, TimeZone};
 use log::{debug, warn, info};
@@ -22,27 +22,25 @@ use serde_json::Value;
 pub struct SessionBuilder;
 
 impl SessionBuilder {
-    /// Creates a VouchrsSession from OAuth tokens, extracting standard claims from the ID token
+    /// Creates a CompleteSessionData from OAuth tokens, extracting standard claims from the ID token
     /// and using Apple user info to fill in missing fields if available
     pub fn build_session(
         provider: String,
         id_token: Option<String>,
         refresh_token: Option<String>,
         expires_at: DateTime<Utc>,
-        access_token: Option<String>,
-    ) -> Result<VouchrsSession, String> {
-        Self::build_session_with_apple_info(provider, id_token, refresh_token, expires_at, None, access_token)
+    ) -> Result<CompleteSessionData, String> {
+        Self::build_session_with_apple_info(provider, id_token, refresh_token, expires_at, None)
     }
 
-    /// Creates a VouchrsSession from OAuth tokens with optional Apple user info for fallback
+    /// Creates a CompleteSessionData from OAuth tokens with optional Apple user info for fallback
     pub fn build_session_with_apple_info(
         provider: String,
         id_token: Option<String>,
         refresh_token: Option<String>,
         expires_at: DateTime<Utc>,
         apple_user_info: Option<AppleUserInfo>,
-        access_token: Option<String>,
-    ) -> Result<VouchrsSession, String> {
+    ) -> Result<CompleteSessionData, String> {
         let id_token_ref = id_token.as_ref()
             .ok_or("No ID token available")?;
 
@@ -88,7 +86,7 @@ impl SessionBuilder {
         info!("Session built successfully - Email: {}, Provider: {}, Provider ID: {}, Name: {:?}", 
               user_email, normalized_provider, provider_id, user_name);
 
-        Ok(VouchrsSession {
+        Ok(CompleteSessionData {
             user_email,
             user_name,
             provider: normalized_provider,
@@ -97,7 +95,6 @@ impl SessionBuilder {
             refresh_token,
             expires_at,
             created_at: created_at.unwrap_or_else(Utc::now),
-            access_token,
         })
     }
 
@@ -219,7 +216,6 @@ mod tests {
             refresh_token.clone(),
             expires_at,
             Some(apple_user_info.clone()),
-            None,
         ).expect("Session should be built");
         assert_eq!(session.user_email, apple_user_info.email.clone().unwrap());
         assert_eq!(session.user_name.clone().unwrap(), apple_user_info.name.full_name());

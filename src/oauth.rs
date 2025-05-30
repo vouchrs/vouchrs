@@ -44,7 +44,6 @@ struct AppleJwtClaims {
 
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
-    access_token: String,
     refresh_token: Option<String>,
     id_token: Option<String>,
     token_type: String,
@@ -342,7 +341,6 @@ impl OAuthConfig {
         // Log detailed information about what we extracted
         LoggingHelper::log_token_exchange_summary(
             provider,
-            token_response.access_token.len(),
             token_response.refresh_token.as_ref(),
             token_response.id_token.as_ref(),
             &token_response.token_type,

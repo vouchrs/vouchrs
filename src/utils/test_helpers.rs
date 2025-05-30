@@ -6,15 +6,10 @@ use chrono::{Duration, Utc};
 /// Create a test session for use in unit tests
 pub fn create_test_session() -> VouchrsSession {
     VouchrsSession {
-        user_email: "test@example.com".to_string(),
-        user_name: Some("Test User".to_string()),
-        provider: "google".to_string(),
-        provider_id: "123456789".to_string(),
         id_token: Some("test_id_token".to_string()),
         refresh_token: Some("test_refresh_token".to_string()),
+        provider: "google".to_string(),
         expires_at: Utc::now() + Duration::hours(1),
-        created_at: Utc::now(),
-        access_token: None,
     }
 }
 

@@ -113,15 +113,19 @@ pub async fn jwt_oauth_sign_out(
         _ => None,
     };
 
-    // Create expired cookie to clear session
-    let clear_cookie = jwt_manager.create_expired_cookie();
-    info!("User signed out and JWT session cleared");
+    // Create expired cookies to clear both session and user data
+    let clear_session_cookie = jwt_manager.create_expired_cookie();
+    let clear_user_cookie = jwt_manager.create_expired_user_cookie();
+    info!("User signed out and both JWT session and user data cleared");
 
     // If we have a provider, check if it supports sign-out URL
     if let Some(provider_name) = provider {
         if let Some(signout_url) = oauth_config.get_signout_url(&provider_name) {
             info!("Redirecting to {} sign-out: {}", provider_name, signout_url);
-            return Ok(ResponseBuilder::redirect_with_cookie(&signout_url, Some(clear_cookie)));
+            return Ok(ResponseBuilder::success_redirect_with_cookies(&signout_url, vec![
+                clear_session_cookie,
+                clear_user_cookie,
+            ]));
         } else {
             debug!(
                 "Provider {} does not support automatic sign-out",
@@ -131,5 +135,8 @@ pub async fn jwt_oauth_sign_out(
     }
 
     // Default: redirect to login page
-    Ok(ResponseBuilder::redirect_with_cookie("/oauth2/sign_in", Some(clear_cookie)))
+    Ok(ResponseBuilder::success_redirect_with_cookies("/oauth2/sign_in", vec![
+        clear_session_cookie,
+        clear_user_cookie,
+    ]))
 }

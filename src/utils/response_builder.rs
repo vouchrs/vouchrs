@@ -37,6 +37,19 @@ impl ResponseBuilder {
             .finish()
     }
 
+    /// Create a success redirect response with multiple cookies
+    pub fn success_redirect_with_cookies(location: &str, cookies: Vec<Cookie>) -> HttpResponse {
+        let mut builder = HttpResponse::Found();
+        
+        for cookie in cookies {
+            builder.cookie(cookie);
+        }
+        
+        builder
+            .append_header(("Location", location))
+            .finish()
+    }
+
     /// Create a JSON error response
     pub fn json_error(status: actix_web::http::StatusCode, error_type: &str, message: &str) -> HttpResponse {
         HttpResponse::build(status).json(serde_json::json!({

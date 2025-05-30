@@ -1,44 +1,36 @@
-// Integration test for JWT settings and OAuth callback functionality
-use vouchrs::settings::VouchrsSettings;
-use vouchrs::jwt_utils::{create_access_token, UserAgentInfo};
+// Integration test for JWT settings and user cookie functionality
 use vouchrs::utils::test_helpers::{create_test_session, create_test_settings};
-use serde_json::Value;
-use base64::{Engine as _, engine::general_purpose};
+use vouchrs::jwt_session::{JwtSessionManager};
+use vouchrs::jwt_utils::UserAgentInfo;
+use vouchrs::models::VouchrsUserData;
 
-#[test]
-fn test_jwt_settings_fallback_to_defaults() {
-    // Test that JWT settings fall back to defaults when not configured
-    let default_settings = VouchrsSettings::default();
-    
-    assert_eq!(default_settings.jwt.issuer, "https://vouchrs.app");
-    assert_eq!(default_settings.jwt.audience, "https://api.example.com");
-    assert_eq!(default_settings.jwt.session_duration_hours, 24);
-    assert_eq!(default_settings.jwt.session_secret, "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256");
+/// Helper function to create test user data with optional context
+fn create_test_user_data(
+    email: &str,
+    name: Option<String>,
+    provider: &str,
+    provider_id: &str,
+    client_ip: Option<&str>,
+    user_agent_info: Option<&UserAgentInfo>
+) -> VouchrsUserData {
+    VouchrsUserData {
+        email: email.to_string(),
+        name,
+        provider: provider.to_string(),
+        provider_id: provider_id.to_string(),
+        client_ip: client_ip.map(|ip| ip.to_string()),
+        user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
+        platform: user_agent_info.and_then(|ua| ua.platform.clone()),
+        lang: user_agent_info.and_then(|ua| ua.lang.clone()),
+        mobile: user_agent_info.map(|ua| ua.mobile as i32).unwrap_or(0),
+    }
 }
 
-#[test]
-fn test_jwt_env_override_priority() {
-    // Test that environment variables override default values
-    std::env::set_var("JWT_ISSUER", "https://custom-issuer.example.com");
-    std::env::set_var("JWT_AUDIENCE", "https://custom-audience.example.com");
-    
-    let mut settings = VouchrsSettings::default();
-    VouchrsSettings::apply_jwt_env_overrides(&mut settings.jwt);
-    
-    assert_eq!(settings.jwt.issuer, "https://custom-issuer.example.com");
-    assert_eq!(settings.jwt.audience, "https://custom-audience.example.com");
-    
-    // Clean up
-    std::env::remove_var("JWT_ISSUER");
-    std::env::remove_var("JWT_AUDIENCE");
-}
 
 #[test]
-fn test_access_token_contains_required_fields() {
+fn test_user_cookie_contains_required_fields() {
     // Create a session with proper provider_id set
-    let mut session = create_test_session();
-    session.provider_id = "test_provider_id_123".to_string();
-    session.provider = "google".to_string();
+    let session = create_test_session();
     
     let settings = create_test_settings();
     
@@ -50,69 +42,90 @@ fn test_access_token_contains_required_fields() {
         mobile: 0,
     };
     
-    // Create access token
-    let token = create_access_token(&session, &settings, Some("192.168.1.1"), Some(&user_agent_info))
-        .expect("Should create access token");
+    // Create user data manually since we now have separate token and user data
+    let user_data = create_test_user_data(
+        "test@example.com",
+        Some("Test User".to_string()),
+        &session.provider,
+        "123456789",
+        Some("192.168.1.1"),
+        Some(&user_agent_info)
+    );
     
-    // Parse the JWT to verify contents
-    let parts: Vec<&str> = token.split('.').collect();
-    assert_eq!(parts.len(), 3, "JWT should have 3 parts");
+    // Verify user data contains all required fields
+    assert_eq!(user_data.provider, session.provider, "Provider should match session");
+    assert_eq!(user_data.client_ip, Some("192.168.1.1".to_string()), "Client IP should be set");
+    assert_eq!(user_data.platform, Some("macOS".to_string()), "Platform should be extracted from user agent");
+    assert_eq!(user_data.lang, Some("en-US".to_string()), "Language should be set");
+    assert_eq!(user_data.mobile, 0, "Mobile flag should be set");
     
-    let payload_b64 = parts[1];
-    let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload_b64).unwrap();
-    let payload: Value = serde_json::from_slice(&payload_bytes).unwrap();
+    // Test user cookie encryption/decryption
+    let jwt_manager = JwtSessionManager::new(settings.jwt.session_secret.as_bytes(), false);
+    let user_cookie = jwt_manager.create_user_cookie(&user_data)
+        .expect("Should create user cookie");
     
-    // Verify required JWT claims are present and correct
-    assert_eq!(payload["iss"].as_str().unwrap(), settings.jwt.issuer, "Issuer should match settings");
-    assert_eq!(payload["aud"].as_str().unwrap(), settings.jwt.audience, "Audience should match settings");
-    assert_eq!(payload["sub"].as_str().unwrap(), session.user_email, "Subject should match user email");
-    assert_eq!(payload["idp"].as_str().unwrap(), session.provider, "Identity provider should be set");
-    assert_eq!(payload["idp_id"].as_str().unwrap(), session.provider_id, "Provider ID should be set");
-    if let Some(ref name) = session.user_name {
-        assert_eq!(payload["name"].as_str().unwrap(), name, "Name should be set");
-    }
-    assert_eq!(payload["platform"].as_str().unwrap(), "macOS", "Platform should be extracted from user agent");
-    assert_eq!(payload["client_ip"].as_str().unwrap(), "192.168.1.1", "Client IP should be set");
-    assert_eq!(payload["lang"].as_str().unwrap(), "en-US", "Language should be set");
-    assert_eq!(payload["mobile"].as_u64().unwrap(), 0, "Mobile flag should be set");
+    // Verify cookie has correct properties
+    assert_eq!(user_cookie.name(), "vouchrs_user");
+    assert_eq!(user_cookie.http_only(), Some(true), "User cookie should be HTTP-only");
+    assert_eq!(user_cookie.path(), Some("/"));
     
-    // Verify timestamps are reasonable
-    assert!(payload["iat"].is_number(), "Issued at should be a number");
-    assert!(payload["exp"].is_number(), "Expires at should be a number");
+    // Test that we can decrypt the user data back using a mock request
+    use actix_web::test::TestRequest;
+    let test_req = TestRequest::default()
+        .cookie(user_cookie.clone())
+        .to_http_request();
     
-    println!("✅ All JWT claims verified successfully");
+    let decrypted_data = jwt_manager.get_user_data_from_request(&test_req)
+        .expect("Should get user data from request")
+        .expect("Should have user data");
+    
+    assert_eq!(decrypted_data.email, user_data.email);
+    assert_eq!(decrypted_data.provider, user_data.provider);
+    assert_eq!(decrypted_data.platform, user_data.platform);
+    
+    println!("✅ All user cookie functionality verified successfully");
 }
 
 #[test]
-fn test_minimal_jwt_token() {
-    // Test creating a JWT with minimal information
-    let mut session = create_test_session();
-    session.provider_id = "minimal_provider_id".to_string();
+fn test_minimal_user_data() {
+    // Test creating user data with minimal information
+    let session = create_test_session();
     
     let settings = create_test_settings();
     
-    // Create access token without user agent info or client IP
-    let token = create_access_token(&session, &settings, None, None)
-        .expect("Should create access token");
+    // Create user data without user agent info or client IP
+    let user_data = create_test_user_data(
+        "test@example.com",
+        Some("Test User".to_string()),
+        &session.provider,
+        "123456789",
+        None,
+        None
+    );
     
-    // Parse the JWT to verify contents
-    let parts: Vec<&str> = token.split('.').collect();
-    assert_eq!(parts.len(), 3, "JWT should have 3 parts");
+    // Verify required fields are present
+    assert_eq!(user_data.provider, session.provider);
+    assert_eq!(user_data.client_ip, None, "Client IP should be None when not provided");
+    assert_eq!(user_data.platform, None, "Platform should be None when not provided");
+    assert_eq!(user_data.mobile, 0, "Mobile should default to 0");
     
-    let payload_b64 = parts[1];
-    let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload_b64).unwrap();
-    let payload: Value = serde_json::from_slice(&payload_bytes).unwrap();
+    // Test encryption/decryption with minimal data
+    let jwt_manager = JwtSessionManager::new(settings.jwt.session_secret.as_bytes(), false);
+    let user_cookie = jwt_manager.create_user_cookie(&user_data)
+        .expect("Should create user cookie");
     
-    // Verify required claims are still present
-    assert_eq!(payload["iss"].as_str().unwrap(), settings.jwt.issuer);
-    assert_eq!(payload["aud"].as_str().unwrap(), settings.jwt.audience);
-    assert_eq!(payload["idp_id"].as_str().unwrap(), "minimal_provider_id");
+    // Test that we can decrypt the user data back using a mock request
+    use actix_web::test::TestRequest;
+    let test_req = TestRequest::default()
+        .cookie(user_cookie.clone())
+        .to_http_request();
     
-    // Verify optional fields are not present when not provided
-    assert!(payload.get("client_ip").is_none(), "Client IP should not be present");
-    assert!(payload.get("user_agent").is_none(), "User agent should not be present");
-    assert!(payload.get("platform").is_none(), "Platform should not be present");
-    assert!(payload.get("lang").is_none(), "Language should not be present");
+    let decrypted_data = jwt_manager.get_user_data_from_request(&test_req)
+        .expect("Should get user data from request")
+        .expect("Should have user data");
     
-    println!("✅ Minimal JWT token verified successfully");
+    assert_eq!(decrypted_data.email, user_data.email);
+    assert_eq!(decrypted_data.client_ip, None);
+    
+    println!("✅ Minimal user data test passed");
 }

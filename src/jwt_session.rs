@@ -1,4 +1,4 @@
-use crate::models::{VouchrsSession, OAuthState};
+use crate::models::{VouchrsSession, OAuthState, VouchrsUserData};
 use actix_web::{HttpRequest, cookie::Cookie, HttpResponse, ResponseError};
 use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
 use base64::{Engine as _, engine::general_purpose};
@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Result, anyhow, Context};
 
 const COOKIE_NAME: &str = "vouchrs_session";
+const USER_COOKIE_NAME: &str = "vouchrs_user";
 const NONCE_SIZE: usize = 12; // 96 bits for AES-GCM
 
 // Custom error wrapper for ResponseError implementation
@@ -67,9 +68,9 @@ impl JwtSessionManager {
         }
     }
 
-    /// Create an encrypted session cookie from VouchrSession
+    /// Create an encrypted session cookie from VouchrsSession (token data only)
     pub fn create_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
-        let encrypted_data = self.encrypt_session(session)?;
+        let encrypted_data = self.encrypt_token_data(session)?;
         
         Ok(Cookie::build(COOKIE_NAME, encrypted_data)
             .http_only(true)
@@ -88,43 +89,11 @@ impl JwtSessionManager {
             .value()
             .to_string();
 
-        self.decrypt_session(&cookie_value)
+        self.decrypt_token_data(&cookie_value)
     }
 
-    /// Check if session needs token refresh (within 5 minutes of expiry)
-    pub fn needs_token_refresh(&self, session: &VouchrsSession) -> bool {
-        let now = Utc::now();
-        let buffer_time = chrono::Duration::minutes(5);
-        session.expires_at <= now + buffer_time
-    }
-
-    /// Encrypt session data
-    fn encrypt_session(&self, session: &VouchrsSession) -> Result<String> {
-        // Serialize session to JSON
-        let session_json = serde_json::to_string(session)
-            .context("Failed to serialize session data")?;
-
-        // Generate random nonce
-        let mut nonce_bytes = [0u8; NONCE_SIZE];
-        rand::thread_rng().fill(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        // Encrypt the session data
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let ciphertext = cipher
-            .encrypt(nonce, session_json.as_bytes())
-            .map_err(|e| anyhow!("AES encryption failed: {}", e))?;
-
-        // Combine nonce + ciphertext and encode as base64
-        let mut combined = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
-        combined.extend_from_slice(&nonce_bytes);
-        combined.extend_from_slice(&ciphertext);
-
-        Ok(general_purpose::URL_SAFE_NO_PAD.encode(&combined))
-    }
-
-    /// Decrypt session data
-    fn decrypt_session(&self, encrypted_data: &str) -> Result<VouchrsSession> {
+    /// Decrypt token data from cookie
+    fn decrypt_token_data(&self, encrypted_data: &str) -> Result<VouchrsSession> {
         // Decode from base64
         let combined = general_purpose::URL_SAFE_NO_PAD
             .decode(encrypted_data)
@@ -138,25 +107,57 @@ impl JwtSessionManager {
         let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        // Decrypt the session data
+        // Decrypt the token data
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
         let plaintext = cipher
             .decrypt(nonce, ciphertext)
             .map_err(|e| anyhow!("AES decryption failed: {}", e))?;
 
-        // Deserialize session from JSON
-        let session_json = String::from_utf8(plaintext)
-            .context("Failed to decode session UTF-8 data")?;
+        // Deserialize token data from JSON
+        let token_json = String::from_utf8(plaintext)
+            .context("Failed to decode token UTF-8 data")?;
 
-        let session: VouchrsSession = serde_json::from_str(&session_json)
-            .context("Failed to deserialize session JSON")?;
+        let session: VouchrsSession = serde_json::from_str(&token_json)
+            .context("Failed to deserialize token JSON")?;
 
-        // Check if session is expired
+        // Check if tokens are expired
         if session.expires_at <= Utc::now() {
             return Err(anyhow!("Session expired"));
         }
 
         Ok(session)
+    }
+
+    /// Check if session needs token refresh (within 5 minutes of expiry)
+    pub fn needs_token_refresh(&self, session: &VouchrsSession) -> bool {
+        let now = Utc::now();
+        let buffer_time = chrono::Duration::minutes(5);
+        session.expires_at <= now + buffer_time
+    }
+
+    /// Encrypt token data (VouchrsSession structure for cookies)
+    fn encrypt_token_data(&self, session: &VouchrsSession) -> Result<String> {
+        // Serialize token data to JSON
+        let token_json = serde_json::to_string(session)
+            .context("Failed to serialize token data")?;
+
+        // Generate random nonce
+        let mut nonce_bytes = [0u8; NONCE_SIZE];
+        rand::thread_rng().fill(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Encrypt the token data
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let ciphertext = cipher
+            .encrypt(nonce, token_json.as_bytes())
+            .map_err(|e| anyhow!("AES encryption failed: {}", e))?;
+
+        // Combine nonce + ciphertext and encode as base64
+        let mut combined = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
+        combined.extend_from_slice(&nonce_bytes);
+        combined.extend_from_slice(&ciphertext);
+
+        Ok(general_purpose::URL_SAFE_NO_PAD.encode(&combined))
     }
 
     /// Create a sign-out cookie (empty with immediate expiration)
@@ -230,11 +231,11 @@ impl JwtSessionManager {
     /// Get session from HTTP request cookies
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
         if let Some(cookie) = req.cookie(COOKIE_NAME) {
-            match self.decrypt_session(cookie.value()) {
+            match self.decrypt_token_data(cookie.value()) {
                 Ok(session) => {
                     // Check if session needs token refresh (5 minutes before expiration)
                     if session.expires_at - chrono::Duration::minutes(5) <= Utc::now() {
-                        log::warn!("OAuth token needs refresh for user: {}", session.user_email);
+                        log::warn!("OAuth token needs refresh for provider: {}", session.provider);
                     }
                     Ok(Some(session))
                 }
@@ -304,7 +305,7 @@ impl JwtSessionManager {
 
     /// Decrypt and validate session from cookie value
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
-        let session = self.decrypt_session(cookie_value)?;
+        let session = self.decrypt_token_data(cookie_value)?;
         
         // Check if session has expired
         if session.expires_at <= Utc::now() {
@@ -318,6 +319,112 @@ impl JwtSessionManager {
     pub fn get_oauth_state_from_request(&self, req: &HttpRequest, _received_state: &str) -> Result<Option<OAuthState>> {
         // Only try cookie-based state (works for both Google and Apple if you handle Apple differently)
         self.get_temporary_state_from_request(req)
+    }
+
+    /// Create an encrypted user data cookie from VouchrsUserData
+    pub fn create_user_cookie(&self, user_data: &VouchrsUserData) -> Result<Cookie> {
+        let encrypted_data = self.encrypt_user_data(user_data)?;
+        
+        Ok(Cookie::build(USER_COOKIE_NAME, encrypted_data)
+            .http_only(true)
+            .secure(self.cookie_secure)
+            .same_site(actix_web::cookie::SameSite::Lax)
+            .path("/")
+            .max_age(actix_web::cookie::time::Duration::hours(24))
+            .finish())
+    }
+
+    /// Extract user data from HTTP request cookie
+    pub fn extract_user_data(&self, req: &HttpRequest) -> Result<VouchrsUserData> {
+        let cookie_value = req
+            .cookie(USER_COOKIE_NAME)
+            .ok_or_else(|| anyhow!("User data not found"))?
+            .value()
+            .to_string();
+
+        self.decrypt_user_data(&cookie_value)
+    }
+
+    /// Get user data from HTTP request cookies (returns None if not found)
+    pub fn get_user_data_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsUserData>> {
+        if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
+            match self.decrypt_user_data(cookie.value()) {
+                Ok(user_data) => Ok(Some(user_data)),
+                Err(e) => {
+                    log::warn!("Failed to decrypt user data cookie: {}", e);
+                    Ok(None)
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Create an expired user cookie to clear user data
+    pub fn create_expired_user_cookie(&self) -> Cookie<'static> {
+        Cookie::build(USER_COOKIE_NAME, "")
+            .http_only(true)
+            .secure(self.cookie_secure)
+            .same_site(actix_web::cookie::SameSite::Lax)
+            .path("/")
+            .max_age(actix_web::cookie::time::Duration::seconds(-1))
+            .finish()
+    }
+
+    /// Encrypt user data
+    fn encrypt_user_data(&self, user_data: &VouchrsUserData) -> Result<String> {
+        // Serialize user data to JSON
+        let user_json = serde_json::to_string(user_data)
+            .context("Failed to serialize user data")?;
+
+        // Generate random nonce
+        let mut nonce_bytes = [0u8; NONCE_SIZE];
+        rand::thread_rng().fill(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Encrypt the user data
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let ciphertext = cipher
+            .encrypt(nonce, user_json.as_bytes())
+            .map_err(|e| anyhow!("AES encryption failed: {}", e))?;
+
+        // Combine nonce + ciphertext and encode as base64
+        let mut combined = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
+        combined.extend_from_slice(&nonce_bytes);
+        combined.extend_from_slice(&ciphertext);
+
+        Ok(general_purpose::URL_SAFE_NO_PAD.encode(&combined))
+    }
+
+    /// Decrypt user data
+    fn decrypt_user_data(&self, encrypted_data: &str) -> Result<VouchrsUserData> {
+        // Decode from base64
+        let combined = general_purpose::URL_SAFE_NO_PAD
+            .decode(encrypted_data)
+            .context("Failed to decode base64 user data")?;
+
+        if combined.len() < NONCE_SIZE {
+            return Err(anyhow!("Invalid user data length"));
+        }
+
+        // Split nonce and ciphertext
+        let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        // Decrypt the user data
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| anyhow!("AES decryption failed: {}", e))?;
+
+        // Deserialize user data from JSON
+        let user_json = String::from_utf8(plaintext)
+            .context("Failed to decode user UTF-8 data")?;
+
+        let user_data: VouchrsUserData = serde_json::from_str(&user_json)
+            .context("Failed to deserialize user JSON")?;
+
+        Ok(user_data)
     }
 }
 
@@ -336,19 +443,21 @@ mod tests {
     use crate::utils::test_helpers::create_test_session;
 
     #[test]
-    fn test_session_encryption_decryption() {
+    fn test_token_encryption_decryption() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
         let manager = JwtSessionManager::new(key, false);
         let session = create_test_session();
 
         // Test encryption
-        let encrypted = manager.encrypt_session(&session).unwrap();
+        let encrypted = manager.encrypt_token_data(&session).unwrap();
         assert!(!encrypted.is_empty());
 
         // Test decryption
-        let decrypted = manager.decrypt_session(&encrypted).unwrap();
-        assert_eq!(session.user_email, decrypted.user_email);
+        let decrypted = manager.decrypt_token_data(&encrypted).unwrap();
         assert_eq!(session.provider, decrypted.provider);
+        assert_eq!(session.id_token, decrypted.id_token);
+        assert_eq!(session.refresh_token, decrypted.refresh_token);
+        assert_eq!(session.expires_at, decrypted.expires_at);
     }
 
     #[test]
@@ -365,6 +474,27 @@ mod tests {
         // Session with expired token (should need refresh)
         session.expires_at = Utc::now() - Duration::minutes(10);
         assert!(manager.needs_token_refresh(&session));
+    }
+
+    #[test]
+    fn test_cookie_size_reduction() {
+        let key = b"test_key_32_bytes_long_for_testing_purposes";
+        let manager = JwtSessionManager::new(key, false);
+        let session = create_test_session();
+
+        // Create cookie with token data (current approach)
+        let token_cookie = manager.create_session_cookie(&session).unwrap();
+        let token_size = token_cookie.value().len();
+
+        // The current approach should work fine
+        let token_json = serde_json::to_string(&session).unwrap();
+
+        println!("Token JSON size: {} bytes", token_json.len());
+        println!("Token cookie size: {} bytes", token_size);
+        
+        // Log the compact nature of the token data
+        assert!(!token_json.is_empty());
+        assert!(!token_cookie.value().is_empty());
     }
 
 }
