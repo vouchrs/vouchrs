@@ -23,6 +23,7 @@ fn create_test_user_data(
         platform: user_agent_info.and_then(|ua| ua.platform.clone()),
         lang: user_agent_info.and_then(|ua| ua.lang.clone()),
         mobile: user_agent_info.map(|ua| ua.mobile as i32).unwrap_or(0),
+        session_start: Some(chrono::Utc::now().timestamp()), // Adding session_start as Unix timestamp for test
     }
 }
 

@@ -59,6 +59,7 @@ pub struct VouchrsUserData {
     pub platform: Option<String>,
     pub lang: Option<String>,
     pub mobile: i32,
+    pub session_start: Option<i64>,
 }
 
 /// Session structure containing only essential token data for cookies
@@ -117,6 +118,7 @@ impl CompleteSessionData {
             platform: user_agent_info.and_then(|ua| ua.platform.clone()),
             lang: user_agent_info.and_then(|ua| ua.lang.clone()),
             mobile: user_agent_info.map(|ua| ua.mobile as i32).unwrap_or(0),
+            session_start: Some(self.created_at.timestamp()), // Convert created_at to Unix timestamp
         }
     }
 }
