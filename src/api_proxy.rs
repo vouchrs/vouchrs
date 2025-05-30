@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// HTTP client for making upstream API requests
-static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(|| Client::new());
+static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::new);
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
 pub async fn proxy_generic_api(

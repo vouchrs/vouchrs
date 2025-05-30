@@ -424,7 +424,7 @@ impl OAuthProvider {
 
 // Static HTTP client for making token refresh requests
 static CLIENT: std::sync::LazyLock<reqwest::Client> =
-    std::sync::LazyLock::new(|| reqwest::Client::new());
+    std::sync::LazyLock::new(reqwest::Client::new);
 
 /// Check if tokens need refresh and refresh them if necessary
 pub async fn check_and_refresh_tokens(
