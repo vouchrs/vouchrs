@@ -308,7 +308,7 @@ impl crate::utils::cookie_utils::ToCookie<JwtSessionManager> for VouchrsSession 
             COOKIE_NAME.to_string(),
             Some(self),
             CookieOptions {
-                same_site: actix_web::cookie::SameSite::Strict,
+                same_site: actix_web::cookie::SameSite::Lax,
                 ..Default::default()
             }
         )
