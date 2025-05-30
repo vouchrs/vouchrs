@@ -97,7 +97,7 @@ fn convert_http_method(method: &actix_web::http::Method) -> Result<reqwest::Meth
     }
 }
 
-/// Forward request headers (excluding Authorization and hop-by-hop headers)
+/// Forward request headers (excluding Authorization, Cookie with vouchrs_session, and hop-by-hop headers)
 fn forward_request_headers(
     mut request_builder: reqwest::RequestBuilder,
     req: &HttpRequest,
@@ -105,7 +105,23 @@ fn forward_request_headers(
     for (name, value) in req.headers() {
         let name_str = name.as_str().to_lowercase();
         if name_str != "authorization" && !is_hop_by_hop_header(&name_str) {
-            if let Ok(value_str) = value.to_str() {
+            if name_str == "cookie" {
+                // Filter vouchrs_session cookie from being forwarded upstream
+                if let Ok(cookie_str) = value.to_str() {
+                    let filtered_cookies: Vec<&str> = cookie_str
+                        .split(';')
+                        .filter(|cookie| {
+                            let trimmed = cookie.trim();
+                            !trimmed.starts_with(&format!("{}=", crate::utils::cookie_utils::COOKIE_NAME))
+                        })
+                        .collect();
+                    
+                    // Only add cookie header if we have cookies left after filtering
+                    if !filtered_cookies.is_empty() {
+                        request_builder = request_builder.header(name.as_str(), filtered_cookies.join("; "));
+                    }
+                }
+            } else if let Ok(value_str) = value.to_str() {
                 request_builder = request_builder.header(name.as_str(), value_str);
             }
         }
@@ -353,8 +369,6 @@ mod tests {
     use crate::utils::test_helpers::create_test_settings;
     use crate::utils::test_request_builder::TestRequestBuilder;
     use crate::utils::user_agent::{extract_user_agent_info, derive_platform_from_user_agent};
-    // Import is_hop_by_hop_header for tests
-    use super::is_hop_by_hop_header;
 
     #[test]
     fn test_hop_by_hop_headers() {
@@ -459,5 +473,34 @@ mod tests {
         let settings = create_test_settings();
         let expected_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
         assert_eq!(expected_url, "http://localhost:8080/oauth2/sign_in");
+    }
+
+    #[tokio::test]
+    async fn test_cookie_filtering() {
+        // Create a mock HTTP request with cookies
+        let cookies = "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
+        let req = TestRequestBuilder::with_cookies(cookies);
+
+        // Create a reqwest RequestBuilder
+        let client = Client::new();
+        let request_builder = client.get("http://example.com");
+
+        // Apply header forwarding
+        let modified_builder = forward_request_headers(request_builder, &req);
+        
+        // Since we can't inspect the actual headers directly in the builder,
+        // we need to convert it to a request and check the headers
+        let request = modified_builder.build().expect("Failed to build request");
+        let headers = request.headers();
+        
+        // Check that the Cookie header exists but doesn't contain vouchrs_session
+        if let Some(cookie_header) = headers.get(reqwest::header::COOKIE) {
+            let cookie_str = cookie_header.to_str().expect("Failed to convert cookie header to string");
+            assert!(!cookie_str.contains("vouchrs_session="), "Cookie header should not contain vouchrs_session");
+            assert!(cookie_str.contains("another_cookie=value"), "Cookie header should contain other cookies");
+            assert!(cookie_str.contains("third_cookie=value3"), "Cookie header should contain other cookies");
+        } else {
+            panic!("Cookie header is missing");
+        }
     }
 }

@@ -59,4 +59,11 @@ impl TestRequestBuilder {
             .insert_header(("accept-language", "fr-FR,fr;q=0.9"))
             .to_http_request()
     }
+    
+    /// Create a request with specific cookie header
+    pub fn with_cookies(cookies: &str) -> HttpRequest {
+        test::TestRequest::default()
+            .insert_header((header::COOKIE, cookies))
+            .to_http_request()
+    }
 }
