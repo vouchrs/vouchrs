@@ -7,10 +7,26 @@ on:
       - dev
     tags:
       - 'v*'
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.vscode/**'
+      - '.devcontainer/**'
   pull_request:
     branches:
       - main
       - dev
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.vscode/**'
+      - '.devcontainer/**'
   workflow_dispatch:
     inputs:
       tag:
