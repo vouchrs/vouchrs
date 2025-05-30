@@ -75,7 +75,7 @@ impl JwtSessionManager {
         Ok(Cookie::build(COOKIE_NAME, encrypted_data)
             .http_only(true)
             .secure(self.cookie_secure)
-            .same_site(actix_web::cookie::SameSite::Lax)
+            .same_site(actix_web::cookie::SameSite::Strict)
             .path("/")
             .max_age(actix_web::cookie::time::Duration::hours(24))
             .finish())
