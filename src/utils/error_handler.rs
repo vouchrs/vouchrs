@@ -14,9 +14,9 @@ impl ErrorHandler {
         let location = redirect_url.unwrap_or("/oauth2/sign_in");
         
         let final_url = if location.contains('?') {
-            format!("{}&error={}", location, error_type)
+            format!("{location}&error={error_type}")
         } else {
-            format!("{}?error={}", location, error_type)
+            format!("{location}?error={error_type}")
         };
         
         HttpResponse::Found()

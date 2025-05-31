@@ -15,6 +15,11 @@ use crate::{
 static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::new);
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
+/// Proxy generic API requests with authentication
+/// 
+/// # Errors
+/// Returns an error if authentication fails, request building fails, 
+/// or upstream server is unreachable
 pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
@@ -106,12 +111,10 @@ async fn forward_upstream_response(
                 })));
         }
         // For API requests, return 401 with JSON error
-        else {
-            return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "unauthorized",
-                "message": "Authentication required. Please obtain a valid session cookie or bearer token."
-            })));
-        }
+        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "unauthorized",
+            "message": "Authentication required. Please obtain a valid session cookie or bearer token."
+        })));
     }
 
     // For all other status codes, forward the response as-is
@@ -132,7 +135,7 @@ async fn forward_upstream_response(
 
     // Get response body
     let response_body = upstream_response.bytes().await.map_err(|err| {
-        actix_web::error::ErrorBadGateway(format!("Failed to read upstream response: {}", err))
+        actix_web::error::ErrorBadGateway(format!("Failed to read upstream response: {err}"))
     })?;
 
     Ok(response_builder.body(response_body))

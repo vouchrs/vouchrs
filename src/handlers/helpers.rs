@@ -3,12 +3,14 @@ use crate::settings::VouchrsSettings;
 use base64::{engine::general_purpose, Engine as _};
 
 // Helper function to get sign-in page HTML (reused from original handlers)
+#[must_use]
 pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
     let html_path = format!("{}/sign-in.html", settings.static_files.assets_folder);
     std::fs::read_to_string(&html_path).unwrap_or_else(|_| generate_dynamic_sign_in_page(settings))
 }
 
 // Generate dynamic sign-in page with providers from configuration
+#[must_use]
 pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
     let enabled_providers = settings.get_enabled_providers();
 
@@ -116,20 +118,23 @@ pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
         <h1>🔐 Vouchrs OIDC Reverse Proxy</h1>
         <p class="subtitle">Choose your provider to sign in</p>
         
-        {}
+        {provider_buttons}
         
         <div class="footer">
             <p>An OIDC proxy service</p>
         </div>
     </div>
 </body>
-</html>"#,
-        provider_buttons
+</html>"#
     )
 }
 
-// Helper function to decode JWT token payload without verification
-// This is used for debugging purposes only to inspect token claims
+/// Helper function to decode JWT token payload without verification
+/// This is used for debugging purposes only to inspect token claims
+/// 
+/// # Errors
+/// Returns an error if the JWT format is invalid, base64 decoding fails, 
+/// UTF-8 decoding fails, or JSON parsing fails
 pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {

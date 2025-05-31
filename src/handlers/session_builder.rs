@@ -23,8 +23,15 @@ use serde_json::Value;
 pub struct SessionBuilder;
 
 impl SessionBuilder {
-    /// Creates a CompleteSessionData from OAuth tokens, extracting standard claims from the ID token
+    /// Creates a `CompleteSessionData` from OAuth tokens, extracting standard claims from the ID token
     /// and using Apple user info to fill in missing fields if available
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The ID token is missing or invalid
+    /// - JWT decoding fails
+    /// - Required claims are missing from the token
     pub fn build_session(
         provider: String,
         id_token: Option<String>,
@@ -34,7 +41,19 @@ impl SessionBuilder {
         Self::build_session_with_apple_info(provider, id_token, refresh_token, expires_at, None)
     }
 
-    /// Creates a CompleteSessionData from OAuth tokens with optional Apple user info for fallback
+    /// Creates a `CompleteSessionData` from OAuth tokens with optional Apple user info for fallback
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The ID token is missing or invalid
+    /// - JWT decoding fails
+    /// - Required claims are missing from the token
+    ///
+    /// # Panics
+    ///
+    /// This function panics if it cannot provide a fallback email address. However, the current
+    /// implementation always provides a default email, making panics unlikely.
     pub fn build_session_with_apple_info(
         provider: String,
         id_token: Option<String>,
@@ -45,11 +64,10 @@ impl SessionBuilder {
         let id_token_ref = id_token.as_ref().ok_or("No ID token available")?;
 
         let claims = decode_jwt_payload(id_token_ref)
-            .map_err(|e| format!("Failed to decode ID token: {}", e))?;
+            .map_err(|e| format!("Failed to decode ID token: {e}"))?;
 
         info!(
-            "Building session from ID token claims for provider: {}",
-            provider
+            "Building session from ID token claims for provider: {provider}"
         );
         debug!(
             "ID token claims: {}",
@@ -63,7 +81,7 @@ impl SessionBuilder {
                 // Fallback to Apple user info if email not in token
                 if let Some(ref apple_info) = apple_user_info {
                     if let Some(ref email) = apple_info.email {
-                        debug!("Using Apple user info email as fallback: {}", email);
+                        debug!("Using Apple user info email as fallback: {email}");
                         return Some(email.clone());
                     }
                 }
@@ -80,7 +98,7 @@ impl SessionBuilder {
             if let Some(ref apple_info) = apple_user_info {
                 let apple_name = apple_info.name.full_name();
                 if !apple_name.trim().is_empty() {
-                    debug!("Using Apple user info name as fallback: {}", apple_name);
+                    debug!("Using Apple user info name as fallback: {apple_name}");
                     user_name = Some(apple_name);
                 }
             }
@@ -92,8 +110,7 @@ impl SessionBuilder {
         let normalized_provider = Self::normalize_provider(&provider, &claims);
 
         info!(
-            "Session built successfully - Email: {}, Provider: {}, Provider ID: {}, Name: {:?}",
-            user_email, normalized_provider, provider_id, user_name
+            "Session built successfully - Email: {user_email}, Provider: {normalized_provider}, Provider ID: {provider_id}, Name: {user_name:?}"
         );
 
         Ok(CompleteSessionData {
@@ -108,31 +125,32 @@ impl SessionBuilder {
         })
     }
 
-    /// Extract the subject (sub) claim - maps to provider_id
+    /// Extract the subject (sub) claim - maps to `provider_id`
     fn extract_subject(claims: &Value) -> Result<String, String> {
         claims
             .get("sub")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or("Missing or invalid 'sub' claim in ID token".to_string())
     }
 
-    /// Extract the email claim - maps to user_email (returns Option for fallback logic)
+    /// Extract the email claim - maps to `user_email` (returns Option for fallback logic)
+    #[must_use]
     pub fn extract_email(claims: &Value) -> Option<String> {
         claims
             .get("email")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
     }
 
-    /// Extract the name claim - maps to user_name (optional)
+    /// Extract the name claim - maps to `user_name` (optional)
     fn extract_name(claims: &Value) -> Option<String> {
         // Try different name claim formats used by different providers
 
         // Google uses 'name' field directly
         if let Some(name) = claims.get("name").and_then(|v| v.as_str()) {
             if !name.trim().is_empty() {
-                debug!("Extracted name from 'name' claim: {}", name);
+                debug!("Extracted name from 'name' claim: {name}");
                 return Some(name.to_string());
             }
         }
@@ -148,11 +166,10 @@ impl SessionBuilder {
             .unwrap_or("");
 
         if !given_name.is_empty() || !family_name.is_empty() {
-            let full_name = format!("{} {}", given_name, family_name).trim().to_string();
+            let full_name = format!("{given_name} {family_name}").trim().to_string();
             if !full_name.is_empty() {
                 debug!(
-                    "Extracted name from given_name + family_name: {}",
-                    full_name
+                    "Extracted name from given_name + family_name: {full_name}"
                 );
                 return Some(full_name);
             }
@@ -166,26 +183,21 @@ impl SessionBuilder {
     fn extract_timestamp(claims: &Value, field_name: &str) -> Option<DateTime<Utc>> {
         claims
             .get(field_name)
-            .and_then(|v| v.as_i64())
-            .and_then(|timestamp| match Utc.timestamp_opt(timestamp, 0) {
-                chrono::LocalResult::Single(dt) => {
-                    debug!(
-                        "Extracted {} from '{}' claim: {}",
-                        field_name, field_name, dt
-                    );
-                    Some(dt)
-                }
-                _ => {
-                    warn!(
-                        "Invalid '{}' timestamp in ID token: {}",
-                        field_name, timestamp
-                    );
-                    None
-                }
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|timestamp| if let chrono::LocalResult::Single(dt) = Utc.timestamp_opt(timestamp, 0) {
+                debug!(
+                    "Extracted {field_name} from '{field_name}' claim: {dt}"
+                );
+                Some(dt)
+            } else {
+                warn!(
+                    "Invalid '{field_name}' timestamp in ID token: {timestamp}"
+                );
+                None
             })
     }
 
-    /// Extract the issued at (iat) claim - maps to created_at
+    /// Extract the issued at (iat) claim - maps to `created_at`
     fn extract_issued_at(claims: &Value) -> Option<DateTime<Utc>> {
         Self::extract_timestamp(claims, "iat")
     }
@@ -193,7 +205,7 @@ impl SessionBuilder {
     /// Normalize provider name from issuer claim if available
     fn normalize_provider(provider: &str, claims: &Value) -> String {
         if let Some(issuer) = claims.get("iss").and_then(|v| v.as_str()) {
-            debug!("Found issuer claim: {}", issuer);
+            debug!("Found issuer claim: {issuer}");
 
             // Map common issuer values to normalized provider names
             if issuer.contains("accounts.google.com") {

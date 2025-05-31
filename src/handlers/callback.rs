@@ -22,6 +22,11 @@ struct SessionFinalizeParams {
     redirect_url: Option<String>,
 }
 
+/// JWT OAuth callback handler
+/// 
+/// # Errors
+/// Returns an error if OAuth state validation fails, code exchange fails,
+/// session building fails, or cookie creation fails
 pub async fn jwt_oauth_callback(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
@@ -47,7 +52,7 @@ pub async fn jwt_oauth_callback(
     let (id_token, refresh_token, expires_at, apple_user_info) = match token_result {
         Ok(result) => result,
         Err(e) => {
-            error!("Failed to exchange code for user info: {}", e);
+            error!("Failed to exchange code for user info: {e}");
             let clear_cookie = session_manager.create_expired_cookie();
             return Ok(HttpResponse::Found()
                 .cookie(clear_cookie)
@@ -84,10 +89,10 @@ fn extract_callback_data(
     form: Option<web::Form<OAuthCallback>>,
 ) -> OAuthCallback {
     if let Some(form_data) = form {
-        debug!("OAuth callback received via form_post: {:?}", form_data);
+        debug!("OAuth callback received via form_post: {form_data:?}");
         form_data.into_inner()
     } else {
-        debug!("OAuth callback received via query: {:?}", query);
+        debug!("OAuth callback received via query: {query:?}");
         query.into_inner()
     }
 }
@@ -108,29 +113,27 @@ fn validate_callback(
     }
 
     // Get authorization code
-    let code = match &callback_data.code {
-        Some(code) => code.clone(),
-        None => {
-            error!("No authorization code received");
-            let clear_cookie = session_manager.create_expired_cookie();
-            return Err(HttpResponse::Found()
-                .cookie(clear_cookie)
-                .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
-                .finish());
-        }
+    let code = if let Some(code) = &callback_data.code {
+        code.clone()
+    } else {
+        error!("No authorization code received");
+        let clear_cookie = session_manager.create_expired_cookie();
+        return Err(HttpResponse::Found()
+            .cookie(clear_cookie)
+            .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+            .finish());
     };
 
     // Get state parameter
-    let received_state = match &callback_data.state {
-        Some(state) => state.clone(),
-        None => {
-            error!("No state parameter received");
-            let clear_cookie = session_manager.create_expired_cookie();
-            return Err(HttpResponse::Found()
-                .cookie(clear_cookie)
-                .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
-                .finish());
-        }
+    let received_state = if let Some(state) = &callback_data.state {
+        state.clone()
+    } else {
+        error!("No state parameter received");
+        let clear_cookie = session_manager.create_expired_cookie();
+        return Err(HttpResponse::Found()
+            .cookie(clear_cookie)
+            .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
+            .finish());
     };
 
     // Parse and validate OAuth state
@@ -140,7 +143,7 @@ fn validate_callback(
             Ok((code, state))
         }
         Err(e) => {
-            error!("Failed to parse OAuth state: {}", e);
+            error!("Failed to parse OAuth state: {e}");
             let clear_cookie = session_manager.create_expired_cookie();
             Err(HttpResponse::Found()
                 .cookie(clear_cookie)
@@ -162,7 +165,7 @@ fn build_and_finalize_session(
     let client_ip = req
         .connection_info()
         .realip_remote_addr()
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let user_agent_info = extract_user_agent_info(req);
 
     // Build the session (without access token)
@@ -187,7 +190,7 @@ fn build_and_finalize_session(
             let session_cookie = match session_manager.create_session_cookie(&session) {
                 Ok(cookie) => cookie,
                 Err(e) => {
-                    error!("Failed to create session cookie: {}", e);
+                    error!("Failed to create session cookie: {e}");
                     let clear_cookie = session_manager.create_expired_cookie();
                     return HttpResponse::Found()
                         .cookie(clear_cookie)
@@ -199,7 +202,7 @@ fn build_and_finalize_session(
             let user_cookie = match session_manager.create_user_cookie(&user_data) {
                 Ok(cookie) => cookie,
                 Err(e) => {
-                    error!("Failed to create user cookie: {}", e);
+                    error!("Failed to create user cookie: {e}");
                     let clear_cookie = session_manager.create_expired_cookie();
                     return HttpResponse::Found()
                         .cookie(clear_cookie)
@@ -218,7 +221,7 @@ fn build_and_finalize_session(
             )
         }
         Err(e) => {
-            error!("Failed to build session from ID token: {}", e);
+            error!("Failed to build session from ID token: {e}");
             let clear_cookie = session_manager.create_expired_cookie();
             HttpResponse::Found()
                 .cookie(clear_cookie)

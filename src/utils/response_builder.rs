@@ -5,13 +5,26 @@ use std::collections::HashMap;
 use url;
 use regex::Regex;
 use once_cell::sync::Lazy;
+use log::{debug, warn};
 
 use crate::utils::cookie_utils::filter_vouchrs_cookies;
 
-// Optimized regex pattern for detecting malicious URL patterns  
-// Consolidates redundant patterns while maintaining full coverage
+// Simplified security patterns - rely on layered validation rather than complex regex
+// Focus on high-confidence attack patterns that URL parsing won't catch
+
+// Core path traversal pattern - the most common and critical attack
+static PATH_TRAVERSAL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\.\.").unwrap()
+});
+
+// Protocol injection for absolute URLs that could bypass URL parsing
+static PROTOCOL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^(?:[a-z][a-z0-9+.-]*:)|(?:/{2,})").unwrap()
+});
+
+// Critical control characters and suspicious path starters
 static SUSPICIOUS_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)(?:\.\.)|(?:/{2,})|(?:https?:/[^/])|(?:[/\\](?:[\s\v]*|\.{1,2})[/\\])|(?:(?:javascript|data|vbscript):)|(?:%(?:00|0[aAdD]|09|2[ef]|5c|68%74%74%70%3a|6a%61%76%61%73%63%72%69%70%74%3a|64%61%74%61%3a))|(?:[\x00-\x08\x0B-\x1F\x7F-\x9F])|(?:^[\.@〱〵ゝーｰ][\w.-]+\.[\w]+)|(?:(?:%[0-9a-fA-F]{2}){6,})|(?:/\\/)|(?:[@\w.-]+@[\w.-]+@)|(?:javas?%26%23)|(?:(?:%26%23\d+;?){2,})|(?:\\[0-7]{3}\\[0-7]{3})|(?:\\[a-z]\\[a-z]\\[a-z])|(?:(?:\\[a-z]){4,})|(?:\\[ux][0-9a-fA-F]{2,4}\\[ux][0-9a-fA-F]{2,4})|(?:^https?:[^/])|(?:/%0[0-9a-fA-F])|(?:ja\\[ntr]va\\[tr]script)|(?:[\r\n\t]+:)").unwrap()
+    Regex::new(r"(?i)[\x00-\x1F\x7F-\x9F]|%(?:00|0[aAdD]|09|5c|26%23)|^[.@〱〵ゝーｰ]|\\|[\u{200E}\u{200F}\u{2060}-\u{2064}\u{2000}-\u{200A}]").unwrap()
 });
 
 // Allowed schemes for the final URL
@@ -57,9 +70,9 @@ impl ResponseBuilder {
     /// Create an error redirect response
     pub fn error_redirect(location: &str, error_param: &str) -> HttpResponse {
         let redirect_url = if location.contains('?') {
-            format!("{}&error={}", location, error_param)
+            format!("{location}&error={error_param}")
         } else {
-            format!("{}?error={}", location, error_param)
+            format!("{location}?error={error_param}")
         };
 
         Self::redirect(&redirect_url, None)
@@ -153,7 +166,9 @@ impl ResponseBuilder {
     /// Ensures that the request only goes to the configured upstream URL
     /// and protects against path traversal attempts
     pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, HttpResponse> {
-        // Layer 1: Pattern validation
+        debug!("Building upstream URL - base: {}, path: {}", base_url, request_path);
+        
+        // Layer 1: Fast pattern validation with early returns
         Self::validate_suspicious_patterns(request_path)?;
         
         // Layer 2: URL construction with normalization
@@ -162,58 +177,186 @@ impl ResponseBuilder {
         // Layer 3: Final URL validation (scheme, host, port)
         Self::validate_final_url(base_url, &final_url)?;
         
+        debug!("Successfully validated URL: {}", final_url);
         Ok(final_url)
     }
 
-    /// Validate against only high-confidence malicious patterns
-    /// These patterns are almost never legitimate in URL paths
+    /// Validate against malicious patterns using simplified, high-confidence patterns
+    /// Relies on URL parsing and final validation for comprehensive protection
     fn validate_suspicious_patterns(request_path: &str) -> Result<(), HttpResponse> {
-        // Check original path
-        if SUSPICIOUS_PATTERN.is_match(request_path) {
+        // Fast path: check for common legitimate patterns first
+        if request_path.starts_with("/api/") || 
+           request_path.starts_with("/static/") ||
+           request_path.starts_with("/health") {
+            // Still need to check for critical attacks in legitimate-looking paths
+            return Self::validate_critical_patterns(request_path);
+        }
+        
+        // Check for path traversal (most critical and common)
+        if PATH_TRAVERSAL_PATTERN.is_match(request_path) {
+            warn!("Path traversal attempt detected: {}", request_path);
             return Err(Self::invalid_path_error());
         }
         
-        // URL decode and check again to catch encoded attacks
-        if let Ok(decoded) = url::Url::parse(&format!("http://dummy{}", request_path))
-            .and_then(|url| Ok(url.path().to_string()))
-            .or_else(|_| {
-                // Fallback: manual URL decoding for partial paths
-                urlencoding::decode(request_path).map(|s| s.into_owned())
-            }) 
-        {
-            if SUSPICIOUS_PATTERN.is_match(&decoded) {
-                return Err(Self::invalid_path_error());
-            }
-            
-            // Check for suspicious patterns after lowercasing
-            let decoded_lower = decoded.to_lowercase();
-            if decoded_lower.contains("javascript:") || 
-               decoded_lower.contains("vbscript:") || 
-               decoded_lower.contains("data:") ||
-               decoded_lower.contains("file:") ||
-               decoded_lower.contains("ftp:") {
+        // Check for protocol injection (absolute URLs)
+        if PROTOCOL_PATTERN.is_match(request_path) {
+            warn!("Protocol injection attempt detected: {}", request_path);
+            return Err(Self::invalid_path_error());
+        }
+        
+        // Check for control characters (should never be in legitimate paths)
+        if SUSPICIOUS_PATTERN.is_match(request_path) {
+            warn!("Suspicious pattern detected: {}", request_path);
+            return Err(Self::invalid_path_error());
+        }
+        
+        // Check decoded variants for encoded attacks
+        Self::validate_encoded_patterns(request_path)
+    }
+    
+    /// Validate critical patterns that should be checked even in legitimate-looking paths
+    fn validate_critical_patterns(request_path: &str) -> Result<(), HttpResponse> {
+        // Only check the most critical patterns for performance
+        if PATH_TRAVERSAL_PATTERN.is_match(request_path) ||
+           SUSPICIOUS_PATTERN.is_match(request_path) {
+            warn!("Critical attack pattern in legitimate path: {}", request_path);
+            return Err(Self::invalid_path_error());
+        }
+        
+        // Check for double-encoded path traversal
+        if let Ok(decoded) = urlencoding::decode(request_path) {
+            if PATH_TRAVERSAL_PATTERN.is_match(&decoded) {
+                warn!("Encoded path traversal detected: {} -> {}", request_path, decoded);
                 return Err(Self::invalid_path_error());
             }
         }
         
         Ok(())
     }
+    
+    /// Validate URL-decoded patterns for encoded attack attempts
+    /// Simplified to focus on the most critical encoded attacks
+    fn validate_encoded_patterns(request_path: &str) -> Result<(), HttpResponse> {
+        // Get decoded variants to check for encoded attacks
+        let decoded_variants = Self::get_decoded_variants(request_path);
+        
+        for decoded in decoded_variants {
+            // Check critical patterns on decoded content
+            if PATH_TRAVERSAL_PATTERN.is_match(&decoded) {
+                warn!("Encoded path traversal detected: {} -> {}", request_path, decoded);
+                return Err(Self::invalid_path_error());
+            }
+            
+            if PROTOCOL_PATTERN.is_match(&decoded) {
+                warn!("Encoded protocol injection detected: {} -> {}", request_path, decoded);
+                return Err(Self::invalid_path_error());
+            }
+            
+            if SUSPICIOUS_PATTERN.is_match(&decoded) {
+                warn!("Encoded suspicious pattern detected: {} -> {}", request_path, decoded);
+                return Err(Self::invalid_path_error());
+            }
+            
+            // Simple string-based checks for dangerous protocols (more reliable than complex regex)
+            let decoded_lower = decoded.to_lowercase();
+            if Self::contains_dangerous_protocol(&decoded_lower) {
+                warn!("Dangerous protocol detected: {}", decoded_lower);
+                return Err(Self::invalid_path_error());
+            }
+            
+            // Check for double @ patterns (domain confusion)
+            if decoded.matches('@').count() > 1 {
+                warn!("Multiple @ symbols detected (domain confusion): {}", decoded);
+                return Err(Self::invalid_path_error());
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get decoded variants of the input path (simplified approach)
+    fn get_decoded_variants(request_path: &str) -> Vec<String> {
+        let mut variants = Vec::with_capacity(3); // Pre-allocate for performance
+        
+        // Original path
+        variants.push(request_path.to_string());
+        
+        // Single URL decoding (catches most attacks)
+        if let Ok(decoded) = urlencoding::decode(request_path) {
+            let decoded_string = decoded.into_owned();
+            if decoded_string != request_path {
+                variants.push(decoded_string.clone());
+                
+                // Double URL decoding only if first decode changed something
+                if let Ok(double_decoded) = urlencoding::decode(&decoded_string) {
+                    let double_decoded_string = double_decoded.into_owned();
+                    if double_decoded_string != decoded_string {
+                        variants.push(double_decoded_string);
+                    }
+                }
+            }
+        }
+        
+        variants
+    }
+    
+    /// Check for dangerous protocols in lowercase text (simplified list)
+    fn contains_dangerous_protocol(text: &str) -> bool {
+        // Focus on the most common dangerous protocols
+        const DANGEROUS_PROTOCOLS: &[&str] = &[
+            "javascript:",
+            "vbscript:",
+            "data:",
+            "file:",
+            "ftp:",
+        ];
+        
+        DANGEROUS_PROTOCOLS.iter().any(|protocol| text.contains(protocol))
+    }
 
-    /// Construct normalized URL with proper path joining
+    /// Construct normalized URL with proper path joining and additional security checks
     fn construct_normalized_url(base_url: &str, request_path: &str) -> Result<String, HttpResponse> {
         // Parse base URL
         let base = url::Url::parse(base_url)
-            .map_err(|_| Self::invalid_path_error())?;
+            .map_err(|e| {
+                warn!("Failed to parse base URL '{}': {}", base_url, e);
+                Self::invalid_path_error()
+            })?;
 
-        // Clean and normalize the request path
-        let clean_path = request_path.trim_start_matches('/');
+        // Normalize the request path
+        let clean_path = Self::normalize_request_path(request_path)?;
         
         // Join the path with the base URL
-        if let Ok(joined) = base.join(clean_path) {
-            Ok(joined.to_string())
-        } else {
-            Err(Self::invalid_path_error())
+        let joined = base.join(&clean_path)
+            .map_err(|e| {
+                warn!("Failed to join URL '{}' + '{}': {}", base_url, clean_path, e);
+                Self::invalid_path_error()
+            })?;
+            
+        // Additional security check: ensure the path didn't escape via URL parsing
+        if let Some(host) = joined.host_str() {
+            if host != base.host_str().unwrap_or("") {
+                warn!("Host mismatch after URL join: expected '{}', got '{}'", 
+                      base.host_str().unwrap_or(""), host);
+                return Err(Self::invalid_path_error());
+            }
         }
+
+        Ok(joined.to_string())
+    }
+    
+    /// Normalize request path to prevent bypass attempts (simplified)
+    fn normalize_request_path(request_path: &str) -> Result<String, HttpResponse> {
+        // Start with trimming leading slashes
+        let path = request_path.trim_start_matches('/').trim();
+        
+        // Basic length check to prevent extremely long paths
+        if path.len() > 2048 {
+            warn!("Excessively long path detected: {} characters", path.len());
+            return Err(Self::invalid_path_error());
+        }
+        
+        Ok(path.to_string())
     }
 
     /// Validate the final constructed URL against security constraints
@@ -225,20 +368,61 @@ impl ResponseBuilder {
 
         // Validate scheme is in allowed list
         if !ALLOWED_SCHEMES.contains(&final_parsed.scheme()) {
+            warn!("Invalid scheme '{}' in final URL: {}", final_parsed.scheme(), final_url);
             return Err(Self::invalid_path_error());
         }
 
         // Ensure the final URL stays within the same host as the base
         if final_parsed.host_str() != base.host_str() {
+            warn!("Host mismatch: base '{}', final '{}'", 
+                  base.host_str().unwrap_or(""), 
+                  final_parsed.host_str().unwrap_or(""));
             return Err(Self::invalid_path_error());
         }
 
         // Ensure the port hasn't changed (if originally specified)
         if final_parsed.port() != base.port() {
+            warn!("Port mismatch: base {:?}, final {:?}", base.port(), final_parsed.port());
             return Err(Self::invalid_path_error());
+        }
+        
+        // Additional check: ensure path doesn't go above the base path
+        let base_path = base.path();
+        let final_path = final_parsed.path();
+        
+        // If base has a path, final path must start with it
+        if !base_path.is_empty() && base_path != "/" && !final_path.starts_with(base_path) {
+            warn!("Path escape attempt: base path '{}', final path '{}'", base_path, final_path);
+            return Err(Self::invalid_path_error());
+        }
+        
+        // Check for IP addresses in the host (potential SSRF)
+        if let Some(host) = final_parsed.host_str() {
+            if Self::is_suspicious_host(host) {
+                warn!("Suspicious host detected: {}", host);
+                return Err(Self::invalid_path_error());
+            }
         }
 
         Ok(())
+    }
+    
+    /// Check if a host is suspicious (simplified - focus on critical cases)
+    fn is_suspicious_host(host: &str) -> bool {
+        // Check for IPv4 addresses (potential SSRF)
+        if host.parse::<std::net::Ipv4Addr>().is_ok() {
+            return true;
+        }
+        
+        // Check for IPv6 addresses
+        if host.starts_with('[') && host.ends_with(']') {
+            return true;
+        }
+        
+        // Check for localhost variants
+        let host_lower = host.to_lowercase();
+        matches!(host_lower.as_str(), 
+            "localhost" | "127.0.0.1" | "::1" | "0.0.0.0")
     }
 
     /// Return standardized error for invalid paths
@@ -486,6 +670,192 @@ mod tests {
             
             if let Err(response) = result {
                 assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test that Unicode spoofing attempts are blocked
+    #[test]
+    fn test_unicode_spoofing_blocked() {
+        let base_url = "https://api.example.com";
+        
+        let unicode_attacks = vec![
+            "/api/users/\u{200E}evil.com\u{200F}/data",  // LTR/RTL override
+            "/path\u{2060}with\u{2061}invisible\u{2062}separators", // Invisible separators
+            "/api\u{2000}spaced\u{2001}attack",  // En/em spaces
+            "〱malicious.com/path",  // Kana repeat marks
+            "〵evil.site.com/api",
+            "ゝattacker.com/data",
+            "ーbad.domain.com/endpoint",
+        ];
+
+        for path in unicode_attacks {
+            let result = ResponseBuilder::build_upstream_url(base_url, path);
+            assert!(result.is_err(), "Unicode spoofing should be blocked: {}", path);
+            
+            if let Err(response) = result {
+                assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test that control character injection is blocked
+    #[test]
+    fn test_control_character_injection_blocked() {
+        let base_url = "https://api.example.com";
+        
+        let control_char_attacks = vec![
+            "/api\x00null-byte/users",
+            "/path\x01with\x02control\x03chars",
+            "/endpoint\x0Bvertical-tab/data",
+            "/api\x0Cform-feed/endpoint",
+            "/data\x0Eshift-out/file",
+            "/test\x0Fshift-in/path",
+            "/api\x7Fdelete-char/users",
+            "/path\u{0080}high-control/data",
+        ];
+
+        for path in control_char_attacks {
+            let result = ResponseBuilder::build_upstream_url(base_url, path);
+            assert!(result.is_err(), "Control character injection should be blocked: {:?}", path);
+            
+            if let Err(response) = result {
+                assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test that excessively long paths are blocked
+    #[test]
+    fn test_long_path_blocked() {
+        let base_url = "https://api.example.com";
+        
+        // Create a path longer than 2048 characters
+        let long_path = format!("/api/{}", "a".repeat(2048));
+        
+        let result = ResponseBuilder::build_upstream_url(base_url, &long_path);
+        assert!(result.is_err(), "Excessively long path should be blocked");
+        
+        if let Err(response) = result {
+            assert_eq!(response.status(), 400);
+        }
+    }
+
+    /// Test that IP address hosts are blocked (SSRF protection)
+    #[test]
+    fn test_ip_address_hosts_blocked() {
+        let ip_bases = vec![
+            "http://127.0.0.1",
+            "http://192.168.1.1", 
+            "http://10.0.0.1",
+            "http://172.16.0.1",
+            "http://[::1]",
+            "http://[::ffff:127.0.0.1]",
+            "https://0.0.0.0",
+        ];
+
+        for base_url in ip_bases {
+            let result = ResponseBuilder::build_upstream_url(base_url, "/api/test");
+            assert!(result.is_err(), "IP address host should be blocked: {}", base_url);
+            
+            if let Err(response) = result {
+                assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test additional dangerous protocols are blocked
+    #[test]
+    fn test_additional_dangerous_protocols_blocked() {
+        let base_url = "https://api.example.com";
+        
+        let additional_protocols = vec![
+            "chrome://settings",
+            "chrome-extension://abcd/popup.html",
+            "moz-extension://1234/content.js",
+            "ms-appx://app/page.html",
+            "ms-appx-web://app/content.html", 
+            "res://evil.dll/content",
+            "resource://evil/file",
+            "x-javascript:alert(1)",
+            "livescript:alert(1)",
+            "mocha:eval('alert(1)')",
+        ];
+
+        for protocol_path in additional_protocols {
+            let result = ResponseBuilder::build_upstream_url(base_url, protocol_path);
+            assert!(result.is_err(), "Additional dangerous protocol should be blocked: {}", protocol_path);
+            
+            if let Err(response) = result {
+                assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test that double URL decoding attacks are caught
+    #[test]
+    fn test_double_url_encoding_blocked() {
+        let base_url = "https://api.example.com";
+        
+        let double_encoded_attacks = vec![
+            "%252e%252e%252f%252e%252e%252fetc%252fpasswd", // Double encoded ../../../etc/passwd
+            "%252f%252f%252f%252fexample.com", // Double encoded ////example.com
+            "javas%2563ript%253aalert%25281%2529", // Double encoded javascript:alert(1)
+            "%2568%2574%2574%2570%253a%252f%252f%2565%2578%2561%256d%2570%256c%2565%252e%2563%256f%256d", // Triple encoded http://example.com
+        ];
+
+        for path in double_encoded_attacks {
+            let result = ResponseBuilder::build_upstream_url(base_url, path);
+            assert!(result.is_err(), "Double URL encoding attack should be blocked: {}", path);
+            
+            if let Err(response) = result {
+                assert_eq!(response.status(), 400);
+            }
+        }
+    }
+
+    /// Test that performance optimizations work for legitimate fast-path requests
+    #[test]
+    fn test_fast_path_performance() {
+        let base_url = "https://api.example.com";
+        
+        let fast_path_urls = vec![
+            "/api/users",
+            "/api/v1/data", 
+            "/api/health",
+            "/static/css/style.css",
+            "/static/js/app.js",
+            "/health",
+            "/health/status",
+        ];
+
+        for path in fast_path_urls {
+            let result = ResponseBuilder::build_upstream_url(base_url, path);
+            assert!(result.is_ok(), "Fast path URL should be allowed: {}", path);
+            
+            if let Ok(url) = result {
+                assert!(url.starts_with(base_url), "URL should start with base URL: {}", url);
+            }
+        }
+    }
+
+    /// Test base path enforcement
+    #[test]
+    fn test_base_path_enforcement() {
+        let base_url = "https://api.example.com/v1/";
+        
+        let valid_paths = vec![
+            "/users",
+            "/data/123",
+            "/endpoint",
+        ];
+        
+        for path in valid_paths {
+            let result = ResponseBuilder::build_upstream_url(base_url, path);
+            assert!(result.is_ok(), "Valid path under base should be allowed: {}", path);
+            
+            if let Ok(url) = result {
+                assert!(url.starts_with("https://api.example.com/v1/"), "URL should respect base path: {}", url);
             }
         }
     }

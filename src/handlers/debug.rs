@@ -3,7 +3,10 @@ use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
-/// OAuth2 userinfo endpoint - returns user data from encrypted user cookie
+/// `OAuth2` userinfo endpoint - returns user data from encrypted user cookie
+/// 
+/// # Errors
+/// Returns an error if session extraction fails or user data is invalid
 pub async fn jwt_oauth_userinfo(
     req: HttpRequest,
     session_manager: web::Data<SessionManager>,
@@ -25,7 +28,7 @@ pub async fn jwt_oauth_userinfo(
                 Ok(HttpResponse::Ok().json(user_data))
             }
             Err(e) => {
-                error!("Userinfo endpoint: Error decrypting user cookie: {}", e);
+                error!("Userinfo endpoint: Error decrypting user cookie: {e}");
                 Ok(HttpResponse::Unauthorized().json(serde_json::json!({
                     "error": "invalid_cookie",
                     "error_description": "Failed to decrypt user cookie data",
@@ -42,6 +45,10 @@ pub async fn jwt_oauth_userinfo(
     }
 }
 
+/// Debug endpoint - returns debug information from session
+/// 
+/// # Errors
+/// Returns an error if session extraction fails or debug data is invalid
 pub async fn jwt_oauth_debug(
     req: HttpRequest,
     session_manager: web::Data<SessionManager>,
@@ -90,7 +97,7 @@ pub async fn jwt_oauth_debug(
             Ok(HttpResponse::Unauthorized().json(create_no_session_response(&req)))
         }
         Err(e) => {
-            error!("Debug endpoint: Error retrieving session: {}", e);
+            error!("Debug endpoint: Error retrieving session: {e}");
             Ok(HttpResponse::Unauthorized().json(create_session_error_response(&req, &e)))
         }
     }
