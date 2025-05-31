@@ -13,7 +13,7 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::handlers::helpers::decode_jwt_payload;
+use crate::oauth::decode_jwt_payload;
 use crate::models::CompleteSessionData;
 use crate::utils::apple::AppleUserInfo;
 use chrono::{DateTime, TimeZone, Utc};

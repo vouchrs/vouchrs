@@ -610,3 +610,32 @@ pub async fn refresh_oauth_tokens(
 
     Ok((new_id_token, new_refresh_token, new_expires_at))
 }
+
+/// Helper function to decode JWT token payload without verification
+/// This is used for debugging purposes only to inspect token claims
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - The JWT format is invalid (not 3 parts separated by dots)
+/// - Base64 decoding fails
+/// - UTF-8 decoding fails
+/// - JSON parsing fails
+pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
+    use base64::{engine::general_purpose, Engine as _};
+    
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err("Invalid JWT format".to_string());
+    }
+
+    let payload_b64 = parts[1];
+    let payload_bytes = general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .or_else(|_| general_purpose::STANDARD.decode(payload_b64))
+        .map_err(|_| "Base64 decode failed")?;
+
+    let payload_str = String::from_utf8(payload_bytes).map_err(|_| "UTF-8 decode failed")?;
+
+    serde_json::from_str(&payload_str).map_err(|_| "JSON parse failed".to_string())
+}

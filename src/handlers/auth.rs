@@ -8,7 +8,7 @@ use base64::Engine as _;
 use log::{debug, error, info};
 use uuid::Uuid;
 
-use super::helpers::get_sign_in_page;
+use super::static_files::get_sign_in_page;
 use super::types::SignInQuery;
 
 /// JWT OAuth sign in handler
