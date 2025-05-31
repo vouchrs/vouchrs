@@ -9,7 +9,12 @@ use log::{debug, error, info};
 use uuid::Uuid;
 
 use super::static_files::get_sign_in_page;
-use super::types::SignInQuery;
+use serde::Deserialize;
+#[derive(Deserialize)]
+pub struct SignInQuery {
+    pub provider: Option<String>,
+    pub redirect_url: Option<String>,
+}
 
 /// JWT OAuth sign in handler
 /// 
