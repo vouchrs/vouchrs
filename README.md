@@ -8,12 +8,11 @@ A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts a
 - 🛡️ **Secure Sessions**: AES-GCM encrypted cookie-based sessions
 - 🎨 **Customizable UI**: Docker volume-mountable sign-in pages with dynamic provider lists
 - ⚡ **High Performance**: Rust-based with minimal dependencies and optimized architecture
-- 🔄 **Reverse Proxy**: Transparent upstream request forwarding with custom JWT injection
+- 🔄 **Reverse Proxy**: Transparent upstream request forwarding 
 - 🚀 **Lightweight**: Optimized binary size and memory footprint
 - 📦 **Self-Contained**: No external dependencies required
 - 🏗️ **Config-Driven**: Flexible provider configuration through Settings.toml
 - 🔧 **Extensible**: Easy to add new OAuth providers via configuration
-- 🔑 **Custom JWT**: Standardized JWT generation with HMAC-SHA256 signing
 - 🌐 **Client Context**: Automatic client IP and user agent detection for security and analytics
 
 ## Quick Start
