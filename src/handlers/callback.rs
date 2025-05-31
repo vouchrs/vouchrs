@@ -9,6 +9,7 @@ use super::session_builder::SessionBuilder;
 use crate::utils::apple_utils::{process_apple_callback, AppleUserInfo};
 use crate::utils::logging::LoggingHelper;
 use crate::utils::oauth_utils::get_oauth_state_from_callback;
+use crate::utils::redirect_validator::validate_post_auth_redirect;
 use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::user_agent::extract_user_agent_info;
 
@@ -214,9 +215,19 @@ fn build_and_finalize_session(
             let clear_temp_cookie = session_manager.create_expired_temp_state_cookie();
             let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
 
+            // Validate the redirect URL to prevent open redirect attacks
+            let validated_redirect = match validate_post_auth_redirect(&redirect_to) {
+                Ok(url) => url,
+                Err(_) => {
+                    error!("Invalid post-authentication redirect URL '{}': rejecting", redirect_to);
+                    // Fallback to safe default on validation failure
+                    "/".to_string()
+                }
+            };
+
             // Create response with multiple cookies
             ResponseBuilder::success_redirect_with_cookies(
-                &redirect_to,
+                &validated_redirect,
                 vec![session_cookie, user_cookie, clear_temp_cookie],
             )
         }

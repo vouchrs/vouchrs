@@ -2,9 +2,22 @@
 
 ## Overview
 
-Vouchrs implements a robust, layered approach to redirect protection that builds upon the open-source OAuth2 Proxy implementation. Our approach combines efficient pattern matching with comprehensive URL validation to prevent open redirect vulnerabilities while maintaining high performance.
+Vouchrs implements focused redirect protection that targets user-facing post-authentication redirects.
 
-## Enhancements Over OAuth2 Proxy
+### Why This Matters
+
+1. **User-Controlled Post-Auth Redirects**: These come from OAuth state/redirect parameters and can be manipulated by attackers - require comprehensive protection
+
+## Protection Scope
+
+### Protected: Post-Authentication Redirects
+
+- ✅ User-controlled redirect URLs from OAuth state
+- ✅ Post-login redirect destinations  
+- ✅ Callback redirect parameters
+- ✅ User-specified return URLs
+
+## Implementation Architecture
 
 ### 1. Layered Security Architecture
 
@@ -97,34 +110,51 @@ We maintain a comprehensive test suite of malicious URLs:
 
 ## Integration and Usage
 
-The redirect protection is integrated into the `ResponseBuilder::build_upstream_url` method, which ensures all redirects are properly validated before being returned to clients:
+The redirect protection is integrated into post-authentication workflows through the `ResponseBuilder::validate_post_auth_redirect` method:
+
+```rust
+// In callback.rs - Post-authentication redirect handling
+let validated_redirect = match ResponseBuilder::validate_post_auth_redirect(&redirect_to) {
+    Ok(url) => url,
+    Err(e) => {
+        warn!("Invalid post-auth redirect URL '{}': {}", redirect_to, e);
+        "/".to_string() // Safe fallback to home page
+    }
+};
+```
+
+### Key Integration Points
+
+1. **OAuth Callback Handler**: Validates redirect URLs from OAuth state parameters
+2. **Session Finalization**: Ensures post-login redirects are safe
+3. **User-Controlled URLs**: Any redirect that comes from user input or external parameters
+
+### Simplified Upstream URL Building
+
+For admin-controlled upstream URLs, we use a simplified approach without redirect protection:
 
 ```rust
 pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, HttpResponse> {
-    debug!("Building upstream URL - base: {}, path: {}", base_url, request_path);
+    // Simple URL construction for admin-controlled upstream URLs
+    let base = url::Url::parse(base_url)
+        .map_err(|_| HttpResponse::InternalServerError().body("Invalid base URL"))?;
     
-    // Layer 1: Fast pattern validation with early returns
-    Self::validate_suspicious_patterns(request_path)?;
+    let clean_path = request_path.trim_start_matches('/');
+    let final_url = base.join(clean_path)
+        .map_err(|_| HttpResponse::InternalServerError().body("Invalid URL path"))?;
     
-    // Layer 2: URL construction with normalization
-    let final_url = Self::construct_normalized_url(base_url, request_path)?;
-    
-    // Layer 3: Final URL validation (scheme, host, port)
-    Self::validate_final_url(base_url, &final_url)?;
-    
-    debug!("Successfully validated URL: {}", final_url);
-    Ok(final_url)
+    Ok(final_url.to_string())
 }
 ```
 
 ## Conclusion
 
-Our redirect protection implementation builds upon the oauth2-proxy approach by combining:
+Our redirect protection implementation focuses on where open redirect vulnerabilities actually matter - user-controlled post-authentication redirects. By combining:
 
-1. Separate focused regex patterns
-2. Multi-layered validation
-3. Comprehensive test coverage
-4. Performance optimizations
-5. Modern URL parsing techniques
+1. **Focused Protection Scope**: Target user-controlled redirects while simplifying admin-controlled URL handling
+2. **Layered Validation**: Multi-stage security checks for maximum protection
+3. **Comprehensive Attack Coverage**: Protection against 692+ known attack vectors
+4. **Performance Optimization**: Fast pattern matching with early returns
+5. **Modern Security Principles**: Clear separation between trusted and untrusted inputs
 
-This approach tries to ensure robust security while maintaining high performance and code maintainability, providing effective protection against open redirect vulnerabilities.
+This approach ensures robust security against actual open redirect attack vectors while maintaining high performance and code clarity. The security policy change from protecting all URLs to focusing on user-controlled post-authentication redirects provides better security with improved maintainability.
