@@ -114,14 +114,12 @@ impl LoggingHelper {
         refresh_token: Option<&String>,
         id_token: Option<&String>,
         token_type: &str,
-        scope: Option<&String>,
-        user_info_present: bool,
+        expires_in: Option<i64>,
     ) {
-        let refresh_token_status = refresh_token.map(|_| "present").unwrap_or("missing");
-        let id_token_status = id_token.map(|_| "present").unwrap_or("missing");
-        let user_info_status = if user_info_present { "present" } else { "missing" };
+        let refresh_status = refresh_token.map_or("No", |_| "Yes");
+        let id_status = id_token.map_or("No", |_| "Yes");
         
-        info!("🔍 Token exchange summary for {provider}: refresh_token={refresh_token_status}, id_token={id_token_status}, token_type={token_type}, scope={scope:?}, user_info={user_info_status}");
+        info!("🔍 Token exchange summary for {provider}: refresh_token={refresh_status}, id_token={id_status}, token_type={token_type}, expires_in={expires_in:?}");
     }
 
     /// Log session creation success

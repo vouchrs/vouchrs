@@ -1,6 +1,5 @@
 // Apple-specific utility functions
 use crate::oauth::OAuthCallback;
-use log::debug;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -54,29 +53,27 @@ pub struct AppleUserInfo {
 /// Returns `Some(AppleUserInfo)` if parsing succeeds or fallback is available, `None` otherwise
 #[must_use]
 pub fn process_apple_user_info(
-    source: &Value,
-    fallback_info: Option<AppleUserInfo>,
+    user_value: &Value,
+    existing_user_info: Option<AppleUserInfo>,
 ) -> Option<AppleUserInfo> {
-    // Try to parse the Apple user info from the JSON value
-    let parse_result = match source {
-        Value::Object(_) => serde_json::from_value::<AppleUserInfo>(source.clone()),
-        Value::String(s) => serde_json::from_str::<AppleUserInfo>(s),
-        _ => Err(serde_json::Error::io(std::io::Error::other(
-            "user field is not an object or JSON string",
-        ))),
-    };
+    // If we already have user info, return it
+    if existing_user_info.is_some() {
+        return existing_user_info;
+    }
 
-    // Return the parsed value or fall back to existing info
-    match parse_result {
-        Ok(parsed_user) => {
-            debug!("Parsed Apple user info: {parsed_user:?}");
-            Some(parsed_user)
-        }
-        Err(_) => {
-            debug!("Failed to parse Apple user info, using fallback if available");
-            fallback_info
+    // Try to parse from JSON value
+    if let Ok(user_info) = serde_json::from_value::<AppleUserInfo>(user_value.clone()) {
+        return Some(user_info);
+    }
+
+    // If it's a JSON string, try to parse the string
+    if let Value::String(json_str) = user_value {
+        if let Ok(user_info) = serde_json::from_str::<AppleUserInfo>(json_str) {
+            return Some(user_info);
         }
     }
+
+    None
 }
 
 /// Process Apple user info from OAuth callback data

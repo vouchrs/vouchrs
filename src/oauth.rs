@@ -71,7 +71,6 @@ struct TokenResponse {
     id_token: Option<String>,
     token_type: String,
     expires_in: Option<u64>,
-    scope: Option<String>,
     user: Option<apple_utils::AppleUserInfo>, // Apple-specific user info field
 }
 
@@ -404,8 +403,7 @@ impl OAuthConfig {
             token_response.refresh_token.as_ref(),
             token_response.id_token.as_ref(),
             &token_response.token_type,
-            token_response.scope.as_ref(),
-            token_response.user.is_some(),
+            token_response.expires_in.map(|v| v as i64),
         );
 
         let id_token = token_response.id_token;

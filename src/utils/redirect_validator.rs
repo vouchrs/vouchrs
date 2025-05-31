@@ -219,10 +219,10 @@ fn contains_redirect_in_query(url: &str) -> bool {
         for param in &redirect_params {
             // Check for parameter=value pattern
             let patterns = [
-                format!("{}=", param),
-                format!("{}&", param),
-                format!("{}%3d", param), // URL encoded =
-                format!("{}%3D", param),
+                format!("{param}="),
+                format!("{param}&"),
+                format!("{param}%3d"), // URL encoded =
+                format!("{param}%3D"),
             ];
             
             for pattern in &patterns {

@@ -9,7 +9,7 @@ pub const OAUTH_STATE_COOKIE: &str = "vouchr_oauth_state";
 
 /// Trait for converting objects to cookies
 pub trait ToCookie<T> {
-    /// Convert the object to a cookie
+    /// Convert self to a cookie with provided name using `SessionManager` for encryption
     /// 
     /// # Errors
     /// 
@@ -74,7 +74,7 @@ pub fn log_cookies(req: &HttpRequest) {
     }
 }
 
-/// Filter cookies, removing vouchrs_session cookie
+/// Filter cookies, removing `vouchrs_session` cookie
 #[must_use]
 pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
     let filtered_cookies: Vec<&str> = cookie_str

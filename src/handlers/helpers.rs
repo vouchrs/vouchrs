@@ -12,121 +12,206 @@ pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
 // Generate dynamic sign-in page with providers from configuration
 #[must_use]
 pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
-    let enabled_providers = settings.get_enabled_providers();
-
-    let provider_buttons = if enabled_providers.is_empty() {
-        "<p>No OAuth providers are configured. Please check your configuration.</p>".to_string()
-    } else {
-        enabled_providers
-            .iter()
-            .map(|provider| {
-                let class = format!("{}-btn", provider.name);
-                format!(
-                    r#"<a href="/oauth2/sign_in?provider={}" class="provider-btn {}">
-            Sign in with {}
-        </a>"#,
-                    provider.name,
-                    class,
-                    provider.display_name.as_deref().unwrap_or(&provider.name)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n        ")
-    };
-
+    let provider_buttons = generate_provider_buttons(settings);
+    let brand_name = settings.application.redirect_base_url.clone();
+    
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vouchrs OIDC Reverse Proxy - Sign In</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    <title>Sign In - {brand_name}</title>
+    <style>{}</style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h1>Sign In</h1>
+            <p>Choose your authentication provider</p>
+            <div class="button-container">
+                {provider_buttons}
+            </div>
+            <div class="footer">
+                <p>Protected by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"#,
+        get_sign_in_styles(),
+        brand_name = brand_name,
+        provider_buttons = provider_buttons
+    )
+}
+
+fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
+    settings
+        .get_enabled_providers()
+        .iter()
+        .map(|provider| {
+            let display_name = provider.display_name.as_ref()
+                .unwrap_or(&provider.name)
+                .clone();
+            let provider_class = format!("provider-{}", provider.name.to_lowercase());
+            format!(
+                r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}">
+                    <span>Continue with {}</span>
+                </a>"#,
+                provider.name, provider_class, display_name
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n                ")
+}
+
+fn get_sign_in_styles() -> &'static str {
+    r#"
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
-            text-align: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
             max-width: 400px;
-            width: 100%;
-        }}
-        h1 {{
+        }
+        
+        .login-box {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 14px 28px rgba(0,0,0,0.12), 0 10px 10px rgba(0,0,0,0.08);
+            padding: 40px;
+        }
+        
+        h1 {
             color: #333;
+            font-size: 28px;
+            font-weight: 600;
+            text-align: center;
             margin-bottom: 10px;
-            font-size: 2.5rem;
-        }}
-        .subtitle {{
+        }
+        
+        p {
             color: #666;
+            text-align: center;
             margin-bottom: 30px;
-            font-size: 1.1rem;
-        }}
-        .provider-btn {{
-            display: block;
-            width: 100%;
+        }
+        
+        .button-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .provider-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 12px 20px;
-            margin: 10px 0;
+            border-radius: 6px;
             text-decoration: none;
-            border-radius: 8px;
             font-weight: 500;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            box-sizing: border-box;
-        }}
-        .provider-btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-        }}
-        .provider-btn:nth-child(5n+1) {{
-            background: #4285f4;  /* Google blue */
+            font-size: 16px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .provider-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        /* Provider-specific colors */
+        .provider-google {
+            background: #4285f4;
             color: white;
-        }}
-        .provider-btn:nth-child(5n+2) {{
-            background: #ea4335;  /* Red */
+        }
+        
+        .provider-google:hover {
+            background: #3367d6;
+        }
+        
+        .provider-github {
+            background: #24292e;
             color: white;
-        }}
-        .provider-btn:nth-child(5n+3) {{
-            background: #34a853;  /* Green */
+        }
+        
+        .provider-github:hover {
+            background: #1a1e22;
+        }
+        
+        .provider-microsoft {
+            background: #0078d4;
             color: white;
-        }}
-        .provider-btn:nth-child(5n+4) {{
-            background:rgb(0, 0, 0);  /* Black */
+        }
+        
+        .provider-microsoft:hover {
+            background: #0063b1;
+        }
+        
+        .provider-apple {
+            background: #000;
             color: white;
-        }}
-        .provider-btn:nth-child(5n+5) {{
-            background: #0078d4;  /* Microsoft blue */
+        }
+        
+        .provider-apple:hover {
+            background: #333;
+        }
+        
+        /* Generic provider style */
+        .provider-button:not(.provider-google):not(.provider-github):not(.provider-microsoft):not(.provider-apple) {
+            background: #6366f1;
             color: white;
-        }}
-        .footer {{
-            margin-top: 30px;
+        }
+        
+        .provider-button:not(.provider-google):not(.provider-github):not(.provider-microsoft):not(.provider-apple):hover {
+            background: #5558e3;
+        }
+        
+        .footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .footer p {
             color: #999;
-            font-size: 0.9rem;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🔐 Vouchrs OIDC Reverse Proxy</h1>
-        <p class="subtitle">Choose your provider to sign in</p>
+            font-size: 14px;
+            margin: 0;
+        }
         
-        {provider_buttons}
+        .footer a {
+            color: #6366f1;
+            text-decoration: none;
+        }
         
-        <div class="footer">
-            <p>An OIDC proxy service</p>
-        </div>
-    </div>
-</body>
-</html>"#
-    )
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 480px) {
+            .login-box {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+        }
+    "#
 }
 
 /// Helper function to decode JWT token payload without verification
