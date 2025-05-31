@@ -1,5 +1,5 @@
 // OAuth callback handler
-use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState};
+use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_oauth_state_from_callback};
 use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
@@ -8,7 +8,6 @@ use log::{debug, error};
 use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{process_apple_callback, AppleUserInfo};
 use crate::utils::logging::LoggingHelper;
-use crate::utils::oauth_utils::get_oauth_state_from_callback;
 use crate::utils::redirect_validator::validate_post_auth_redirect;
 use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::user_agent::extract_user_agent_info;

@@ -1,17 +1,27 @@
 // Config-driven OAuth implementation using provider configurations from settings
 // Supports dynamic discovery endpoints and customizable provider configurations
 
+// Standard library imports
+use std::collections::HashMap;
+use std::env;
+
+// Third-party imports
+use actix_web::HttpResponse;
+use base64::Engine as _;
+use chrono::Utc;
+use log::debug;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+// Local imports
 use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::apple;
 use crate::utils::logging::LoggingHelper;
-use actix_web::HttpResponse;
-use chrono::Utc;
-use log;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
-use std::env;
+
+// ============================================================================
+// Error Types
+// ============================================================================
 
 /// Error types for OAuth operations
 #[derive(Debug)]
@@ -19,29 +29,6 @@ pub enum OAuthError {
     Configuration(String),
     Network(String),
     InvalidResponse(String),
-}
-
-/// OAuth callback structure for handling responses from OAuth providers
-#[derive(Deserialize, Debug)]
-pub struct OAuthCallback {
-    pub code: Option<String>,
-    pub state: Option<String>,
-    pub error: Option<String>,
-    pub user: Option<serde_json::Value>, // Apple sends user info in form POST on first login
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct OAuthState {
-    pub state: String,
-    pub provider: String,
-    pub redirect_url: Option<String>,
-}
-
-// Session Management Structures
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct OAuthTokens {
-    pub token_type: String,
-    pub scope: Option<String>,
 }
 
 impl std::fmt::Display for OAuthError {
@@ -56,6 +43,39 @@ impl std::fmt::Display for OAuthError {
 
 impl std::error::Error for OAuthError {}
 
+// ============================================================================
+// Core Data Structures
+// ============================================================================
+
+/// OAuth callback structure for handling responses from OAuth providers
+#[derive(Deserialize, Debug)]
+pub struct OAuthCallback {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+    pub user: Option<serde_json::Value>, // Apple sends user info in form POST on first login
+}
+
+/// OAuth state structure for CSRF protection and flow tracking
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OAuthState {
+    pub state: String,
+    pub provider: String,
+    pub redirect_url: Option<String>,
+}
+
+/// OAuth tokens structure for session management
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OAuthTokens {
+    pub token_type: String,
+    pub scope: Option<String>,
+}
+
+// ============================================================================
+// Internal Structures
+// ============================================================================
+
+/// Apple JWT claims structure for client secret generation
 #[derive(Debug, Serialize, Deserialize)]
 struct AppleJwtClaims {
     iss: String, // Team ID
@@ -65,6 +85,7 @@ struct AppleJwtClaims {
     sub: String, // Client ID
 }
 
+/// Token response structure from OAuth providers
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     refresh_token: Option<String>,
@@ -74,7 +95,11 @@ struct TokenResponse {
     user: Option<apple::AppleUserInfo>, // Apple-specific user info field
 }
 
-// Runtime provider configuration with resolved endpoints
+// ============================================================================
+// Provider Configuration
+// ============================================================================
+
+/// Runtime provider configuration with resolved endpoints
 #[derive(Debug, Clone)]
 pub struct RuntimeProvider {
     pub settings: ProviderSettings,
@@ -153,7 +178,27 @@ impl RuntimeProvider {
     }
 }
 
-// Config-driven OAuth configuration
+// ============================================================================
+// Type Aliases
+// ============================================================================
+
+/// Result type for token exchange operations
+/// Returns (`id_token`, `refresh_token`, `expires_at`, `apple_user_info_fallback`)
+type TokenExchangeResult = Result<
+    (
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        Option<apple::AppleUserInfo>,
+    ),
+    String,
+>;
+
+// ============================================================================
+// OAuth Configuration
+// ============================================================================
+
+/// Config-driven OAuth configuration with multiple provider support
 #[derive(Clone)]
 pub struct OAuthConfig {
     pub providers: HashMap<String, RuntimeProvider>,
@@ -310,54 +355,77 @@ impl OAuthConfig {
         &self,
         provider: &str,
         code: &str,
-    ) -> Result<
-        (
-            Option<String>,
-            Option<String>,
-            chrono::DateTime<Utc>,
-            Option<apple::AppleUserInfo>,
-        ),
-        String,
-    > {
+    ) -> TokenExchangeResult {
         let runtime_provider = self
             .providers
             .get(provider)
             .ok_or_else(|| format!("Provider {provider} not configured"))?;
 
-        // Prepare token exchange request
+        // Prepare token exchange parameters
+        let params = self.prepare_token_exchange_params(provider, code, runtime_provider)?;
+
+        // Execute token exchange request
+        let response_text = self.execute_token_exchange(provider, runtime_provider, &params).await?;
+
+        // Parse and process the token response
+        Self::process_token_response(provider, &response_text)
+    }
+
+    /// Prepare parameters for token exchange request
+    fn prepare_token_exchange_params(
+        &self,
+        provider: &str,
+        code: &str,
+        runtime_provider: &RuntimeProvider,
+    ) -> Result<HashMap<String, String>, String> {
         let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
         let mut params = HashMap::new();
-        params.insert("grant_type", "authorization_code");
-        params.insert("code", code);
-        params.insert("redirect_uri", &redirect_uri);
+        
+        // Basic OAuth parameters
+        params.insert("grant_type".to_string(), "authorization_code".to_string());
+        params.insert("code".to_string(), code.to_string());
+        params.insert("redirect_uri".to_string(), redirect_uri);
 
-        // Handle client credentials based on provider configuration
-        let client_secret;
+        // Client credentials
         let client_id = runtime_provider
             .settings
             .get_client_id()
             .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
 
-        params.insert("client_id", &client_id);
+        params.insert("client_id".to_string(), client_id);
 
+        // Handle client secret or JWT signing
         if let Some(ref secret) = runtime_provider.client_secret {
             // Regular OAuth with client secret
-            params.insert("client_secret", secret);
+            params.insert("client_secret".to_string(), secret.clone());
         } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
             // JWT signing (Apple)
-            client_secret =
-                crate::utils::apple::generate_apple_client_secret(jwt_config, &client_id)?;
-            params.insert("client_secret", &client_secret);
+            let client_id = runtime_provider
+                .settings
+                .get_client_id()
+                .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
+            let client_secret = crate::utils::apple::generate_apple_client_secret(jwt_config, &client_id)?;
+            params.insert("client_secret".to_string(), client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
         }
 
-        // Make token exchange request
+        Ok(params)
+    }
+
+    /// Execute the token exchange HTTP request
+    async fn execute_token_exchange(
+        &self,
+        provider: &str,
+        runtime_provider: &RuntimeProvider,
+        params: &HashMap<String, String>,
+    ) -> Result<String, String> {
         LoggingHelper::log_token_exchange_start(provider);
+        
         let response = self
             .http_client
             .post(&runtime_provider.token_url)
-            .form(&params)
+            .form(params)
             .send()
             .await
             .map_err(|e| format!("Failed to exchange code for token: {e}"))?;
@@ -373,20 +441,25 @@ impl OAuthConfig {
             ));
         }
 
-        // Get the raw response text for debugging
-        let response_text = response
+        response
             .text()
             .await
-            .map_err(|e| format!("Failed to read response text: {e}"))?;
+            .map_err(|e| format!("Failed to read response text: {e}"))
+    }
 
-        // Log the raw token response for debugging (especially for Apple)
+    /// Process the token response and extract relevant information
+    fn process_token_response(
+        provider: &str,
+        response_text: &str,
+    ) -> TokenExchangeResult {
+        // Log the raw token response for debugging
         if provider == "apple" {
-            LoggingHelper::log_apple_token_response_raw(&response_text);
+            LoggingHelper::log_apple_token_response_raw(response_text);
         } else {
-            LoggingHelper::log_token_response_raw(provider, &response_text);
+            LoggingHelper::log_token_response_raw(provider, response_text);
         }
 
-        let token_response: TokenResponse = serde_json::from_str(&response_text)
+        let token_response: TokenResponse = serde_json::from_str(response_text)
             .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
         // Calculate token expiration
@@ -406,10 +479,12 @@ impl OAuthConfig {
             token_response.expires_in.map(|v| i64::try_from(v).unwrap_or(3600)),
         );
 
-        let id_token = token_response.id_token;
-        let refresh_token = token_response.refresh_token;
-        let apple_user_info = token_response.user;
-        Ok((id_token, refresh_token, expires_at, apple_user_info))
+        Ok((
+            token_response.id_token,
+            token_response.refresh_token,
+            expires_at,
+            token_response.user,
+        ))
     }
 
     /// Get the signout URL for a provider
@@ -435,43 +510,11 @@ impl OAuthConfig {
     }
 }
 
-pub struct OAuthProvider {
-    pub name: String,
-    pub client_id: String,
-    pub client_secret: String,
-}
 
-impl OAuthProvider {
-    /// Create an `OAuthProvider` from settings
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if:
-    /// - Client ID is not configured
-    /// - Client secret is not configured
-    pub fn from_settings(settings: &ProviderSettings) -> Result<Self, OAuthError> {
-        // Use the new getter methods instead of direct field access
-        let client_id = settings.get_client_id().ok_or_else(|| {
-            OAuthError::Configuration(format!(
-                "Client ID not configured for provider '{}'",
-                settings.name
-            ))
-        })?;
 
-        let client_secret = settings.get_client_secret().ok_or_else(|| {
-            OAuthError::Configuration(format!(
-                "Client secret not configured for provider '{}'",
-                settings.name
-            ))
-        })?;
-
-        Ok(Self {
-            name: settings.name.clone(),
-            client_id,
-            client_secret,
-        })
-    }
-}
+// ============================================================================
+// Token Management Functions
+// ============================================================================
 
 // Static HTTP client for making token refresh requests
 static CLIENT: std::sync::LazyLock<reqwest::Client> =
@@ -611,6 +654,10 @@ pub async fn refresh_oauth_tokens(
     Ok((new_id_token, new_refresh_token, new_expires_at))
 }
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 /// Helper function to decode JWT token payload without verification
 /// This is used for debugging purposes only to inspect token claims
 /// 
@@ -638,4 +685,167 @@ pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
     let payload_str = String::from_utf8(payload_bytes).map_err(|_| "UTF-8 decode failed")?;
 
     serde_json::from_str(&payload_str).map_err(|_| "JSON parse failed".to_string())
+}
+
+// ============================================================================
+// OAuth State Management
+// ============================================================================
+
+/// Parse OAuth state from received state parameter and retrieve stored state from cookie
+/// This eliminates provider-specific branching logic by using the stored OAuth state
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - The received state does not match the stored CSRF token
+/// - No stored state is found and stateless parsing fails
+/// - The stateless state format is invalid
+pub fn get_oauth_state_from_callback(
+    received_state: &str,
+    session_manager: &crate::session::SessionManager,
+    req: &actix_web::HttpRequest,
+) -> Result<crate::oauth::OAuthState, String> {
+    debug!("Received OAuth state parameter: '{received_state}'");
+    debug!("Received state length: {} characters", received_state.len());
+
+    // First, try to get the stored OAuth state from temporary cookie
+    match session_manager.get_temporary_state_from_request(req) {
+        Ok(Some(stored_state)) => {
+            // Verify the received state matches the stored CSRF token
+            if stored_state.state == received_state {
+                debug!(
+                    "OAuth state verified: stored state matches received state for provider {}",
+                    stored_state.provider
+                );
+                Ok(stored_state)
+            } else {
+                Err(
+                    "OAuth state mismatch: received state does not match stored CSRF token"
+                        .to_string(),
+                )
+            }
+        }
+        Ok(None) => {
+            // Fallback: Parse state parameter directly (for stateless providers like Apple)
+            // In this case, we need to extract provider info from the received state
+            parse_stateless_oauth_state(received_state)
+        }
+        Err(e) => {
+            debug!("Failed to retrieve stored OAuth state: {e}");
+            // Fallback to parsing state parameter directly
+            parse_stateless_oauth_state(received_state)
+        }
+    }
+}
+
+/// Parse OAuth state when no stored state is available (stateless mode)
+/// This handles cases where the provider info needs to be extracted from the state parameter itself
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - The state format is invalid (missing provider information)
+/// - Cannot determine provider from simple CSRF token in stateless mode
+fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::oauth::OAuthState, String> {
+    debug!(
+        "Attempting to parse stateless OAuth state: '{received_state}'"
+    );
+    debug!("Contains pipe character: {}", received_state.contains('|'));
+
+    if received_state.contains('|') {
+        // New format: "csrf_token|provider|optional_redirect"
+        let parts: Vec<&str> = received_state.split('|').collect();
+
+        if parts.len() < 2 {
+            return Err("Stateless OAuth state missing provider information".to_string());
+        }
+
+        let csrf_state = parts[0].to_string();
+        let provider = parts[1].to_string();
+
+        let redirect_url = if parts.len() > 2 {
+            match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[2]) {
+                Ok(decoded_bytes) => String::from_utf8(decoded_bytes).ok(),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        debug!(
+            "Successfully parsed stateless OAuth state for provider: {provider}"
+        );
+
+        Ok(crate::oauth::OAuthState {
+            state: csrf_state,
+            provider,
+            redirect_url,
+        })
+    } else {
+        // Simple CSRF token without provider or redirect URL
+        Err("Cannot determine provider from simple CSRF token in stateless mode".to_string())
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_stateless_oauth_state_simple() {
+        let result = parse_stateless_oauth_state("simple_csrf_token");
+
+        // Should fail because we can't determine provider in stateless mode
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Cannot determine provider"));
+    }
+
+    #[test]
+    fn test_parse_stateless_oauth_state_with_provider_and_redirect() {
+        let redirect_url = "/dashboard";
+        let encoded_redirect =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(redirect_url.as_bytes());
+        let state = format!("csrf_token|google|{encoded_redirect}");
+
+        let result = parse_stateless_oauth_state(&state);
+
+        // Should succeed with the new format
+        assert!(result.is_ok());
+        let oauth_state = result.unwrap();
+        assert_eq!(oauth_state.state, "csrf_token");
+        assert_eq!(oauth_state.provider, "google");
+        assert_eq!(oauth_state.redirect_url, Some(redirect_url.to_string()));
+    }
+
+    #[test]
+    fn test_parse_stateless_oauth_state_with_provider_without_redirect() {
+        let state = "csrf_token|google";
+
+        let result = parse_stateless_oauth_state(state);
+
+        // Should succeed with the new format
+        assert!(result.is_ok());
+        let oauth_state = result.unwrap();
+        assert_eq!(oauth_state.state, "csrf_token");
+        assert_eq!(oauth_state.provider, "google");
+        assert_eq!(oauth_state.redirect_url, None);
+    }
+
+    #[test]
+    fn test_parse_stateless_oauth_state_invalid_base64() {
+        let state = "csrf_token|google|invalid_base64!@#";
+
+        let result = parse_stateless_oauth_state(state);
+
+        // Should succeed but ignore invalid base64 redirect URL
+        assert!(result.is_ok());
+        let oauth_state = result.unwrap();
+        assert_eq!(oauth_state.state, "csrf_token");
+        assert_eq!(oauth_state.provider, "google");
+        assert_eq!(oauth_state.redirect_url, None);
+    }
 }

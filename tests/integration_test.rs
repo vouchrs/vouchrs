@@ -18,11 +18,11 @@ fn create_test_user_data(
         name,
         provider: provider.to_string(),
         provider_id: provider_id.to_string(),
-        client_ip: client_ip.map(|ip| ip.to_string()),
+        client_ip: client_ip.map(std::string::ToString::to_string),
         user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
         platform: user_agent_info.and_then(|ua| ua.platform.clone()),
         lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-        mobile: user_agent_info.map(|ua| ua.mobile as i32).unwrap_or(0),
+        mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
         session_start: Some(chrono::Utc::now().timestamp()), // Adding session_start as Unix timestamp for test
     }
 }
@@ -92,8 +92,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_cookie.path(), Some("/"));
 
     // Test that we can decrypt the user data back using a mock request
-    use actix_web::test::TestRequest;
-    let test_req = TestRequest::default()
+    let test_req = actix_web::test::TestRequest::default()
         .cookie(user_cookie.clone())
         .to_http_request();
 
@@ -145,8 +144,7 @@ fn test_minimal_user_data() {
         .expect("Should create user cookie");
 
     // Test that we can decrypt the user data back using a mock request
-    use actix_web::test::TestRequest;
-    let test_req = TestRequest::default()
+    let test_req = actix_web::test::TestRequest::default()
         .cookie(user_cookie.clone())
         .to_http_request();
 
