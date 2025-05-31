@@ -86,7 +86,7 @@ pub struct RuntimeProvider {
 }
 
 impl RuntimeProvider {
-    /// Creates a RuntimeProvider from settings
+    /// Creates a `RuntimeProvider` from settings
     ///
     /// # Errors
     ///
@@ -173,6 +173,13 @@ impl OAuthConfig {
     }
 
     /// Initialize providers from settings
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Provider validation fails for any enabled provider
+    /// - Required environment variables are missing for enabled providers
+    /// - Provider configuration is invalid or incomplete
     pub async fn initialize_from_settings(
         &mut self,
         settings: &VouchrsSettings,
@@ -228,9 +235,17 @@ impl OAuthConfig {
     pub fn get_client_configured(&self, provider: &str) -> bool {
         self.providers
             .get(provider)
-            .map_or(false, |p| p.is_configured())
+            .map_or(false, RuntimeProvider::is_configured)
     }
 
+    /// Get the authorization URL for a provider
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The specified provider is not configured
+    /// - The client ID is not configured for the provider
+    /// - The authorization URL is malformed
     pub async fn get_auth_url(&self, provider: &str, state: &str) -> Result<String, String> {
         let runtime_provider = self
             .providers
@@ -272,7 +287,7 @@ impl OAuthConfig {
 
     /// Exchange OAuth authorization code for OAuth tokens
     /// This manually handles the token exchange to properly capture ID tokens
-    /// Returns (OAuthTokens, Option<AppleUserInfo>) for Apple user info fallback
+    /// Returns (`OAuthTokens`, `Option<AppleUserInfo>`) for Apple user info fallback
     pub async fn exchange_code_for_session_data(
         &self,
         provider: &str,
@@ -389,7 +404,7 @@ impl OAuthConfig {
 
     /// Get list of enabled provider names
     pub fn get_enabled_providers(&self) -> Vec<&str> {
-        self.providers.keys().map(|s| s.as_str()).collect()
+        self.providers.keys().map(std::string::String::as_str).collect()
     }
 
     /// Get provider display name

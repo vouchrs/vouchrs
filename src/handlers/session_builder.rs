@@ -54,6 +54,7 @@ impl SessionBuilder {
     ///
     /// This function panics if it cannot provide a fallback email address. However, the current
     /// implementation always provides a default email, making panics unlikely.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn build_session_with_apple_info(
         provider: String,
         id_token: Option<String>,
