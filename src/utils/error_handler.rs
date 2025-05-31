@@ -1,12 +1,13 @@
 use actix_web::HttpResponse;
-use crate::jwt_session::JwtSessionManager;
+use crate::session::SessionManager;
 
 pub struct ErrorHandler;
 
 impl ErrorHandler {
     /// Create an OAuth error redirect with cookie clearing
+    #[must_use]
     pub fn oauth_error_redirect(
-        session_manager: &JwtSessionManager,
+        session_manager: &SessionManager,
         error_type: &str,
         redirect_url: Option<&str>
     ) -> HttpResponse {

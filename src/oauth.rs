@@ -122,6 +122,14 @@ impl RuntimeProvider {
         })
     }
 
+    /// Resolve authorization and token endpoints from discovery URL
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Network request to discovery URL fails
+    /// - Response cannot be parsed as JSON
+    /// - Required endpoints are missing from discovery document
     async fn resolve_from_discovery(discovery_url: &str) -> Result<(String, String), String> {
         let resp = reqwest::get(discovery_url)
             .await
@@ -138,6 +146,7 @@ impl RuntimeProvider {
         Ok((auth_url, token_url))
     }
 
+    /// Check if the provider is properly configured
     #[must_use]
     pub fn is_configured(&self) -> bool {
         self.client_id.is_some()
@@ -160,6 +169,7 @@ impl Default for OAuthConfig {
 }
 
 impl OAuthConfig {
+    /// Create a new OAuth configuration
     #[must_use]
     pub fn new() -> Self {
         let redirect_base_url =
@@ -180,6 +190,7 @@ impl OAuthConfig {
     /// - Provider validation fails for any enabled provider
     /// - Required environment variables are missing for enabled providers
     /// - Provider configuration is invalid or incomplete
+    /// - No providers are successfully configured
     pub async fn initialize_from_settings(
         &mut self,
         settings: &VouchrsSettings,
@@ -215,9 +226,8 @@ impl OAuthConfig {
                 }
                 Err(e) => {
                     log::error!(
-                        "❌ Failed to initialize provider {}: {}",
-                        provider_settings.name,
-                        e
+                        "❌ Failed to initialize provider {}: {e}",
+                        provider_settings.name
                     );
                 }
             }
@@ -231,6 +241,7 @@ impl OAuthConfig {
         Ok(())
     }
 
+    /// Check if a provider's client is configured
     #[must_use]
     pub fn get_client_configured(&self, provider: &str) -> bool {
         self.providers
@@ -287,7 +298,15 @@ impl OAuthConfig {
 
     /// Exchange OAuth authorization code for OAuth tokens
     /// This manually handles the token exchange to properly capture ID tokens
-    /// Returns (`OAuthTokens`, `Option<AppleUserInfo>`) for Apple user info fallback
+    /// Returns (`id_token`, `refresh_token`, `expires_at`, `Option<AppleUserInfo>`) for Apple user info fallback
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Provider is not configured
+    /// - Client credentials are missing
+    /// - Token exchange request fails
+    /// - Response parsing fails
     pub async fn exchange_code_for_session_data(
         &self,
         provider: &str,
@@ -304,7 +323,7 @@ impl OAuthConfig {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or_else(|| format!("Provider {} not configured", provider))?;
+            .ok_or_else(|| format!("Provider {provider} not configured"))?;
 
         // Prepare token exchange request
         let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
@@ -351,8 +370,7 @@ impl OAuthConfig {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(format!(
-                "Token exchange failed with status {}: {}",
-                status, error_text
+                "Token exchange failed with status {status}: {error_text}"
             ));
         }
 
@@ -396,6 +414,8 @@ impl OAuthConfig {
         Ok((id_token, refresh_token, expires_at, apple_user_info))
     }
 
+    /// Get the signout URL for a provider
+    #[must_use]
     pub fn get_signout_url(&self, provider: &str) -> Option<String> {
         self.providers
             .get(provider)
@@ -403,11 +423,13 @@ impl OAuthConfig {
     }
 
     /// Get list of enabled provider names
+    #[must_use]
     pub fn get_enabled_providers(&self) -> Vec<&str> {
         self.providers.keys().map(std::string::String::as_str).collect()
     }
 
     /// Get provider display name
+    #[must_use]
     pub fn get_provider_display_name(&self, provider: &str) -> Option<&str> {
         self.providers
             .get(provider)
@@ -422,6 +444,13 @@ pub struct OAuthProvider {
 }
 
 impl OAuthProvider {
+    /// Create an `OAuthProvider` from settings
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Client ID is not configured
+    /// - Client secret is not configured
     pub fn from_settings(settings: &ProviderSettings) -> Result<Self, OAuthError> {
         // Use the new getter methods instead of direct field access
         let client_id = settings.get_client_id().ok_or_else(|| {
@@ -451,6 +480,12 @@ static CLIENT: std::sync::LazyLock<reqwest::Client> =
     std::sync::LazyLock::new(reqwest::Client::new);
 
 /// Check if tokens need refresh and refresh them if necessary
+/// 
+/// # Errors
+/// 
+/// Returns an `HttpResponse` error if:
+/// - Tokens are expired and no refresh token is available
+/// - Token refresh fails
 pub async fn check_and_refresh_tokens(
     mut session: VouchrsSession,
     oauth_config: &OAuthConfig,
@@ -487,6 +522,14 @@ pub async fn check_and_refresh_tokens(
 }
 
 /// Refresh OAuth tokens using the refresh token
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Provider is not configured
+/// - Client credentials are missing or cannot be generated
+/// - Token refresh request fails
+/// - Response parsing fails
 pub async fn refresh_oauth_tokens(
     refresh_token: &str,
     oauth_config: &OAuthConfig,
@@ -503,7 +546,7 @@ pub async fn refresh_oauth_tokens(
     let runtime_provider = oauth_config
         .providers
         .get(provider)
-        .ok_or_else(|| format!("Provider {} not configured", provider))?;
+        .ok_or_else(|| format!("Provider {provider} not configured"))?;
 
     let client_id = runtime_provider
         .client_id
@@ -547,8 +590,7 @@ pub async fn refresh_oauth_tokens(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
         return Err(format!(
-            "Token refresh failed with status {}: {}",
-            status, error_text
+            "Token refresh failed with status {status}: {error_text}"
         ));
     }
 
@@ -562,9 +604,9 @@ pub async fn refresh_oauth_tokens(
 
     let new_refresh_token = token_response["refresh_token"]
         .as_str()
-        .map(|s| s.to_string());
+        .map(ToString::to_string);
 
-    let new_id_token = token_response["id_token"].as_str().map(|s| s.to_string());
+    let new_id_token = token_response["id_token"].as_str().map(ToString::to_string);
 
     let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
 

@@ -6,6 +6,7 @@ pub struct TestRequestBuilder;
 
 impl TestRequestBuilder {
     /// Create a browser request with typical browser headers
+    #[must_use]
     pub fn browser_request() -> HttpRequest {
         test::TestRequest::default()
             .insert_header((
@@ -20,6 +21,7 @@ impl TestRequestBuilder {
     }
 
     /// Create an API request with typical API client headers
+    #[must_use]
     pub fn api_request() -> HttpRequest {
         test::TestRequest::default()
             .insert_header((header::ACCEPT, "application/json"))
@@ -28,6 +30,7 @@ impl TestRequestBuilder {
     }
 
     /// Create a request with client hints headers
+    #[must_use]
     pub fn client_hints_request() -> HttpRequest {
         test::TestRequest::default()
             .insert_header((
@@ -41,6 +44,7 @@ impl TestRequestBuilder {
     }
 
     /// Create a mobile browser request
+    #[must_use]
     pub fn mobile_browser_request() -> HttpRequest {
         test::TestRequest::default()
             .insert_header((
@@ -56,6 +60,7 @@ impl TestRequestBuilder {
     }
 
     /// Create a request with specific User-Agent for platform testing
+    #[must_use]
     pub fn user_agent_request(user_agent: &str) -> HttpRequest {
         test::TestRequest::default()
             .insert_header((header::USER_AGENT, user_agent))
@@ -63,11 +68,13 @@ impl TestRequestBuilder {
     }
 
     /// Create an empty request with no headers
+    #[must_use]
     pub fn empty_request() -> HttpRequest {
         test::TestRequest::default().to_http_request()
     }
 
     /// Create a request with macOS User-Agent and French language
+    #[must_use]
     pub fn macos_french_request() -> HttpRequest {
         test::TestRequest::default()
             .insert_header((
@@ -79,6 +86,7 @@ impl TestRequestBuilder {
     }
 
     /// Create a request with specific cookie header
+    #[must_use]
     pub fn with_cookies(cookies: &str) -> HttpRequest {
         test::TestRequest::default()
             .insert_header((header::COOKIE, cookies))

@@ -52,6 +52,7 @@ pub struct SessionManager {
 
 impl SessionManager {
     /// Create a new session manager with the provided key and cookie settings
+    #[must_use]
     pub fn new(key: &[u8], cookie_secure: bool) -> Self {
         let mut encryption_key = [0u8; 32];
         let key_len = std::cmp::min(key.len(), 32);
@@ -60,7 +61,7 @@ impl SessionManager {
         // If key is shorter than 32 bytes, derive the rest using a simple hash
         if key_len < 32 {
             for i in key_len..32 {
-                encryption_key[i] = encryption_key[i % key_len].wrapping_add(i as u8);
+                encryption_key[i] = encryption_key[i % key_len].wrapping_add((i % 256) as u8);
             }
         }
 
@@ -70,13 +71,24 @@ impl SessionManager {
         }
     }
 
-    /// Create an encrypted session cookie from VouchrsSession (token data only)
+    /// Create an encrypted session cookie from `VouchrsSession` (token data only)
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encryption fails
     pub fn create_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
         // Use the ToCookie trait implementation
         session.to_cookie(self)
     }
 
     /// Extract and decrypt session from HTTP request
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Session cookie is not found
+    /// - Decryption fails
+    /// - Session has expired
     pub fn extract_session(&self, req: &HttpRequest) -> Result<VouchrsSession> {
         let cookie_value = req
             .cookie(COOKIE_NAME)
@@ -95,6 +107,7 @@ impl SessionManager {
     }
 
     /// Check if session needs token refresh (within 5 minutes of expiry)
+    #[must_use]
     pub fn needs_token_refresh(&self, session: &VouchrsSession) -> bool {
         let now = Utc::now();
         let buffer_time = chrono::Duration::minutes(5);
@@ -102,6 +115,7 @@ impl SessionManager {
     }
 
     /// Create a sign-out cookie (empty with immediate expiration)
+    #[must_use]
     pub fn create_signout_cookie(&self) -> Cookie {
         Cookie::build(COOKIE_NAME, "")
             .http_only(true)
@@ -113,11 +127,16 @@ impl SessionManager {
     }
 
     /// Create an expired cookie to clear the session
+    #[must_use]
     pub fn create_expired_cookie(&self) -> Cookie<'static> {
         crate::utils::cookie_utils::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
     }
 
     /// Create a temporary cookie for storing OAuth state during the OAuth flow
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encryption fails
     pub fn create_temporary_state_cookie(
         &self,
         oauth_state: &OAuthState,
@@ -127,6 +146,10 @@ impl SessionManager {
     }
 
     /// Get OAuth state from temporary cookie in request
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if decryption fails (other errors are logged and return None)
     pub fn get_temporary_state_from_request(
         &self,
         req: &HttpRequest,
@@ -144,7 +167,7 @@ impl SessionManager {
             match self.decrypt_data::<OAuthState>(cookie.value()) {
                 Ok(oauth_state) => Ok(Some(oauth_state)),
                 Err(e) => {
-                    log::warn!("Failed to decrypt OAuth state cookie: {}", e);
+                    log::warn!("Failed to decrypt OAuth state cookie: {e}");
                     Ok(None)
                 }
             }
@@ -155,6 +178,10 @@ impl SessionManager {
     }
 
     /// Get session from HTTP request cookies
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if decryption fails (expired sessions return None)
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
         if let Some(cookie) = req.cookie(COOKIE_NAME) {
             match self.decrypt_data::<VouchrsSession>(cookie.value()) {
@@ -182,6 +209,7 @@ impl SessionManager {
     }
 
     /// Create an expired temporary state cookie to clear it
+    #[must_use]
     pub fn create_expired_temp_state_cookie(&self) -> Cookie<'static> {
         crate::utils::cookie_utils::create_expired_cookie("vouchr_oauth_state", self.cookie_secure)
     }
@@ -189,6 +217,12 @@ impl SessionManager {
     // No longer needed - replaced with generic encrypt_data and decrypt_data methods
 
     /// Decrypt and validate session from cookie value
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Decryption fails
+    /// - Session has expired
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
         let session: VouchrsSession = self.decrypt_data(cookie_value)?;
 
@@ -201,6 +235,10 @@ impl SessionManager {
     }
 
     /// Get OAuth state from either temporary cookie (Google) or stateless JWT (Apple)
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if decryption fails
     pub fn get_oauth_state_from_request(
         &self,
         req: &HttpRequest,
@@ -210,13 +248,23 @@ impl SessionManager {
         self.get_temporary_state_from_request(req)
     }
 
-    /// Create an encrypted user data cookie from VouchrsUserData
+    /// Create an encrypted user data cookie from `VouchrsUserData`
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encryption fails
     pub fn create_user_cookie(&self, user_data: &VouchrsUserData) -> Result<Cookie> {
         // Use the ToCookie trait implementation
         user_data.to_cookie(self)
     }
 
     /// Extract user data from HTTP request cookie
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - User data cookie is not found
+    /// - Decryption fails
     pub fn extract_user_data(&self, req: &HttpRequest) -> Result<VouchrsUserData> {
         let cookie_value = req
             .cookie(USER_COOKIE_NAME)
@@ -228,12 +276,16 @@ impl SessionManager {
     }
 
     /// Get user data from HTTP request cookies (returns None if not found)
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if a critical failure occurs (decryption failures return None)
     pub fn get_user_data_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsUserData>> {
         if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
             match self.decrypt_data::<VouchrsUserData>(cookie.value()) {
                 Ok(user_data) => Ok(Some(user_data)),
                 Err(e) => {
-                    log::warn!("Failed to decrypt user data cookie: {}", e);
+                    log::warn!("Failed to decrypt user data cookie: {e}");
                     Ok(None)
                 }
             }
@@ -243,6 +295,7 @@ impl SessionManager {
     }
 
     /// Create an expired user cookie to clear user data
+    #[must_use]
     pub fn create_expired_user_cookie(&self) -> Cookie<'static> {
         crate::utils::cookie_utils::create_expired_cookie(USER_COOKIE_NAME, self.cookie_secure)
     }
@@ -250,6 +303,10 @@ impl SessionManager {
     // No longer needed - replaced with generic encrypt_data and decrypt_data methods
 
     /// Generic method to create a cookie with encrypted data
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encryption fails
     pub fn create_cookie<T: Serialize>(
         &self,
         name: String,
@@ -271,6 +328,12 @@ impl SessionManager {
     }
 
     /// Generic encryption function for any serializable data
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Serialization fails
+    /// - AES encryption fails
     pub fn encrypt_data<T: Serialize>(&self, data: &T) -> Result<String> {
         // Serialize the data to JSON
         let json_data = serde_json::to_string(data).context("Failed to serialize data")?;
@@ -284,7 +347,7 @@ impl SessionManager {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
         let ciphertext = cipher
             .encrypt(nonce, json_data.as_bytes())
-            .map_err(|e| anyhow!("AES encryption failed: {}", e))?;
+            .map_err(|e| anyhow!("AES encryption failed: {e}"))?;
 
         // Combine nonce + ciphertext and encode as base64
         let mut combined = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
@@ -295,6 +358,14 @@ impl SessionManager {
     }
 
     /// Generic decryption function for any deserializable data
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Base64 decoding fails
+    /// - Data length is invalid
+    /// - AES decryption fails
+    /// - Deserialization fails
     pub fn decrypt_data<T: DeserializeOwned>(&self, encrypted_data: &str) -> Result<T> {
         // Decode from base64
         let combined = general_purpose::URL_SAFE_NO_PAD
@@ -313,7 +384,7 @@ impl SessionManager {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
         let plaintext = cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| anyhow!("AES decryption failed: {}", e))?;
+            .map_err(|e| anyhow!("AES decryption failed: {e}"))?;
 
         // Deserialize the data from JSON
         let data: T = serde_json::from_slice(&plaintext)
@@ -323,7 +394,7 @@ impl SessionManager {
     }
 }
 
-/// Implementation of ToCookie for VouchrsSession
+/// Implementation of `ToCookie` for `VouchrsSession`
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         session_manager.create_cookie(
@@ -337,7 +408,7 @@ impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
     }
 }
 
-/// Implementation of ToCookie for VouchrsUserData
+/// Implementation of `ToCookie` for `VouchrsUserData`
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         session_manager.create_cookie(
@@ -351,7 +422,7 @@ impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
     }
 }
 
-/// Implementation of ToCookie for OAuthState
+/// Implementation of `ToCookie` for `OAuthState`
 impl crate::utils::cookie_utils::ToCookie<SessionManager> for OAuthState {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         let options = CookieOptions {
@@ -374,11 +445,18 @@ impl crate::utils::cookie_utils::ToCookie<SessionManager> for OAuthState {
 }
 
 /// Helper function to get current timestamp
+/// 
+/// # Panics
+/// 
+/// Panics if the system time is before the Unix epoch (1970-01-01)
+#[must_use]
 pub fn current_timestamp() -> i64 {
-    SystemTime::now()
+    let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+        .expect("System time is before Unix epoch");
+    
+    // Use try_from to safely convert, but realistically this won't overflow for centuries
+    i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]

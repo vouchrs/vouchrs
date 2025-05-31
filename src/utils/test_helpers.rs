@@ -4,6 +4,7 @@ use crate::settings::{ApplicationSettings, JwtSettings, ProxySettings, VouchrsSe
 use chrono::{Duration, Utc};
 
 /// Create a test session for use in unit tests
+#[must_use]
 pub fn create_test_session() -> VouchrsSession {
     VouchrsSession {
         id_token: Some("test_id_token".to_string()),
@@ -14,6 +15,7 @@ pub fn create_test_session() -> VouchrsSession {
 }
 
 /// Create test settings for use in unit tests
+#[must_use]
 pub fn create_test_settings() -> VouchrsSettings {
     VouchrsSettings {
         application: ApplicationSettings {

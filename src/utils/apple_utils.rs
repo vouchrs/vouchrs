@@ -26,6 +26,7 @@ pub struct AppleUserName {
 
 impl AppleUserName {
     /// Get the full name by concatenating first and last name with a space
+    #[must_use]
     pub fn full_name(&self) -> String {
         format!(
             "{} {}",
@@ -41,6 +42,17 @@ pub struct AppleUserInfo {
     pub email: Option<String>,
 }
 
+/// Process Apple user information from a JSON value
+/// 
+/// # Arguments
+/// 
+/// * `source` - The JSON value containing Apple user information
+/// * `fallback_info` - Optional fallback information to use if parsing fails
+/// 
+/// # Returns
+/// 
+/// Returns `Some(AppleUserInfo)` if parsing succeeds or fallback is available, `None` otherwise
+#[must_use]
 pub fn process_apple_user_info(
     source: &Value,
     fallback_info: Option<AppleUserInfo>,
@@ -57,7 +69,7 @@ pub fn process_apple_user_info(
     // Return the parsed value or fall back to existing info
     match parse_result {
         Ok(parsed_user) => {
-            debug!("Parsed Apple user info: {:?}", parsed_user);
+            debug!("Parsed Apple user info: {parsed_user:?}");
             Some(parsed_user)
         }
         Err(_) => {
@@ -69,8 +81,9 @@ pub fn process_apple_user_info(
 
 /// Process Apple user info from OAuth callback data
 ///
-/// This is a convenience wrapper around process_apple_user_info that handles
+/// This is a convenience wrapper around `process_apple_user_info` that handles
 /// extracting the user JSON from the callback data
+#[must_use]
 pub fn process_apple_callback(
     callback_data: &OAuthCallback,
     fallback_info: Option<AppleUserInfo>,
@@ -85,6 +98,16 @@ pub fn process_apple_callback(
 /// Generate Apple client secret JWT
 /// This function creates a properly signed JWT that can be used as a client secret
 /// with Apple's OAuth endpoints.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Team ID is not configured
+/// - Key ID is not configured
+/// - Private key path is not configured
+/// - Private key file cannot be read
+/// - Private key cannot be parsed
+/// - JWT serialization fails
 pub fn generate_apple_client_secret(
     jwt_config: &crate::settings::JwtSigningConfig,
     client_id: &str,
@@ -141,13 +164,13 @@ pub fn generate_apple_client_secret(
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
 
-    let message = format!("{}.{}", header_b64, payload_b64);
+    let message = format!("{header_b64}.{payload_b64}");
 
     // Sign with ES256
     let signature: Signature = signing_key.sign(message.as_bytes());
     let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
 
-    let jwt = format!("{}.{}", message, signature_b64);
+    let jwt = format!("{message}.{signature_b64}");
 
     log::debug!("Generated Apple client secret JWT");
     Ok(jwt)
@@ -156,6 +179,12 @@ pub fn generate_apple_client_secret(
 /// Generate Apple client secret JWT for token refresh
 /// This function creates a properly signed JWT that can be used as a client secret
 /// with Apple's OAuth token refresh endpoint.
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Client ID is not configured
+/// - JWT generation fails (see `generate_apple_client_secret` for details)
 pub fn generate_apple_client_secret_for_refresh(
     jwt_config: &crate::settings::JwtSigningConfig,
     provider_settings: &crate::settings::ProviderSettings,

@@ -18,8 +18,11 @@ static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::ne
 /// Proxy generic API requests with authentication
 /// 
 /// # Errors
-/// Returns an error if authentication fails, request building fails, 
-/// or upstream server is unreachable
+/// 
+/// Returns an error if:
+/// - Authentication fails (missing or invalid session)
+/// - Request building fails
+/// - Upstream server is unreachable
 pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
@@ -59,6 +62,12 @@ pub async fn proxy_generic_api(
 }
 
 /// Execute the upstream request with proper headers and body
+/// 
+/// # Errors
+/// 
+/// Returns an `HttpResponse` error if:
+/// - HTTP method conversion fails
+/// - Upstream request fails
 async fn execute_upstream_request(
     req: &HttpRequest,
     query_params: &web::Query<HashMap<String, String>>,
@@ -81,7 +90,7 @@ async fn execute_upstream_request(
         // Return a simple error response
         HttpResponse::BadGateway().json(serde_json::json!({
             "error": "upstream_error",
-            "message": format!("Failed to reach upstream service: {}", err)
+            "message": format!("Failed to reach upstream service: {err}")
         }))
     })
 }
@@ -89,6 +98,10 @@ async fn execute_upstream_request(
 // Functions have been moved to ResponseBuilder
 
 /// Forward upstream response back to client, handling 401/403 redirects for browsers
+/// 
+/// # Errors
+/// 
+/// Returns an error if reading the upstream response body fails
 async fn forward_upstream_response(
     upstream_response: reqwest::Response,
     req: &HttpRequest,
@@ -142,6 +155,12 @@ async fn forward_upstream_response(
 }
 
 /// Extract and validate session from encrypted cookie
+/// 
+/// # Errors
+/// 
+/// Returns an `HttpResponse` error if:
+/// - No session cookie is found
+/// - Session is invalid or expired
 async fn extract_session_from_request(
     req: &HttpRequest,
     session_manager: &SessionManager,

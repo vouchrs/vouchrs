@@ -168,6 +168,14 @@ impl Default for ProviderSettings {
 }
 
 impl VouchrsSettings {
+    /// Load settings from configuration files and environment variables
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Environment initialization fails
+    /// - Settings file cannot be read or parsed
+    /// - TOML parsing fails
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize environment and logging
         Self::initialize_environment()?;
@@ -182,6 +190,10 @@ impl VouchrsSettings {
     }
 
     /// Initialize environment variables and logging
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if environment file loading fails
     fn initialize_environment() -> Result<(), Box<dyn std::error::Error>> {
         Self::load_env_file()?;
         env_logger::init();
@@ -191,9 +203,15 @@ impl VouchrsSettings {
     /// Load base settings from TOML file(s) or use defaults
     /// Settings are loaded with the following priority (highest to lowest):
     /// 1. Environment variables (applied separately after loading base settings)
-    /// 2. Settings.toml in VOUCHRS_SECRETS_DIR (if specified and exists)
+    /// 2. Settings.toml in `VOUCHRS_SECRETS_DIR` (if specified and exists)
     /// 3. Settings.toml in current directory (if exists)
     /// 4. Default settings
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - Settings file cannot be read
+    /// - TOML parsing fails
     fn load_base_settings() -> Result<VouchrsSettings, Box<dyn std::error::Error>> {
         // 1. Start with default settings
         let mut settings = VouchrsSettings::default();
@@ -310,6 +328,11 @@ impl VouchrsSettings {
         }
     }
 
+    /// Load environment variables from .env file
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if the .env file exists but cannot be read
     fn load_env_file() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(contents) = std::fs::read_to_string(".env") {
             for line in contents.lines() {
@@ -321,10 +344,14 @@ impl VouchrsSettings {
         Ok(())
     }
 
+    /// Get the bind address for the server
+    #[must_use]
     pub fn get_bind_address(&self) -> String {
         format!("{}:{}", self.application.host, self.application.port)
     }
 
+    /// Get CORS origins as a vector of strings
+    #[must_use]
     pub fn get_cors_origins(&self) -> Vec<String> {
         self.application
             .cors_origins
@@ -334,11 +361,13 @@ impl VouchrsSettings {
     }
 
     /// Get enabled providers
+    #[must_use]
     pub fn get_enabled_providers(&self) -> Vec<&ProviderSettings> {
         self.providers.iter().filter(|p| p.enabled).collect()
     }
 
     /// Get provider by name
+    #[must_use]
     pub fn get_provider(&self, name: &str) -> Option<&ProviderSettings> {
         self.providers.iter().find(|p| p.name == name)
     }
@@ -346,6 +375,7 @@ impl VouchrsSettings {
 
 impl ProviderSettings {
     /// Get the client ID, checking environment variable first, then falling back to direct value
+    #[must_use]
     pub fn get_client_id(&self) -> Option<String> {
         if let Some(env_var) = &self.client_id_env {
             if let Ok(value) = std::env::var(env_var) {
@@ -356,6 +386,7 @@ impl ProviderSettings {
     }
 
     /// Get the client secret, checking environment variable first, then falling back to direct value
+    #[must_use]
     pub fn get_client_secret(&self) -> Option<String> {
         if let Some(env_var) = &self.client_secret_env {
             if let Ok(value) = std::env::var(env_var) {
@@ -368,6 +399,7 @@ impl ProviderSettings {
 
 impl JwtSigningConfig {
     /// Get the team ID, checking environment variable first, then falling back to direct value
+    #[must_use]
     pub fn get_team_id(&self) -> Option<String> {
         if let Some(env_var) = &self.team_id_env {
             if let Ok(value) = std::env::var(env_var) {
@@ -378,6 +410,7 @@ impl JwtSigningConfig {
     }
 
     /// Get the key ID, checking environment variable first, then falling back to direct value
+    #[must_use]
     pub fn get_key_id(&self) -> Option<String> {
         if let Some(env_var) = &self.key_id_env {
             if let Ok(value) = std::env::var(env_var) {
@@ -388,6 +421,7 @@ impl JwtSigningConfig {
     }
 
     /// Get the private key path, checking environment variable first, then falling back to direct value
+    #[must_use]
     pub fn get_private_key_path(&self) -> Option<String> {
         if let Some(env_var) = &self.private_key_path_env {
             if let Ok(value) = std::env::var(env_var) {
@@ -530,7 +564,7 @@ audience = "https://secrets-audience.example.com"
     }
 
     #[test]
-    fn test_vouchr_secrets_dir_precedence() {
+    fn test_vouchrs_secrets_dir_precedence() {
         // This is a conceptual test illustrating the expected behavior
         // of the settings precedence. A full integration test would require
         // more control over the file system.
@@ -540,16 +574,16 @@ audience = "https://secrets-audience.example.com"
         mock_root_settings.jwt.session_secret = "root-secret-key".to_string();
         mock_root_settings.jwt.issuer = "https://root.example.com".to_string();
 
-        // Mock settings from VOUCHR_SECRETS_DIR Settings.toml
+        // Mock settings from VOUCHRS_SECRETS_DIR Settings.toml
         let mut mock_secrets_settings = VouchrsSettings::default();
         mock_secrets_settings.jwt.session_secret = "secrets-secret-key".to_string();
         mock_secrets_settings.jwt.issuer = "https://secrets.example.com".to_string();
 
-        // Scenario 1: No VOUCHR_SECRETS_DIR, use root settings
+        // Scenario 1: No VOUCHRS_SECRETS_DIR, use root settings
         assert_eq!(mock_root_settings.jwt.session_secret, "root-secret-key");
         assert_eq!(mock_root_settings.jwt.issuer, "https://root.example.com");
 
-        // Scenario 2: With VOUCHR_SECRETS_DIR, prefer settings from secrets dir
+        // Scenario 2: With VOUCHRS_SECRETS_DIR, prefer settings from secrets dir
         assert_eq!(
             mock_secrets_settings.jwt.session_secret,
             "secrets-secret-key"

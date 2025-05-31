@@ -12,6 +12,7 @@ pub struct UserAgentInfo {
 
 /// Extract user agent information from HTTP request headers
 /// Uses modern client hints headers first, with fallback to traditional User-Agent header
+#[must_use]
 pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
     let headers = req.headers();
 
@@ -19,12 +20,12 @@ pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
     let user_agent = headers
         .get("sec-ch-ua")
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .or_else(|| {
             headers
                 .get("user-agent")
                 .and_then(|h| h.to_str().ok())
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
         });
 
     // Try to get platform from client hints or derive from User-Agent
@@ -64,6 +65,7 @@ pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
 
 /// Derive platform from User-Agent string
 /// Detects common platforms like Windows, macOS, Linux, Android, iOS, Chrome OS
+#[must_use]
 pub fn derive_platform_from_user_agent(user_agent: &str) -> String {
     let ua_lower = user_agent.to_lowercase();
 
@@ -86,6 +88,7 @@ pub fn derive_platform_from_user_agent(user_agent: &str) -> String {
 
 /// Determine if a request came from a browser vs an API client
 /// Browsers typically send Accept headers that include text/html
+#[must_use]
 pub fn is_browser_request(req: &HttpRequest) -> bool {
     if let Some(accept_header) = req.headers().get("accept") {
         if let Ok(accept_str) = accept_header.to_str() {
@@ -149,25 +152,25 @@ mod tests {
         // Test Windows detection
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"),
-            "Windows".to_string()
+            "Windows"
         );
 
         // Test macOS detection
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"),
-            "macOS".to_string()
+            "macOS"
         );
 
         // Test Linux detection
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (X11; Linux x86_64)"),
-            "Linux".to_string()
+            "Linux"
         );
 
         // Test Android detection
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (Linux; Android 11; SM-G991B)"),
-            "Android".to_string()
+            "Android"
         );
 
         // Test iOS detection
@@ -175,19 +178,19 @@ mod tests {
             derive_platform_from_user_agent(
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
             ),
-            "iOS".to_string()
+            "iOS"
         );
 
         // Test Chrome OS detection
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)"),
-            "Chrome OS".to_string()
+            "Chrome OS"
         );
 
         // Test unknown platform - now returns "Unknown" instead of None
         assert_eq!(
             derive_platform_from_user_agent("Mozilla/5.0 (Unknown Platform)"),
-            "Unknown".to_string()
+            "Unknown"
         );
     }
 

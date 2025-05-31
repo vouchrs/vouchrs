@@ -16,7 +16,7 @@ async fn main() -> std::io::Result<()> {
     // Load configuration from Settings.toml and environment variables
     // This also loads .env file and initializes the logger
     let settings = VouchrsSettings::load()
-        .map_err(|e| std::io::Error::other(format!("Failed to load settings: {}", e)))?;
+        .map_err(|e| std::io::Error::other(format!("Failed to load settings: {e}")))?;
 
     // Initialize OAuth configuration with config-driven providers
     let mut oauth_config = OAuthConfig::new();
@@ -24,13 +24,20 @@ async fn main() -> std::io::Result<()> {
         .initialize_from_settings(&settings)
         .await
         .map_err(|e| {
-            std::io::Error::other(format!("Failed to initialize OAuth providers: {}", e))
+            std::io::Error::other(format!("Failed to initialize OAuth providers: {e}"))
         })?;
 
     println!("✓ Using JWT-based stateless sessions with encrypted cookies");
     start_server_with_jwt(oauth_config, settings).await
 }
 
+/// Start the server with JWT-based stateless sessions
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - Server binding fails
+/// - Server fails to start
 async fn start_server_with_jwt(
     oauth_config: OAuthConfig,
     settings: VouchrsSettings,
@@ -100,10 +107,9 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
 
 fn print_startup_info(bind_address: &str, session_backend: &str, settings: &VouchrsSettings) {
     println!(
-        "Starting Vouchrs OIDC Reverse Proxy on http://{}",
-        bind_address
+        "Starting Vouchrs OIDC Reverse Proxy on http://{bind_address}"
     );
-    println!("Session Backend: {}", session_backend);
+    println!("Session Backend: {session_backend}");
     println!();
     println!("OAuth2 endpoints:");
     println!("  GET  /oauth2/sign_in  - Login/logout page");

@@ -26,8 +26,12 @@ struct SessionFinalizeParams {
 /// JWT OAuth callback handler
 /// 
 /// # Errors
-/// Returns an error if OAuth state validation fails, code exchange fails,
-/// session building fails, or cookie creation fails
+/// 
+/// Returns an error if:
+/// - OAuth state validation fails
+/// - Authorization code exchange fails
+/// - Session building fails
+/// - Cookie creation fails
 pub async fn jwt_oauth_callback(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
@@ -219,7 +223,7 @@ fn build_and_finalize_session(
             let validated_redirect = match validate_post_auth_redirect(&redirect_to) {
                 Ok(url) => url,
                 Err(_) => {
-                    error!("Invalid post-authentication redirect URL '{}': rejecting", redirect_to);
+                    error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
                     // Fallback to safe default on validation failure
                     "/".to_string()
                 }

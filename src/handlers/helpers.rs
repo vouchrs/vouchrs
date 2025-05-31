@@ -133,8 +133,12 @@ pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
 /// This is used for debugging purposes only to inspect token claims
 /// 
 /// # Errors
-/// Returns an error if the JWT format is invalid, base64 decoding fails, 
-/// UTF-8 decoding fails, or JSON parsing fails
+/// 
+/// Returns an error if:
+/// - The JWT format is invalid (not 3 parts separated by dots)
+/// - Base64 decoding fails
+/// - UTF-8 decoding fails
+/// - JSON parsing fails
 pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {

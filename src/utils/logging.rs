@@ -7,7 +7,7 @@ pub struct LoggingHelper;
 impl LoggingHelper {
     /// Log OAuth token response in a standardized format
     pub fn log_oauth_token_response(provider: &str, apple_user_info: Option<&AppleUserInfo>) {
-        info!("=== OAuth Token Exchange Success for {} ===", provider);
+        info!("=== OAuth Token Exchange Success for {provider} ===");
         // Expires at, refresh token, and id token are now on VouchrSession or passed separately.
         if provider == "apple" {
             Self::log_apple_user_info(apple_user_info);
@@ -31,7 +31,7 @@ impl LoggingHelper {
 
             // Log raw JSON serialization for complete debugging
             if let Ok(user_info_json) = serde_json::to_string_pretty(user_info) {
-                info!("Apple user info JSON:\n{}", user_info_json);
+                info!("Apple user info JSON:\n{user_info_json}");
             }
         } else {
             warn!("Apple OAuth completed but no user info was returned in the token response");
@@ -43,11 +43,10 @@ impl LoggingHelper {
     pub fn log_provider_init(provider_name: &str, display_name: Option<&str>, configured: bool) {
         let name = display_name.unwrap_or(provider_name);
         if configured {
-            info!("✅ {} OAuth2 configured ({})", name, provider_name);
+            info!("✅ {name} OAuth2 configured ({provider_name})");
         } else {
             info!(
-                "❌ {} OAuth2 not configured - missing environment variables",
-                name
+                "❌ {name} OAuth2 not configured - missing environment variables"
             );
         }
     }
@@ -59,25 +58,24 @@ impl LoggingHelper {
 
     /// Log that a provider is disabled
     pub fn log_oauth_provider_disabled(provider_name: &str) {
-        info!("⏭️  Provider {} is disabled, skipping", provider_name);
+        info!("⏭️  Provider {provider_name} is disabled, skipping");
     }
 
     /// Log that a provider is configured
     pub fn log_oauth_provider_configured(display_name: &str, provider_name: &str) {
-        info!("✅ {} OAuth2 configured ({})", display_name, provider_name);
+        info!("✅ {display_name} OAuth2 configured ({provider_name})");
     }
 
     /// Log that a provider is not configured
     pub fn log_oauth_provider_not_configured(display_name: &str) {
         info!(
-            "❌ {} OAuth2 not configured - missing environment variables",
-            display_name
+            "❌ {display_name} OAuth2 not configured - missing environment variables"
         );
     }
 
     /// Log summary of configured OAuth providers
     pub fn log_oauth_providers_summary(provider_names: &[&String]) {
-        info!("🎯 Configured OAuth providers: {:?}", provider_names);
+        info!("🎯 Configured OAuth providers: {provider_names:?}");
     }
 
     /// Log OAuth URL building
@@ -87,29 +85,27 @@ impl LoggingHelper {
         extra_params: &std::collections::HashMap<String, String>,
     ) {
         info!(
-            "🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}",
-            provider, scopes, extra_params
+            "🔍 Built {provider} OAuth URL with scopes: {scopes} and extra params: {extra_params:?}"
         );
     }
 
     /// Log token exchange start
     pub fn log_token_exchange_start(provider: &str) {
         info!(
-            "🔄 Exchanging authorization code for tokens with {}",
-            provider
+            "🔄 Exchanging authorization code for tokens with {provider}"
         );
     }
 
     /// Log raw Apple token response for debugging
     pub fn log_apple_token_response_raw(response_text: &str) {
         info!("=== Raw Apple Token Response ===");
-        info!("Response text: {}", response_text);
+        info!("Response text: {response_text}");
         info!("=== End Raw Apple Token Response ===");
     }
 
     /// Log raw token response for other providers
     pub fn log_token_response_raw(provider: &str, response_text: &str) {
-        debug!("Raw {} token response: {}", provider, response_text);
+        debug!("Raw {provider} token response: {response_text}");
     }
 
     /// Log token exchange summary
@@ -121,21 +117,17 @@ impl LoggingHelper {
         scope: Option<&String>,
         user_info_present: bool,
     ) {
-        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, scope={:?}, user_info={}", 
-            provider,
-            refresh_token.map(|_| "present").unwrap_or("missing"),
-            id_token.map(|_| "present").unwrap_or("missing"),
-            token_type,
-            scope,
-            if user_info_present { "present" } else { "missing" }
-        );
+        let refresh_token_status = refresh_token.map(|_| "present").unwrap_or("missing");
+        let id_token_status = id_token.map(|_| "present").unwrap_or("missing");
+        let user_info_status = if user_info_present { "present" } else { "missing" };
+        
+        info!("🔍 Token exchange summary for {provider}: refresh_token={refresh_token_status}, id_token={id_token_status}, token_type={token_type}, scope={scope:?}, user_info={user_info_status}");
     }
 
     /// Log session creation success
     pub fn log_session_created(user_email: &str, provider: &str) {
         info!(
-            "Successfully built session for user: {} (provider: {})",
-            user_email, provider
+            "Successfully built session for user: {user_email} (provider: {provider})"
         );
     }
 
@@ -145,9 +137,8 @@ impl LoggingHelper {
         callback_data: &crate::oauth::OAuthCallback,
     ) {
         debug!(
-            "OAuth callback received via {}: {:?}",
-            req.method(),
-            callback_data
+            "OAuth callback received via {}: {callback_data:?}",
+            req.method()
         );
         debug!("Callback request headers: {:?}", req.headers());
         debug!(

@@ -4,12 +4,19 @@ use log::debug;
 
 /// Parse OAuth state from received state parameter and retrieve stored state from cookie
 /// This eliminates provider-specific branching logic by using the stored OAuth state
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - The received state does not match the stored CSRF token
+/// - No stored state is found and stateless parsing fails
+/// - The stateless state format is invalid
 pub fn get_oauth_state_from_callback(
     received_state: &str,
     session_manager: &crate::session::SessionManager,
     req: &actix_web::HttpRequest,
 ) -> Result<crate::oauth::OAuthState, String> {
-    debug!("Received OAuth state parameter: '{}'", received_state);
+    debug!("Received OAuth state parameter: '{received_state}'");
     debug!("Received state length: {} characters", received_state.len());
 
     // First, try to get the stored OAuth state from temporary cookie
@@ -35,7 +42,7 @@ pub fn get_oauth_state_from_callback(
             parse_stateless_oauth_state(received_state)
         }
         Err(e) => {
-            debug!("Failed to retrieve stored OAuth state: {}", e);
+            debug!("Failed to retrieve stored OAuth state: {e}");
             // Fallback to parsing state parameter directly
             parse_stateless_oauth_state(received_state)
         }
@@ -44,10 +51,15 @@ pub fn get_oauth_state_from_callback(
 
 /// Parse OAuth state when no stored state is available (stateless mode)
 /// This handles cases where the provider info needs to be extracted from the state parameter itself
+/// 
+/// # Errors
+/// 
+/// Returns an error if:
+/// - The state format is invalid (missing provider information)
+/// - Cannot determine provider from simple CSRF token in stateless mode
 fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::oauth::OAuthState, String> {
     debug!(
-        "Attempting to parse stateless OAuth state: '{}'",
-        received_state
+        "Attempting to parse stateless OAuth state: '{received_state}'"
     );
     debug!("Contains pipe character: {}", received_state.contains('|'));
 
@@ -72,8 +84,7 @@ fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::oauth::OAu
         };
 
         debug!(
-            "Successfully parsed stateless OAuth state for provider: {}",
-            provider
+            "Successfully parsed stateless OAuth state for provider: {provider}"
         );
 
         Ok(crate::oauth::OAuthState {
@@ -105,7 +116,7 @@ mod tests {
         let redirect_url = "/dashboard";
         let encoded_redirect =
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(redirect_url.as_bytes());
-        let state = format!("csrf_token|google|{}", encoded_redirect);
+        let state = format!("csrf_token|google|{encoded_redirect}");
 
         let result = parse_stateless_oauth_state(&state);
 

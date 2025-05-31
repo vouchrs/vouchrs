@@ -9,6 +9,11 @@ pub const OAUTH_STATE_COOKIE: &str = "vouchr_oauth_state";
 
 /// Trait for converting objects to cookies
 pub trait ToCookie<T> {
+    /// Convert the object to a cookie
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if the cookie creation fails (e.g., encryption failure)
     fn to_cookie(&self, manager: &T) -> Result<Cookie<'static>>;
 }
 
@@ -34,13 +39,18 @@ impl Default for CookieOptions {
 }
 
 /// Helper function to extract cookie value from HttpRequest
+/// 
+/// # Errors
+/// 
+/// Returns an error if the specified cookie is not found in the request
 pub fn extract_cookie_value(req: &HttpRequest, cookie_name: &str) -> Result<String> {
     req.cookie(cookie_name)
-        .ok_or_else(|| anyhow!("Cookie not found: {}", cookie_name))
+        .ok_or_else(|| anyhow!("Cookie not found: {cookie_name}"))
         .map(|cookie| cookie.value().to_string())
 }
 
 /// Create an expired cookie to clear a specific cookie
+#[must_use]
 pub fn create_expired_cookie(name: &str, secure: bool) -> Cookie<'static> {
     Cookie::build(name.to_owned(), "")
         .http_only(true)
@@ -65,12 +75,13 @@ pub fn log_cookies(req: &HttpRequest) {
 }
 
 /// Filter cookies, removing vouchrs_session cookie
+#[must_use]
 pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
     let filtered_cookies: Vec<&str> = cookie_str
         .split(';')
         .filter(|cookie| {
             let trimmed = cookie.trim();
-            !trimmed.starts_with(&format!("{}=", COOKIE_NAME))
+            !trimmed.starts_with(&format!("{COOKIE_NAME}="))
         })
         .collect();
 
@@ -78,5 +89,45 @@ pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
         None
     } else {
         Some(filtered_cookies.join("; "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_vouchrs_cookies() {
+        // Test with single vouchrs_session cookie
+        let cookies = "vouchrs_session=abc123";
+        assert_eq!(filter_vouchrs_cookies(cookies), None);
+
+        // Test with multiple cookies including vouchrs_session
+        let cookies = "other_cookie=value; vouchrs_session=abc123; another_cookie=value2";
+        assert_eq!(
+            filter_vouchrs_cookies(cookies),
+            Some("other_cookie=value; another_cookie=value2".to_string())
+        );
+
+        // Test with no vouchrs_session cookie
+        let cookies = "cookie1=value1; cookie2=value2";
+        assert_eq!(
+            filter_vouchrs_cookies(cookies),
+            Some("cookie1=value1; cookie2=value2".to_string())
+        );
+
+        // Test with empty string
+        assert_eq!(filter_vouchrs_cookies(""), None);
+    }
+
+    #[test]
+    fn test_create_expired_cookie() {
+        let cookie = create_expired_cookie("test_cookie", true);
+        assert_eq!(cookie.name(), "test_cookie");
+        assert_eq!(cookie.value(), "");
+        assert!(cookie.http_only().unwrap());
+        assert!(cookie.secure().unwrap());
+        assert_eq!(cookie.path().unwrap(), "/");
+        assert!(cookie.max_age().unwrap().whole_seconds() < 0);
     }
 }
