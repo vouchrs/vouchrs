@@ -38,7 +38,7 @@ impl Default for CookieOptions {
     }
 }
 
-/// Helper function to extract cookie value from HttpRequest
+/// Helper function to extract cookie value from `HttpRequest`
 /// 
 /// # Errors
 /// 

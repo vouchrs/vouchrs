@@ -52,8 +52,7 @@ pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
     let mobile = headers
         .get("sec-ch-ua-mobile")
         .and_then(|h| h.to_str().ok())
-        .map(|s| if s.contains("1") { 1 } else { 0 })
-        .unwrap_or(0);
+        .map_or(0, |s| if s.contains('1') { 1 } else { 0 });
 
     UserAgentInfo {
         user_agent,

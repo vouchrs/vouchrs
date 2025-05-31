@@ -220,13 +220,10 @@ fn build_and_finalize_session(
             let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
 
             // Validate the redirect URL to prevent open redirect attacks
-            let validated_redirect = match validate_post_auth_redirect(&redirect_to) {
-                Ok(url) => url,
-                Err(_) => {
-                    error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
-                    // Fallback to safe default on validation failure
-                    "/".to_string()
-                }
+            let validated_redirect = if let Ok(url) = validate_post_auth_redirect(&redirect_to) { url } else {
+                error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
+                // Fallback to safe default on validation failure
+                "/".to_string()
             };
 
             // Create response with multiple cookies

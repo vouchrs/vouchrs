@@ -6,7 +6,7 @@ use serde_json::Value;
 /// Parse and process Apple user information from various sources
 ///
 /// This function can:
-/// 1. Parse a raw JSON Value into AppleUserInfo (when called with just the value)
+/// 1. Parse a raw JSON Value into `AppleUserInfo` (when called with just the value)
 /// 2. Process OAuth callback data and existing user info (when called with callback and existing info)
 ///
 /// Apple Sign In can provide user information in two ways:

@@ -66,7 +66,7 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
 }
 
 fn get_sign_in_styles() -> &'static str {
-    r#"
+    r"
         * {
             margin: 0;
             padding: 0;
@@ -211,7 +211,7 @@ fn get_sign_in_styles() -> &'static str {
                 font-size: 24px;
             }
         }
-    "#
+    "
 }
 
 /// Helper function to decode JWT token payload without verification
