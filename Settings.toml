@@ -105,15 +105,3 @@ client_id_env = "MICROSOFT_CLIENT_ID"
 client_secret_env = "MICROSOFT_CLIENT_SECRET"
 enabled = false  # Set to true to enable
 extra_auth_params = { response_type = "code", response_mode = "query" }
-
-# Example: GitHub provider with mixed configuration
-[[providers]]
-name = "github"
-display_name = "GitHub"
-discovery_url = "https://github.com/.well-known/openid-configuration"
-scopes = ["read:user", "user:email"]
-# Using environment variables only
-client_id_env = "GITHUB_CLIENT_ID"
-client_secret_env = "GITHUB_CLIENT_SECRET"
-enabled = false
-extra_auth_params = { allow_signup = "true" }

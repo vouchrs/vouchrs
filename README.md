@@ -33,6 +33,8 @@ A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts a
    REDIRECT_BASE_URL=https://your-domain.com
    ```
 
+   > **Note**: The `REDIRECT_BASE_URL` should be just your base domain. Vouchrs automatically appends `/oauth2/callback` for OAuth provider configurations.
+
 2. **Run with Docker:**
    ```bash
    docker run -d \
@@ -40,14 +42,14 @@ A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts a
      -p 8080:8080 \
      --env-file .env \
      -v $(pwd)/AuthKey_YOUR_KEY_ID.p8:/app/AuthKey_YOUR_KEY_ID.p8:ro \
-     vouchrs:latest
+     ghcr.io/vouchrs/vouchrs:latest
    ```
 
 ### From Source
 
 1. **Build and run:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/vouchrs/vouchrs.git
    cd vouchrs
    cargo build --release
    cargo run
@@ -146,7 +148,7 @@ enabled = false  # Set to true to enable
 | `UPSTREAM_URL` | `http://localhost:3000` | URL to proxy authenticated requests to |
 | `RUST_LOG` | `info` | Log level (error, warn, info, debug, trace) |
 | `HOST` | `0.0.0.0` | Server bind address |
-| `PORT` | `8080` | Server port |
+| `PORT` | `8080` | Server bind port |
 
 2. **Configure environment:**
    ```bash
@@ -234,7 +236,8 @@ cargo build --release # Production build
 ### Development Environment
 ```bash
 export RUST_LOG=debug
-export SESSION_SECRET="your-development-secret-key"   export REDIRECT_BASE_URL="http://localhost:8080"
+export SESSION_SECRET="your-development-secret-key"
+export REDIRECT_BASE_URL="http://localhost:8080"
 # Add OAuth provider credentials
 cargo run
 ```

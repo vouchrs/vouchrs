@@ -25,7 +25,7 @@ static/
 
 ```bash
 # Mount custom static files
-docker run -v /path/to/custom/static:/app/static:ro vouchrs:latest
+docker run -v /path/to/custom/static:/app/static:ro ghcr.io/vouchrs/vouchrs:latest
 ```
 
 ### Docker Compose
@@ -34,7 +34,7 @@ docker run -v /path/to/custom/static:/app/static:ro vouchrs:latest
 version: '3.8'
 services:
   vouchrs:
-    image: vouchrs:latest
+    image: ghcr.io/vouchrs/vouchrs:latest
     ports:
       - "8080:8080"
     volumes:
@@ -143,7 +143,7 @@ cp -r static/* custom-ui/
 
 # Edit custom-ui/sign-in.html and custom-ui/sign-in.css
 # Test locally:
-docker run -v $(pwd)/custom-ui:/app/static:ro -p 8080:8080 vouchrs:latest
+docker run -v $(pwd)/custom-ui:/app/static:ro -p 8080:8080 ghcr.io/vouchrs/vouchrs:latest
 ```
 
 ### 2. Production Deployment
@@ -156,7 +156,7 @@ docker run -d \
   -v /opt/vouchrs/custom-ui:/app/static:ro \
   -e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
   -e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
-  vouchrs:latest
+  ghcr.io/vouchrs/vouchrs:latest
 ```
 
 ### 3. Updates

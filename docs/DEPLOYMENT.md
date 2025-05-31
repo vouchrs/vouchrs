@@ -20,7 +20,7 @@ APPLE_PRIVATE_KEY_PATH=/app/AuthKey_YOUR_KEY_ID.p8
 
 # Required Session Configuration
 SESSION_SECRET=your-256-bit-secret-key-here
-REDIRECT_BASE_URL=http://localhost:8080/oauth2/callback
+REDIRECT_BASE_URL=http://localhost:8080
 
 # Optional
 RUST_LOG=info
@@ -36,9 +36,7 @@ UPSTREAM_URL=http://localhost:3000
 version: '3.8'
 services:
   vouchrs:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.distroless-static
+    image: ghcr.io/vouchrs/vouchrs:latest
     ports:
       - "8080:8080"
     env_file:
@@ -65,19 +63,23 @@ docker-compose up -d
 ### Using Docker Run
 
 ```bash
+# Pull from GitHub Container Registry
+docker pull ghcr.io/vouchrs/vouchrs:latest
+
+# Run with environment file
 docker run -d \
   --name vouchrs \
   -p 8080:8080 \
   --env-file .env \
   -v $(pwd)/AuthKey_YOUR_KEY_ID.p8:/app/AuthKey_YOUR_KEY_ID.p8:ro \
-  vouchrs:latest
+  ghcr.io/vouchrs/vouchrs:latest
 ```
 
 ## Building from Source
 
 ### Development Build
 ```bash
-git clone <repository-url>
+git clone https://github.com/vouchrs/vouchrs.git
 cd vouchrs
 cargo build
 cargo run
@@ -91,7 +93,11 @@ cargo build --release
 
 ### Docker Build
 ```bash
+# Build locally
 docker build -t vouchrs:latest .
+
+# Build for production with registry tagging
+docker build -t ghcr.io/vouchrs/vouchrs:latest .
 ```
 
 ## Environment Variables
@@ -114,9 +120,9 @@ docker build -t vouchrs:latest .
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RUST_LOG` | `info` | Log level (error, warn, info, debug, trace) |
-| `BIND_ADDRESS` | `0.0.0.0:8080` | Server bind address and port |
+| `HOST` | `0.0.0.0` | Server bind address |
+| `PORT` | `8080` | Server bind port |
 | `UPSTREAM_URL` | None | URL to proxy authenticated requests to |
-| `GOOGLE_SIGNOUT_URL` | `https://accounts.google.com/logout` | Custom Google logout URL |
 
 ## OAuth Provider Setup
 
@@ -162,7 +168,7 @@ docker build -t vouchrs:latest .
 version: '3.8'
 services:
   vouchrs:
-    image: vouchrs:latest
+    image: ghcr.io/vouchrs/vouchrs:latest
     ports:
       - "8080:8080"
     environment:

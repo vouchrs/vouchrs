@@ -40,7 +40,7 @@ Vouchrs implements a flexible, config-driven approach for OAuth providers, repla
 - **Benefits**: Zero-configuration startup for existing deployments
 
 #### 4. Dynamic Sign-in Page Generation
-- **File**: `src/jwt_handlers/helpers.rs`
+- **File**: `src/handlers/helpers.rs`
 - **Function**: `generate_dynamic_sign_in_page()`
 - **Features**:
   - Automatic provider button generation

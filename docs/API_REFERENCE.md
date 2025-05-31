@@ -12,7 +12,7 @@
 
 | Endpoint | Method | Purpose |
 |----------|---------|---------|
-| `/` | GET | Health check and service status |
+| `/ping` | GET | Health check and service status |
 
 ## Usage Examples
 
@@ -78,18 +78,28 @@ fetch('/api/user')
 ```
 
 ### Reverse Proxy Integration
+
+Vouchrs acts as a transparent reverse proxy. Configure your load balancer or reverse proxy to route requests through Vouchrs:
+
 ```nginx
-# Nginx configuration example
-location /protected/ {
-    auth_request /auth;
-    proxy_pass http://upstream-service/;
+# Nginx configuration example for routing through Vouchrs
+upstream vouchrs {
+    server vouchrs:8080;
 }
 
-location = /auth {
-    internal;
-    proxy_pass http://vouchr:8080/oauth2/verify;
-    proxy_pass_request_body off;
-    proxy_set_header Content-Length "";
-    proxy_set_header X-Original-URI $request_uri;
+upstream backend {
+    server backend:3000;
+}
+
+server {
+    listen 80;
+    location / {
+        # All requests go through Vouchrs for authentication
+        proxy_pass http://vouchrs;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
