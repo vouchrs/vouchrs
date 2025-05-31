@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use log::{debug, error};
 
 use super::session_builder::SessionBuilder;
-use crate::utils::apple_utils::{process_apple_callback, AppleUserInfo};
+use crate::utils::apple::{process_apple_callback, AppleUserInfo};
 use crate::utils::logging::LoggingHelper;
 use crate::utils::oauth_utils::get_oauth_state_from_callback;
 use crate::utils::redirect_validator::validate_post_auth_redirect;

@@ -15,7 +15,7 @@
 
 use crate::handlers::helpers::decode_jwt_payload;
 use crate::models::CompleteSessionData;
-use crate::utils::apple_utils::AppleUserInfo;
+use crate::utils::apple::AppleUserInfo;
 use chrono::{DateTime, TimeZone, Utc};
 use log::{debug, info, warn};
 use serde_json::Value;
@@ -224,7 +224,7 @@ impl SessionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::apple_utils::{AppleUserInfo, AppleUserName};
+    use crate::utils::apple::{AppleUserInfo, AppleUserName};
     use base64::Engine as _;
     use chrono::Utc;
     use serde_json::json;

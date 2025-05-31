@@ -1,5 +1,5 @@
-pub mod apple_utils;
-pub mod cookie_utils;
+pub mod apple;
+pub mod cookie;
 pub mod logging;
 pub mod oauth_utils;
 pub mod redirect_validator;

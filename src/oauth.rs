@@ -3,7 +3,7 @@
 
 use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
-use crate::utils::apple_utils;
+use crate::utils::apple;
 use crate::utils::logging::LoggingHelper;
 use actix_web::HttpResponse;
 use chrono::Utc;
@@ -71,7 +71,7 @@ struct TokenResponse {
     id_token: Option<String>,
     token_type: String,
     expires_in: Option<u64>,
-    user: Option<apple_utils::AppleUserInfo>, // Apple-specific user info field
+    user: Option<apple::AppleUserInfo>, // Apple-specific user info field
 }
 
 // Runtime provider configuration with resolved endpoints
@@ -315,7 +315,7 @@ impl OAuthConfig {
             Option<String>,
             Option<String>,
             chrono::DateTime<Utc>,
-            Option<apple_utils::AppleUserInfo>,
+            Option<apple::AppleUserInfo>,
         ),
         String,
     > {
@@ -346,7 +346,7 @@ impl OAuthConfig {
         } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
             // JWT signing (Apple)
             client_secret =
-                crate::utils::apple_utils::generate_apple_client_secret(jwt_config, &client_id)?;
+                crate::utils::apple::generate_apple_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret", &client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
@@ -556,7 +556,7 @@ pub async fn refresh_oauth_tokens(
         secret.clone()
     } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
         // Generate JWT client secret for Apple using apple_utils
-        apple_utils::generate_apple_client_secret_for_refresh(
+        apple::generate_apple_client_secret_for_refresh(
             jwt_config,
             &runtime_provider.settings,
         )

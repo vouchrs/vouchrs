@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use url;
 use log::{debug, warn};
 
-use crate::utils::cookie_utils::filter_vouchrs_cookies;
+use crate::utils::cookie::filter_vouchrs_cookies;
 
 pub struct ResponseBuilder;
 

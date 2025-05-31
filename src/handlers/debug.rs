@@ -12,7 +12,7 @@ pub async fn jwt_oauth_userinfo(
     session_manager: web::Data<SessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
 ) -> Result<HttpResponse> {
-    use crate::utils::cookie_utils::USER_COOKIE_NAME;
+    use crate::utils::cookie::USER_COOKIE_NAME;
 
     // Get the vouchrs_user cookie directly
     if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {

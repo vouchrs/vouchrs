@@ -1,6 +1,6 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
-use crate::utils::cookie_utils::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
+use crate::utils::cookie::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -129,7 +129,7 @@ impl SessionManager {
     /// Create an expired cookie to clear the session
     #[must_use]
     pub fn create_expired_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie_utils::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
+        crate::utils::cookie::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
     }
 
     /// Create a temporary cookie for storing OAuth state during the OAuth flow
@@ -157,7 +157,7 @@ impl SessionManager {
         log::info!("Looking for temporary state cookie 'vouchr_oauth_state'");
 
         // Log all cookies in the request for debugging
-        crate::utils::cookie_utils::log_cookies(req);
+        crate::utils::cookie::log_cookies(req);
 
         if let Some(cookie) = req.cookie("vouchr_oauth_state") {
             log::info!(
@@ -211,7 +211,7 @@ impl SessionManager {
     /// Create an expired temporary state cookie to clear it
     #[must_use]
     pub fn create_expired_temp_state_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie_utils::create_expired_cookie("vouchr_oauth_state", self.cookie_secure)
+        crate::utils::cookie::create_expired_cookie("vouchr_oauth_state", self.cookie_secure)
     }
 
     // No longer needed - replaced with generic encrypt_data and decrypt_data methods
@@ -297,7 +297,7 @@ impl SessionManager {
     /// Create an expired user cookie to clear user data
     #[must_use]
     pub fn create_expired_user_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie_utils::create_expired_cookie(USER_COOKIE_NAME, self.cookie_secure)
+        crate::utils::cookie::create_expired_cookie(USER_COOKIE_NAME, self.cookie_secure)
     }
 
     // No longer needed - replaced with generic encrypt_data and decrypt_data methods
@@ -395,7 +395,7 @@ impl SessionManager {
 }
 
 /// Implementation of `ToCookie` for `VouchrsSession`
-impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
+impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsSession {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         session_manager.create_cookie(
             COOKIE_NAME.to_string(),
@@ -409,7 +409,7 @@ impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsSession {
 }
 
 /// Implementation of `ToCookie` for `VouchrsUserData`
-impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
+impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsUserData {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         session_manager.create_cookie(
             USER_COOKIE_NAME.to_string(),
@@ -423,7 +423,7 @@ impl crate::utils::cookie_utils::ToCookie<SessionManager> for VouchrsUserData {
 }
 
 /// Implementation of `ToCookie` for `OAuthState`
-impl crate::utils::cookie_utils::ToCookie<SessionManager> for OAuthState {
+impl crate::utils::cookie::ToCookie<SessionManager> for OAuthState {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
         let options = CookieOptions {
             same_site: actix_web::cookie::SameSite::Lax,
