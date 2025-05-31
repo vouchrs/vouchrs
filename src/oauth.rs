@@ -47,9 +47,9 @@ pub struct OAuthTokens {
 impl std::fmt::Display for OAuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OAuthError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
-            OAuthError::Network(msg) => write!(f, "Network error: {}", msg),
-            OAuthError::InvalidResponse(msg) => write!(f, "Invalid response: {}", msg),
+            OAuthError::Configuration(msg) => write!(f, "Configuration error: {msg}"),
+            OAuthError::Network(msg) => write!(f, "Network error: {msg}"),
+            OAuthError::InvalidResponse(msg) => write!(f, "Invalid response: {msg}"),
         }
     }
 }
@@ -86,6 +86,14 @@ pub struct RuntimeProvider {
 }
 
 impl RuntimeProvider {
+    /// Creates a RuntimeProvider from settings
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Discovery URL cannot be resolved
+    /// - Required configuration is missing
+    /// - Network errors occur during discovery
     pub async fn from_settings(settings: ProviderSettings) -> Result<Self, String> {
         // Use the new getter methods instead of direct environment variable access
         let client_id = settings.get_client_id();
@@ -130,6 +138,7 @@ impl RuntimeProvider {
         Ok((auth_url, token_url))
     }
 
+    #[must_use]
     pub fn is_configured(&self) -> bool {
         self.client_id.is_some()
             && (self.client_secret.is_some() || self.settings.jwt_signing.is_some())
@@ -151,6 +160,7 @@ impl Default for OAuthConfig {
 }
 
 impl OAuthConfig {
+    #[must_use]
     pub fn new() -> Self {
         let redirect_base_url =
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
@@ -207,32 +217,31 @@ impl OAuthConfig {
         }
         if self.providers.is_empty() {
             return Err("No OAuth providers are configured. Please configure at least one provider in Settings.toml and set the required environment variables.".to_string());
-        } else {
-            let provider_names: Vec<_> = self.providers.keys().collect();
-            LoggingHelper::log_oauth_providers_summary(&provider_names);
         }
+        let provider_names: Vec<_> = self.providers.keys().collect();
+        LoggingHelper::log_oauth_providers_summary(&provider_names);
 
         Ok(())
     }
 
+    #[must_use]
     pub fn get_client_configured(&self, provider: &str) -> bool {
         self.providers
             .get(provider)
-            .map(|p| p.is_configured())
-            .unwrap_or(false)
+            .map_or(false, |p| p.is_configured())
     }
 
     pub async fn get_auth_url(&self, provider: &str, state: &str) -> Result<String, String> {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or_else(|| format!("Provider {} not configured", provider))?;
+            .ok_or_else(|| format!("Provider {provider} not configured"))?;
 
         // Get client ID using the new getter method
         let client_id = runtime_provider
             .settings
             .get_client_id()
-            .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
+            .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
 
         // Build authorization URL
         let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
@@ -294,7 +303,7 @@ impl OAuthConfig {
         let client_id = runtime_provider
             .settings
             .get_client_id()
-            .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
+            .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
 
         params.insert("client_id", &client_id);
 
@@ -318,7 +327,7 @@ impl OAuthConfig {
             .form(&params)
             .send()
             .await
-            .map_err(|e| format!("Failed to exchange code for token: {}", e))?;
+            .map_err(|e| format!("Failed to exchange code for token: {e}"))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -336,7 +345,7 @@ impl OAuthConfig {
         let response_text = response
             .text()
             .await
-            .map_err(|e| format!("Failed to read response text: {}", e))?;
+            .map_err(|e| format!("Failed to read response text: {e}"))?;
 
         // Log the raw token response for debugging (especially for Apple)
         if provider == "apple" {
@@ -346,7 +355,7 @@ impl OAuthConfig {
         }
 
         let token_response: TokenResponse = serde_json::from_str(&response_text)
-            .map_err(|e| format!("Failed to parse token response: {}", e))?;
+            .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
         // Calculate token expiration
         let expires_at = if let Some(expires_in) = token_response.expires_in {
@@ -457,7 +466,7 @@ pub async fn check_and_refresh_tokens(
         }
         Err(err) => Err(HttpResponse::Unauthorized().json(serde_json::json!({
             "error": "token_refresh_failed",
-            "message": format!("Failed to refresh OAuth tokens: {}", err)
+            "message": format!("Failed to refresh OAuth tokens: {err}")
         }))),
     }
 }
@@ -484,7 +493,7 @@ pub async fn refresh_oauth_tokens(
     let client_id = runtime_provider
         .client_id
         .as_ref()
-        .ok_or_else(|| format!("Client ID not configured for provider {}", provider))?;
+        .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
 
     // Handle client credentials based on provider configuration
     let client_secret = if let Some(ref secret) = runtime_provider.client_secret {
@@ -495,11 +504,10 @@ pub async fn refresh_oauth_tokens(
             jwt_config,
             &runtime_provider.settings,
         )
-        .map_err(|e| format!("Failed to generate client secret: {}", e))?
+        .map_err(|e| format!("Failed to generate client secret: {e}"))?
     } else {
         return Err(format!(
-            "No client secret or JWT signing configuration for provider {}",
-            provider
+            "No client secret or JWT signing configuration for provider {provider}"
         ));
     };
 
@@ -515,7 +523,7 @@ pub async fn refresh_oauth_tokens(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -533,7 +541,7 @@ pub async fn refresh_oauth_tokens(
     let token_response: Value = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+        .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
     let expires_in = token_response["expires_in"].as_u64().unwrap_or(3600); // Default to 1 hour
 

@@ -11,6 +11,11 @@ use uuid::Uuid;
 use super::helpers::get_sign_in_page;
 use super::types::SignInQuery;
 
+/// JWT OAuth sign in handler
+/// 
+/// # Errors
+/// Returns an error if provider is not found, authentication fails,
+/// or redirect URL generation fails
 pub async fn jwt_oauth_sign_in(
     query: web::Query<SignInQuery>,
     _req: HttpRequest,
@@ -43,36 +48,31 @@ pub async fn jwt_oauth_sign_in(
                     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(redirect)
                 )
             } else {
-                format!("{}|{}", csrf_state, provider)
-            };
-
-            info!(
-                "Using direct state parameter for {} OAuth (stateless, no cookies needed)",
-                provider
-            );
+                format!("{csrf_state}|{provider}")
+            };                info!(
+                    "Using direct state parameter for {provider} OAuth (stateless, no cookies needed)"
+                );
             let mut response_builder = HttpResponse::Found();
             response_builder.cookie(clear_cookie);
             let actual_state = state_with_redirect;
 
             debug!(
-                "Generated OAuth state for provider {}: '{}'",
-                provider, actual_state
+                "Generated OAuth state for provider {provider}: '{actual_state}'"
             );
             debug!(
-                "Stored OAuth state for provider: {}, using direct state parameter (no cookies)",
-                provider
+                "Stored OAuth state for provider: {provider}, using direct state parameter (no cookies)"
             );
 
             // Get authorization URL
             match oauth_config.get_auth_url(provider, &actual_state).await {
                 Ok(auth_url) => {
-                    info!("Redirecting to {} OAuth: {}", provider, auth_url);
+                    info!("Redirecting to {provider} OAuth: {auth_url}");
                     Ok(response_builder
                         .append_header(("Location", auth_url))
                         .finish())
                 }
                 Err(e) => {
-                    error!("Failed to get auth URL for {}: {}", provider, e);
+                    error!("Failed to get auth URL for {provider}: {e}");
                     let error_clear_cookie = session_manager.create_expired_cookie();
                     Ok(ResponseBuilder::redirect_with_cookie(
                         "/oauth2/sign_in?error=oauth_config",
@@ -84,8 +84,7 @@ pub async fn jwt_oauth_sign_in(
         Some(provider) => {
             let clear_cookie = session_manager.create_expired_cookie();
             let error_url = format!(
-                "/oauth2/sign_in?error=unsupported_provider&provider={}",
-                provider
+                "/oauth2/sign_in?error=unsupported_provider&provider={provider}"
             );
             Ok(ResponseBuilder::redirect_with_cookie(
                 &error_url,
@@ -103,6 +102,10 @@ pub async fn jwt_oauth_sign_in(
     }
 }
 
+/// JWT OAuth sign out handler
+/// 
+/// # Errors
+/// Returns an error if session validation fails or cookie clearing fails
 pub async fn jwt_oauth_sign_out(
     req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
@@ -122,17 +125,15 @@ pub async fn jwt_oauth_sign_out(
     // If we have a provider, check if it supports sign-out URL
     if let Some(provider_name) = provider {
         if let Some(signout_url) = oauth_config.get_signout_url(&provider_name) {
-            info!("Redirecting to {} sign-out: {}", provider_name, signout_url);
+            info!("Redirecting to {provider_name} sign-out: {signout_url}");
             return Ok(ResponseBuilder::success_redirect_with_cookies(
                 &signout_url,
                 vec![clear_session_cookie, clear_user_cookie],
             ));
-        } else {
-            debug!(
-                "Provider {} does not support automatic sign-out",
-                provider_name
-            );
         }
+        debug!(
+            "Provider {provider_name} does not support automatic sign-out"
+        );
     }
 
     // Default: redirect to login page

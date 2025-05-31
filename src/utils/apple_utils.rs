@@ -111,7 +111,7 @@ pub fn generate_apple_client_secret(
 
     // Use the correct p256 method for parsing PKCS#8 PEM
     let signing_key = SigningKey::from_pkcs8_pem(&private_key_pem)
-        .map_err(|e| format!("Failed to parse Apple private key: {:?}", e))?;
+        .map_err(|e| format!("Failed to parse Apple private key: {e:?}"))?;
 
     // Create JWT header
     let header = serde_json::json!({

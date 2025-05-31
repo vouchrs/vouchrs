@@ -7,7 +7,7 @@ pub struct HealthResponse {
     pub message: String,
 }
 
-/// User data structure for the vouchrs_user cookie
+/// User data structure for the `vouchrs_user` cookie
 /// Contains only essential user information (not JWT metadata)
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VouchrsUserData {
@@ -24,7 +24,7 @@ pub struct VouchrsUserData {
 }
 
 /// Session structure containing only essential token data for cookies
-/// User data is now stored separately in the vouchrs_user cookie
+/// User data is now stored separately in the `vouchrs_user` cookie
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VouchrsSession {
     pub id_token: Option<String>,
@@ -35,6 +35,7 @@ pub struct VouchrsSession {
 
 impl VouchrsSession {
     /// Check if tokens need refresh (within 5 minutes of expiry)
+    #[must_use]
     pub fn needs_refresh(&self) -> bool {
         let now = chrono::Utc::now();
         let buffer_minutes = chrono::Duration::minutes(5);
@@ -57,7 +58,8 @@ pub struct CompleteSessionData {
 }
 
 impl CompleteSessionData {
-    /// Extract token data as VouchrsSession
+    /// Extract token data as `VouchrsSession`
+    #[must_use]
     pub fn to_session(&self) -> VouchrsSession {
         VouchrsSession {
             id_token: self.id_token.clone(),
@@ -67,7 +69,8 @@ impl CompleteSessionData {
         }
     }
 
-    /// Extract user data as VouchrsUserData with additional context
+    /// Extract user data as `VouchrsUserData` with additional context
+    #[must_use]
     pub fn to_user_data(
         &self,
         client_ip: Option<&str>,
@@ -78,11 +81,11 @@ impl CompleteSessionData {
             name: self.user_name.clone(),
             provider: self.provider.clone(),
             provider_id: self.provider_id.clone(),
-            client_ip: client_ip.map(|ip| ip.to_string()),
+            client_ip: client_ip.map(std::string::ToString::to_string),
             user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
             platform: user_agent_info.and_then(|ua| ua.platform.clone()),
             lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-            mobile: user_agent_info.map(|ua| ua.mobile as i32).unwrap_or(0),
+            mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
             session_start: Some(self.created_at.timestamp()), // Convert created_at to Unix timestamp
         }
     }
