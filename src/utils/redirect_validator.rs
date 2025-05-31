@@ -1,99 +1,224 @@
 use actix_web::HttpResponse;
-use regex::Regex;
-use once_cell::sync::Lazy;
 use log::{debug, warn};
-use url;
-
-// Simplified security patterns - rely on layered validation rather than complex regex
-// Focus on high-confidence attack patterns that URL parsing won't catch
-
-// Core path traversal pattern - the most common and critical attack
-static PATH_TRAVERSAL_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\.\.").unwrap()
-});
-
-// Protocol injection for absolute URLs that could bypass URL parsing
-static PROTOCOL_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^(?:[a-z][a-z0-9+.-]*:)|(?:/{2,})").unwrap()
-});
-
-// Critical control characters and suspicious path starters
-static SUSPICIOUS_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)[\x00-\x1F\x7F-\x9F]|%(?:00|0[aAdD]|09|5c|26%23)|^[.@〱〵ゝーｰ]|\\|[\u{200E}\u{200F}\u{2060}-\u{2064}\u{2000}-\u{200A}]").unwrap()
-});
-
-// Allowed schemes for the final URL
-const ALLOWED_SCHEMES: &[&str] = &["http", "https", "ws", "wss"];
 
 /// Validate post-authentication redirect URLs to prevent open redirect attacks
-/// This protects user-facing redirects where open redirect vulnerabilities matter
+/// Balanced approach between security and simplicity
 pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<String, HttpResponse> {
     debug!("Validating post-authentication redirect URL: {}", redirect_url);
     
-    // Layer 1: Fast pattern validation with early returns
-    validate_suspicious_patterns(redirect_url)?;
-    
-    // Layer 2: Check for relative URLs (most common legitimate case)
-    if is_relative_url(redirect_url) {
-        // For relative URLs, just normalize and validate patterns
-        let normalized = normalize_relative_url(redirect_url)?;
-        debug!("Validated relative redirect URL: {}", normalized);
-        return Ok(normalized);
-    }
-    
-    // Layer 3: For absolute URLs, perform full validation
-    let final_url = validate_absolute_redirect_url(redirect_url)?;
-    
-    debug!("Successfully validated redirect URL: {}", final_url);
-    Ok(final_url)
-}
-
-/// Check if URL is relative (starts with /, not //, and has no scheme)
-fn is_relative_url(url: &str) -> bool {
-    url.starts_with('/') && !url.starts_with("//") && !url.contains(':')
-}
-
-/// Normalize relative URLs and validate against attacks
-fn normalize_relative_url(url: &str) -> Result<String, HttpResponse> {
-    // Basic length check
-    if url.len() > 2048 {
-        warn!("Excessively long redirect URL: {} characters", url.len());
+    // Empty redirects are invalid
+    if redirect_url.is_empty() {
         return Err(invalid_redirect_error());
     }
     
-    // Check decoded variants for attacks
-    validate_encoded_patterns(url)?;
-    
-    Ok(url.to_string())
-}
-
-/// Validate absolute redirect URLs with comprehensive checks
-fn validate_absolute_redirect_url(redirect_url: &str) -> Result<String, HttpResponse> {
-    // Parse the URL
-    let parsed = url::Url::parse(redirect_url)
-        .map_err(|e| {
-            warn!("Failed to parse redirect URL '{}': {}", redirect_url, e);
-            invalid_redirect_error()
-        })?;
-
-    // Validate scheme is in allowed list
-    if !ALLOWED_SCHEMES.contains(&parsed.scheme()) {
-        warn!("Invalid scheme '{}' in redirect URL: {}", parsed.scheme(), redirect_url);
+    // Length limit to prevent DoS
+    if redirect_url.len() > 2048 {
+        warn!("Redirect URL too long: {} characters", redirect_url.len());
         return Err(invalid_redirect_error());
     }
-
-    // Check for suspicious hosts (SSRF protection)
-    if let Some(host) = parsed.host_str() {
-        if is_suspicious_host(host) {
-            warn!("Suspicious host detected in redirect: {}", host);
-            return Err(invalid_redirect_error());
-        }
+    
+    // Must start with a single slash (relative URL only)
+    if !redirect_url.starts_with('/') || redirect_url.starts_with("//") {
+        warn!("Invalid redirect URL format: {}", redirect_url);
+        return Err(invalid_redirect_error());
     }
-
+    
+    // Check for control characters and other dangerous characters
+    if contains_dangerous_characters(redirect_url) {
+        warn!("Dangerous characters in redirect URL: {}", redirect_url);
+        return Err(invalid_redirect_error());
+    }
+    
+    // Simple path traversal check (including encoded variants)
+    if contains_path_traversal(redirect_url) {
+        warn!("Path traversal attempt in redirect: {}", redirect_url);
+        return Err(invalid_redirect_error());
+    }
+    
+    // Check for encoded slashes that could create // 
+    if contains_encoded_double_slash(redirect_url) {
+        warn!("Encoded double slash in redirect: {}", redirect_url);
+        return Err(invalid_redirect_error());
+    }
+    
+    // Basic protocol injection check (including mixed case)
+    if contains_protocol_injection(redirect_url) {
+        warn!("Protocol injection attempt in redirect: {}", redirect_url);
+        return Err(invalid_redirect_error());
+    }
+    
+    // Check for suspicious query parameters that could be open redirects
+    if contains_redirect_in_query(redirect_url) {
+        warn!("Redirect parameter in query string: {}", redirect_url);
+        return Err(invalid_redirect_error());
+    }
+    
     Ok(redirect_url.to_string())
 }
 
-/// Return standardized error for invalid redirect URLs
+/// Check for dangerous characters including control chars and Unicode tricks
+fn contains_dangerous_characters(url: &str) -> bool {
+    // Check for null bytes
+    if url.contains('\0') || url.contains("%00") {
+        return true;
+    }
+    
+    // Check for control characters (both raw and encoded)
+    let control_patterns = [
+        "\n", "\r", "\t", // Raw control chars
+        "%0a", "%0A", "%0d", "%0D", "%09", // Encoded newline, carriage return, tab
+        "%01", "%02", "%03", "%04", "%05", "%06", "%07", "%08", // Other control chars
+        "%0b", "%0B", "%0c", "%0C", "%0e", "%0E", "%0f", "%0F",
+    ];
+    
+    let url_lower = url.to_lowercase();
+    for pattern in &control_patterns {
+        if url.contains(pattern) || url_lower.contains(pattern) {
+            return true;
+        }
+    }
+    
+    // Check for Unicode direction override characters and various spaces
+    if url.chars().any(|c| matches!(c, 
+        '\u{202A}'..='\u{202E}' | // LTR/RTL override
+        '\u{2060}'..='\u{2069}' | // Word joiner and invisible separators
+        '\u{200B}'..='\u{200F}' | // Zero-width space and marks
+        '\u{FEFF}' |              // Zero-width no-break space
+        '\u{2000}'..='\u{200A}' | // Various Unicode spaces (en space, em space, etc.)
+        '\u{00A0}' |              // Non-breaking space
+        '\u{1680}' |              // Ogham space mark
+        '\u{180E}' |              // Mongolian vowel separator
+        '\u{2028}' |              // Line separator
+        '\u{2029}' |              // Paragraph separator
+        '\u{205F}' |              // Medium mathematical space
+        '\u{3000}'                // Ideographic space
+    )) {
+        return true;
+    }
+    
+    false
+}
+
+/// Check for path traversal patterns including encoded variants
+fn contains_path_traversal(url: &str) -> bool {
+    // Direct check
+    if url.contains("..") || url.contains("\\") {
+        return true;
+    }
+    
+    // Check URL-encoded variants
+    let encoded_patterns = [
+        "%2e%2e", "%2e.", ".%2e", // encoded ..
+        "%5c", "%2f%2e%2e", // encoded \ and /..
+        "%252e%252e", // double-encoded ..
+    ];
+    
+    let url_lower = url.to_lowercase();
+    for pattern in &encoded_patterns {
+        if url_lower.contains(pattern) {
+            return true;
+        }
+    }
+    
+    false
+}
+
+/// Check for encoded slashes that could create //
+fn contains_encoded_double_slash(url: &str) -> bool {
+    let patterns = [
+        "%2f%2f", "%2F%2F", // URL-encoded //
+        "%252f%252f", "%252F%252F", // Double-encoded //
+        "/%2f", "/%2F", // / followed by encoded /
+    ];
+    
+    let url_lower = url.to_lowercase();
+    for pattern in &patterns {
+        if url_lower.contains(pattern) {
+            return true;
+        }
+    }
+    
+    // Check for /<>// pattern
+    if url.contains("<>//") {
+        return true;
+    }
+    
+    false
+}
+
+/// Check for protocol injection attempts
+fn contains_protocol_injection(url: &str) -> bool {
+    // Check if URL contains a colon in the path part (before query string)
+    let path_part = url.split('?').next().unwrap_or(url);
+    
+    // Skip the first character (the required /)
+    let check_part = &path_part[1..];
+    
+    // Check for common protocol patterns (case-insensitive)
+    let lower = check_part.to_lowercase();
+    let protocols = [
+        "http:", "https:", "javascript:", "data:", "vbscript:", 
+        "file:", "ftp:", "mailto:", "tel:", "ssh:", "ldap:"
+    ];
+    
+    for protocol in &protocols {
+        if lower.contains(protocol) {
+            return true;
+        }
+    }
+    
+    // Check for encoded protocol patterns
+    if lower.contains("%68%74%74%70") || // http encoded
+       lower.contains("%6a%61%76%61%73%63%72%69%70%74") { // javascript encoded
+        return true;
+    }
+    
+    // Check for any remaining colons in the path (not in query string)
+    if check_part.contains(':') {
+        return true;
+    }
+    
+    false
+}
+
+/// Check for redirect parameters in query string that could be open redirects
+fn contains_redirect_in_query(url: &str) -> bool {
+    // Only check the query string part
+    if let Some(query_start) = url.find('?') {
+        let query_part = &url[query_start + 1..];
+        let query_lower = query_part.to_lowercase();
+        
+        // Common redirect parameter names
+        let redirect_params = [
+            "url=", "redirect=", "redir=", "next=", "return=", 
+            "returnto=", "redirect_uri=", "redirect_url=", "rurl=",
+            "destination=", "dest=", "target=", "continue=",
+            "desiredlocationurl=", "successurl=", "return_to=",
+            "callback=", "goto=", "link=", "location="
+        ];
+        
+        for param in &redirect_params {
+            if query_lower.contains(param) {
+                // Check if the value after the param contains a URL pattern
+                if let Some(param_pos) = query_lower.find(param) {
+                    let value_start = param_pos + param.len();
+                    let value_part = &query_lower[value_start..];
+                    
+                    // Check for protocol patterns in the parameter value
+                    if value_part.starts_with("//") || 
+                       value_part.starts_with("http") || 
+                       value_part.starts_with("%2f%2f") ||
+                       value_part.contains("://") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    false
+}
+
 fn invalid_redirect_error() -> HttpResponse {
     HttpResponse::BadRequest().json(serde_json::json!({
         "error": "bad_request",
@@ -101,180 +226,40 @@ fn invalid_redirect_error() -> HttpResponse {
     }))
 }
 
-/// Validate against malicious patterns using simplified, high-confidence patterns
-/// Used for post-authentication redirect validation
-fn validate_suspicious_patterns(request_path: &str) -> Result<(), HttpResponse> {
-    // Fast path: check for common legitimate patterns first
-    if request_path.starts_with("/api/") || 
-       request_path.starts_with("/static/") ||
-       request_path.starts_with("/health") {
-        // Still need to check for critical attacks in legitimate-looking paths
-        return validate_critical_patterns(request_path);
-    }
-    
-    // Check for path traversal (most critical and common)
-    if PATH_TRAVERSAL_PATTERN.is_match(request_path) {
-        warn!("Path traversal attempt detected: {}", request_path);
-        return Err(invalid_redirect_error());
-    }
-    
-    // Check for protocol injection (absolute URLs)
-    if PROTOCOL_PATTERN.is_match(request_path) {
-        warn!("Protocol injection attempt detected: {}", request_path);
-        return Err(invalid_redirect_error());
-    }
-    
-    // Check for control characters (should never be in legitimate paths)
-    if SUSPICIOUS_PATTERN.is_match(request_path) {
-        warn!("Suspicious pattern detected: {}", request_path);
-        return Err(invalid_redirect_error());
-    }
-    
-    // Check decoded variants for encoded attacks
-    validate_encoded_patterns(request_path)
-}
-
-/// Validate critical patterns that should be checked even in legitimate-looking paths
-fn validate_critical_patterns(request_path: &str) -> Result<(), HttpResponse> {
-    // Only check the most critical patterns for performance
-    if PATH_TRAVERSAL_PATTERN.is_match(request_path) ||
-       SUSPICIOUS_PATTERN.is_match(request_path) {
-        warn!("Critical attack pattern in legitimate path: {}", request_path);
-        return Err(invalid_redirect_error());
-    }
-    
-    // Check for double-encoded path traversal
-    if let Ok(decoded) = urlencoding::decode(request_path) {
-        if PATH_TRAVERSAL_PATTERN.is_match(&decoded) {
-            warn!("Encoded path traversal detected: {} -> {}", request_path, decoded);
-            return Err(invalid_redirect_error());
-        }
-    }
-    
-    Ok(())
-}
-
-/// Validate URL-decoded patterns for encoded attack attempts
-/// Used for post-authentication redirect validation
-fn validate_encoded_patterns(request_path: &str) -> Result<(), HttpResponse> {
-    // Get decoded variants to check for encoded attacks
-    let decoded_variants = get_decoded_variants(request_path);
-    
-    for decoded in decoded_variants {
-        // Check critical patterns on decoded content
-        if PATH_TRAVERSAL_PATTERN.is_match(&decoded) {
-            warn!("Encoded path traversal detected: {} -> {}", request_path, decoded);
-            return Err(invalid_redirect_error());
-        }
-        
-        if PROTOCOL_PATTERN.is_match(&decoded) {
-            warn!("Encoded protocol injection detected: {} -> {}", request_path, decoded);
-            return Err(invalid_redirect_error());
-        }
-        
-        if SUSPICIOUS_PATTERN.is_match(&decoded) {
-            warn!("Encoded suspicious pattern detected: {} -> {}", request_path, decoded);
-            return Err(invalid_redirect_error());
-        }
-        
-        // Simple string-based checks for dangerous protocols (more reliable than complex regex)
-        let decoded_lower = decoded.to_lowercase();
-        if contains_dangerous_protocol(&decoded_lower) {
-            warn!("Dangerous protocol detected: {}", decoded_lower);
-            return Err(invalid_redirect_error());
-        }
-        
-        // Check for double @ patterns (domain confusion)
-        if decoded.matches('@').count() > 1 {
-            warn!("Multiple @ symbols detected (domain confusion): {}", decoded);
-            return Err(invalid_redirect_error());
-        }
-    }
-    
-    Ok(())
-}
-
-/// Get decoded variants of the input path
-fn get_decoded_variants(request_path: &str) -> Vec<String> {
-    let mut variants = Vec::with_capacity(3); // Pre-allocate for performance
-    
-    // Original path
-    variants.push(request_path.to_string());
-    
-    // Single URL decoding (catches most attacks)
-    if let Ok(decoded) = urlencoding::decode(request_path) {
-        let decoded_string = decoded.into_owned();
-        if decoded_string != request_path {
-            variants.push(decoded_string.clone());
-            
-            // Double URL decoding only if first decode changed something
-            if let Ok(double_decoded) = urlencoding::decode(&decoded_string) {
-                let double_decoded_string = double_decoded.into_owned();
-                if double_decoded_string != decoded_string {
-                    variants.push(double_decoded_string);
-                }
-            }
-        }
-    }
-    
-    variants
-}
-
-/// Check for dangerous protocols in lowercase text
-fn contains_dangerous_protocol(text: &str) -> bool {
-    // Focus on the most common dangerous protocols
-    const DANGEROUS_PROTOCOLS: &[&str] = &[
-        "javascript:",
-        "vbscript:",
-        "data:",
-        "file:",
-        "ftp:",
-    ];
-    
-    DANGEROUS_PROTOCOLS.iter().any(|protocol| text.contains(protocol))
-}
-
-/// Check if a host is suspicious (simplified - focus on critical cases)
-fn is_suspicious_host(host: &str) -> bool {
-    // Check for IPv4 addresses (potential SSRF)
-    if host.parse::<std::net::Ipv4Addr>().is_ok() {
-        return true;
-    }
-    
-    // Check for IPv6 addresses
-    if host.starts_with('[') && host.ends_with(']') {
-        return true;
-    }
-    
-    // Check for localhost variants
-    let host_lower = host.to_lowercase();
-    matches!(host_lower.as_str(), 
-        "localhost" | "127.0.0.1" | "::1" | "0.0.0.0")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::validate_post_auth_redirect;
+    use super::*;
 
-    /// Test that legitimate post-auth redirect URLs are allowed
     #[test]
-    fn test_legitimate_post_auth_redirects() {
-        let legitimate_redirects = vec![
+    fn test_valid_redirects() {
+        let valid = vec![
             "/dashboard",
             "/api/v1/users",
-            "/users/123", 
-            "/app/data",
-            "/static/css/style.css",
-            "/images/photo.jpg",
             "/search?q=test",
-            "/app/profile?tab=settings",
-            "/reports/2024/summary.pdf",
-            "/"
+            "/path?time=10:30:00", // Safe colon in query
         ];
+        
+        for url in valid {
+            assert!(validate_post_auth_redirect(url).is_ok(), "Should allow: {}", url);
+        }
+    }
 
-        for redirect in legitimate_redirects {
-            let result = validate_post_auth_redirect(redirect);
-            assert!(result.is_ok(), "Legitimate redirect should be allowed: {}", redirect);
+    #[test]
+    fn test_invalid_redirects() {
+        let invalid = vec![
+            "", // Empty
+            "//evil.com", // Protocol-relative
+            "/path/../etc/passwd", // Path traversal
+            "/path\\..\\etc", // Backslash
+            "/path%2e%2e/etc", // Encoded traversal
+            "/path%00/null", // Null byte
+            "javascript:alert(1)", // No leading slash
+            "http://evil.com", // Absolute URL
+            "/path:with:colons", // Colons in path
+        ];
+        
+        for url in invalid {
+            assert!(validate_post_auth_redirect(url).is_err(), "Should block: {}", url);
         }
     }
 

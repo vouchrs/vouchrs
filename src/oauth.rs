@@ -235,7 +235,7 @@ impl OAuthConfig {
     pub fn get_client_configured(&self, provider: &str) -> bool {
         self.providers
             .get(provider)
-            .map_or(false, RuntimeProvider::is_configured)
+            .is_some_and(RuntimeProvider::is_configured)
     }
 
     /// Get the authorization URL for a provider
