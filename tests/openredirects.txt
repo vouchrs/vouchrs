@@ -1,0 +1,743 @@
+# Malicious Open Redirect Test Payloads
+# Source: https://github.com/oauth2-proxy/oauth2-proxy/blob/7731437af49c2767dac211694b2eec70f71b799c/testdata/openredirects.txt
+# Additional test cases specific to our implementation
+
+# Basic protocol injection
+";alert(0);//
+%19Jav%09asc%09ript:https%20://www.whitelisteddomain.tld/%250Aconfirm%25281%2529
+%68%74%74%70%3a%2f%2f%67%6f%6f%67%6c%65%2e%63%6f%6d
+
+# Path traversal variations
+.localdomain.pw
+/%09/example.com
+/%09/example.com@google.com
+/%09/google.com
+/%09/javascript:alert(1)
+/%09/javascript:alert(1);
+/%09/localdomain.pw
+/%09/www.whitelisteddomain.tld@google.com
+/%09/www.whitelisteddomain.tld@localdomain.pw
+
+# Double encoded slashes
+/%2f%2f%2fbing.com%2f%3fwww.omise.co
+/%2f%2fexample.com
+/%2f%2fgoogle.com
+/%2f%2flocaldomain.pw
+/%2f%5c%2f%67%6f%6f%67%6c%65%2e%63%6f%6d/
+
+# Backslash variations
+/%5cexample.com
+/%5cexample.com@google.com
+/%5cgoogle.com
+/%5cjavascript:alert(1)
+/%5cjavascript:alert(1);
+/%5clocaldomain.pw
+/%5cwww.whitelisteddomain.tld@google.com
+/%5cwww.whitelisteddomain.tld@localdomain.pw
+
+# Multiple slashes with tabs
+//%09/example.com
+//%09/example.com@google.com
+//%09/google.com
+//%09/localdomain.pw
+//%09/www.whitelisteddomain.tld@google.com
+//%09/www.whitelisteddomain.tld@localdomain.pw
+
+# Triple slashes with backslashes
+///%5cexample.com
+///%5cexample.com@google.com
+///%5cgoogle.com
+///%5clocaldomain.pw
+///%5cwww.whitelisteddomain.tld@google.com
+///%5cwww.whitelisteddomain.tld@localdomain.pw
+
+# Quadruple slashes
+////%09/example.com
+////%09/example.com@google.com
+////%09/google.com
+////%09/localdomain.pw
+////%09/www.whitelisteddomain.tld@google.com
+////%09/www.whitelisteddomain.tld@localdomain.pw
+
+# Five slashes
+/////example.com
+/////example.com/
+/////google.com/
+/////localdomain.pw
+/////localdomain.pw/
+
+# Semicolon and path traversal
+////\;@example.com
+////example.com/
+////example.com/%2e%2e
+////example.com/%2e%2e%2f
+////example.com/%2f%2e%2e
+////example.com/%2f..
+////example.com//
+
+# Domain spoofing
+////example.com@google.com/
+////example.com@google.com/%2e%2e
+////example.com@google.com/%2e%2e%2f
+////example.com@google.com/%2f%2e%2e
+////example.com@google.com/%2f..
+////example.com@google.com//
+
+# Protocol-less variations
+////google.com/
+////google.com/%2e%2e
+////google.com/%2e%2e%2f
+////google.com/%2f%2e%2e
+////google.com/%2f..
+////google.com//
+
+# More domain variations
+////localdomain.pw/
+////localdomain.pw/%2e%2e
+////localdomain.pw/%2e%2e%2f
+////localdomain.pw/%2f%2e%2e
+////localdomain.pw/%2f..
+////localdomain.pw//
+
+# Complex domain spoofing
+////www.google.com/%2e%2e
+////www.google.com/%2e%2e%2f
+////www.google.com/%2f%2e%2e
+////www.whitelisteddomain.tld@google.com/
+////www.whitelisteddomain.tld@google.com/%2f..
+////www.whitelisteddomain.tld@google.com//
+
+# Triple slash patterns
+///\;@example.com
+///\;@google.com
+///\;@localdomain.pw
+///example.com
+///example.com/
+///example.com/%2e%2e
+///example.com/%2e%2e%2f
+///example.com/%2f%2e%2e
+///example.com/%2f..
+///example.com//
+
+# Triple slash domain spoofing
+///example.com@google.com/
+///example.com@google.com/%2e%2e
+///example.com@google.com/%2e%2e%2f
+///example.com@google.com/%2f%2e%2e
+///example.com@google.com/%2f..
+///example.com@google.com//
+
+# Simple triple slash
+///google.com
+///google.com/
+///google.com/%2e%2e
+///google.com/%2e%2e%2f
+///google.com/%2f%2e%2e
+///google.com/%2f..
+///google.com//
+
+# Authentication bypass attempts
+//3H6k7lIAiqjfNeN@example.com+@google.com/
+//3H6k7lIAiqjfNeN@example.com@google.com/
+//3H6k7lIAiqjfNeN@www.whitelisteddomain.tld+@localdomain.pw/
+//3H6k7lIAiqjfNeN@www.whitelisteddomain.tld@localdomain.pw/
+
+# Semicolon bypass
+//;@google.com
+//;@localdomain.pw
+
+# More complex auth bypass
+//XY>.7d8T\205pZM@example.com+@google.com/
+//XY>.7d8T\205pZM@example.com@google.com/
+//XY>.7d8T\205pZM@www.whitelisteddomain.tld+@localdomain.pw/
+//XY>.7d8T\205pZM@www.whitelisteddomain.tld@localdomain.pw/
+
+# Basic double slash
+//example.com
+//example.com+&@google.com#+@example.com/
+//example.com/
+//example.com/%2e%2e
+//example.com/%2e%2e%2f
+//example.com/%2f%2e%2e
+//example.com/%2f..
+//example.com//
+
+# Domain spoofing with at sign
+//example.com@google.com/
+//example.com@google.com/%2e%2e%2f
+//example.com@google.com/%2f%2e%2e
+//example.com@google.com/%2f..
+//example.com@google.com//
+//example.com@https:///google.com/%2e%2e
+
+# Null byte injection
+//google%00.com
+//google%E3%80%82com
+
+# Standard double slash patterns
+//google.com
+//google.com/
+//google.com/%2e%2e%2f
+//google.com/%2f%2e%2e
+//google.com/%2f..
+//google.com//
+
+# Port and fragment injection
+//google.com:80#@example.com/
+//google.com:80?@example.com/
+//google.com\@example.com
+//google.com\@www.whitelisteddomain.tld
+//google.com\texample.com/
+
+# HTTPS protocol injection
+//https:///example.com/%2e%2e
+//https:///google.com/%2e%2e
+//https:///localdomain.pw/%2e%2e
+//https:///www.google.com/%2e%2e
+
+# Full HTTPS URLs
+//https://example.com/%2e%2e%2f
+//https://example.com//
+//https://example.com@google.com/%2e%2e%2f
+//https://example.com@google.com//
+//https://google.com/%2e%2e%2f
+//https://google.com//
+
+# JavaScript injection
+//javascript:alert(1)
+//javascript:alert(1);
+
+# Encoded null bytes
+//localdomain%00.pw
+//localdomain%E3%80%82pw
+
+# Basic localdomain patterns
+//localdomain.pw
+//localdomain.pw/
+//localdomain.pw/%2e%2e%2f
+//localdomain.pw/%2f%2e%2e
+//localdomain.pw/%2f..
+//localdomain.pw//
+
+# Port injection with localdomain
+//localdomain.pw:80#@www.whitelisteddomain.tld/
+//localdomain.pw:80?@www.whitelisteddomain.tld/
+//localdomain.pw\@www.whitelisteddomain.tld
+//localdomain.pw\twww.whitelisteddomain.tld/
+
+# Mixed patterns
+//www.google.com/%2e%2e%2f
+//www.google.com/%2f%2e%2e
+//www.whitelisteddomain.tld+&@localdomain.pw#+@www.whitelisteddomain.tld/
+//www.whitelisteddomain.tld@google.com/
+//www.whitelisteddomain.tld@google.com/%2f..
+//www.whitelisteddomain.tld@google.com//
+
+# HTTPS injection with domain spoofing
+//www.whitelisteddomain.tld@https:///localdomain.pw/%2e%2e
+//www.whitelisteddomain.tld@https:///www.google.com/%2e%2e
+//www.whitelisteddomain.tld@localdomain.pw/
+//www.whitelisteddomain.tld@localdomain.pw/%2e%2e%2f
+//www.whitelisteddomain.tld@localdomain.pw/%2f%2e%2e
+//www.whitelisteddomain.tld@localdomain.pw/%2f..
+//www.whitelisteddomain.tld@localdomain.pw//
+//www.whitelisteddomain.tld@www.google.com/%2e%2e%2f
+//www.whitelisteddomain.tld@www.google.com/%2f%2e%2e
+
+# Angle bracket injection
+/<>//example.com
+
+# Query parameter injection
+/?url=//example.com&next=//example.com&redirect=//example.com&redir=//example.com&rurl=//example.com&redirect_uri=//example.com
+/?url=/\/example.com&next=/\/example.com&redirect=/\/example.com&redirect_uri=/\/example.com
+/?url=Https://example.com&next=Https://example.com&redirect=Https://example.com&redir=Https://example.com&rurl=Https://example.com&redirect_uri=Https://example.com
+
+# Auto redirect patterns
+/ReceiveAutoRedirect/false?desiredLocationUrl=http://xssposed.org
+
+# Escaped slashes
+/\/\/example.com/
+/\/example.com/
+/\/google.com/
+/\/localdomain.pw/
+
+# Path traversal with HTTP
+/example.com/%2f%2e%2e
+/google.com/%2f%2e%2e
+/http://%67%6f%6f%67%6c%65%2e%63%6f%6d
+/http://example.com
+/http://google.com
+/http://localdomain.pw
+
+# HTTPS with backslashes
+/https:/%5cexample.com/
+/https:/%5cgoogle.com/
+/https:/%5clocaldomain.pw/
+
+# HTTPS with tabs and backslashes
+/https://%09/example.com
+/https://%5cexample.com
+/https://%5cexample.com@google.com
+/https://%5cgoogle.com
+/https://%5clocaldomain.pw
+/https://%5cwww.whitelisteddomain.tld@google.com
+/https://%5cwww.whitelisteddomain.tld@localdomain.pw
+
+# HTTPS triple slash
+/https:///example.com/%2e%2e
+/https:///example.com/%2f%2e%2e
+/https:///example.com@google.com/%2f%2e%2e
+/https:///google.com/%2f%2e%2e
+/https:///localdomain.pw/%2f%2e%2e
+/https:///www.google.com/%2f%2e%2e
+/https:///www.whitelisteddomain.tld@localdomain.pw/%2f%2e%2e
+/https:///www.whitelisteddomain.tld@www.google.com/%2f%2e%2e
+
+# Full HTTPS URLs in path
+/https://example.com
+/https://example.com/
+/https://example.com/%2e%2e
+/https://example.com/%2e%2e%2f
+/https://example.com/%2f%2e%2e
+/https://example.com/%2f..
+/https://example.com//
+
+# HTTPS with domain spoofing
+/https://example.com@google.com/
+/https://example.com@google.com/%2e%2e
+/https://example.com@google.com/%2f%2e%2e
+/https://example.com@google.com/%2f..
+/https://google.com/
+/https://google.com/%2e%2e
+/https://google.com/%2f%2e%2e
+/https://google.com/%2f..
+
+# HTTPS localdomain
+/https://localdomain.pw/
+/https://localdomain.pw/%2e%2e
+/https://localdomain.pw/%2f%2e%2e
+/https://localdomain.pw/%2f..
+/https://www.google.com/%2e%2e
+/https://www.google.com/%2f%2e%2e
+
+# HTTPS with complex domain spoofing
+/https://www.whitelisteddomain.tld@google.com/
+/https://www.whitelisteddomain.tld@google.com/%2f..
+/https://www.whitelisteddomain.tld@localdomain.pw/
+/https://www.whitelisteddomain.tld@localdomain.pw/%2e%2e
+/https://www.whitelisteddomain.tld@localdomain.pw/%2f%2e%2e
+/https://www.whitelisteddomain.tld@localdomain.pw/%2f..
+/https://www.whitelisteddomain.tld@www.google.com/%2e%2e
+/https://www.whitelisteddomain.tld@www.google.com/%2f%2e%2e
+
+# More path traversal
+/localdomain.pw/%2f%2e%2e
+
+# Redirect parameter patterns
+/redirect?url=//example.com&next=//example.com&redirect=//example.com&redir=//example.com&rurl=//example.com&redirect_uri=//example.com
+/redirect?url=/\/example.com&next=/\/example.com&redirect=/\/example.com&redir=/\/example.com&rurl=/\/example.com&redirect_uri=/\/example.com
+/redirect?url=Https://example.com&next=Https://example.com&redirect=Https://example.com&redir=Https://example.com&rurl=Https://example.com&redirect_uri=Https://example.com
+
+# Complex JavaScript injection
+/x:1/:///%01javascript:alert(document.cookie)/
+
+# More angle bracket patterns
+<>//google.com
+<>//localdomain.pw
+<>javascript:alert(1);
+
+# At sign patterns
+@google.com
+@localdomain.pw
+
+# Encoded JavaScript
+Javas%26%2399;ript:alert(1)
+
+# Escaped slashes in different forms
+\/\/google.com/
+\/\/localdomain.pw/
+
+# Octal encoded JavaScript
+\152\141\166\141\163\143\162\151\160\164\072alert(1)
+
+# Escaped JavaScript
+\j\av\a\s\cr\i\pt\:\a\l\ert\(1\)
+
+# Unicode encoded JavaScript
+\u006A\u0061\u0076\u0061\u0073\u0063\u0072\u0069\u0070\u0074\u003aalert(1)
+
+# Hex encoded JavaScript
+\x6A\x61\x76\x61\x73\x63\x72\x69\x70\x74\x3aalert(1)
+
+# Data URI patterns
+data:text/html;base64,PHNjcmlwdD5hbGVydCgiWFNTIik8L3NjcmlwdD4=
+data:www.whitelisteddomain.tld;text/html;charset=UTF-8,<html><script>document.write(document.domain);</script><iframe/src=xxxxx>aaaa</iframe></html>
+
+# Encoded HTTP protocol
+http://%67%6f%6f%67%6c%65%2e%63%6f%6d
+http://.localdomain.pw
+
+# IP address variations
+http://00330.00072.0000326.00000316
+http://00330.0x3a.54990
+http://00330.3856078
+http://0330.072.0326.0316
+http://0xd8.072.54990
+http://0xd8.0x3a.0xd6.0xce
+http://0xd8.3856078
+http://0xd83ad6ce
+http://3627734734
+
+# Auth bypass with IP addresses
+http://3H6k7lIAiqjfNeN@00330.00072.0000326.00000316
+http://3H6k7lIAiqjfNeN@00330.0x3a.54990
+http://3H6k7lIAiqjfNeN@00330.3856078
+http://3H6k7lIAiqjfNeN@0330.072.0326.0316
+http://3H6k7lIAiqjfNeN@0xd8.072.54990
+http://3H6k7lIAiqjfNeN@0xd8.0x3a.0xd6.0xce
+http://3H6k7lIAiqjfNeN@0xd8.3856078
+http://3H6k7lIAiqjfNeN@0xd83ad6ce
+http://3H6k7lIAiqjfNeN@3627734734
+http://3H6k7lIAiqjfNeN@472.314.470.462
+
+# IPv6 patterns
+http://3H6k7lIAiqjfNeN@[::216.58.214.206]
+http://3H6k7lIAiqjfNeN@[::ffff:216.58.214.206]
+
+# Domain spoofing with plus
+http://3H6k7lIAiqjfNeN@example.com+@google.com/
+http://3H6k7lIAiqjfNeN@example.com@google.com/
+http://3H6k7lIAiqjfNeN@www.whitelisteddomain.tld+@localdomain.pw/
+http://3H6k7lIAiqjfNeN@www.whitelisteddomain.tld@localdomain.pw/
+
+# More IP variations
+http://472.314.470.462
+http://;@google.com
+http://;@localdomain.pw
+
+# Complex auth bypass patterns
+http://XY>.7d8T\205pZM@00330.00072.0000326.00000316
+http://XY>.7d8T\205pZM@00330.0x3a.54990
+http://XY>.7d8T\205pZM@00330.3856078
+http://XY>.7d8T\205pZM@0330.072.0326.0316
+http://XY>.7d8T\205pZM@0xd8.072.54990
+http://XY>.7d8T\205pZM@0xd8.0x3a.0xd6.0xce
+http://XY>.7d8T\205pZM@0xd8.3856078
+http://XY>.7d8T\205pZM@0xd83ad6ce
+http://XY>.7d8T\205pZM@3627734734
+http://XY>.7d8T\205pZM@472.314.470.462
+http://XY>.7d8T\205pZM@[::216.58.214.206]
+http://XY>.7d8T\205pZM@[::ffff:216.58.214.206]
+http://XY>.7d8T\205pZM@example.com+@google.com/
+http://XY>.7d8T\205pZM@example.com@google.com/
+http://XY>.7d8T\205pZM@www.whitelisteddomain.tld+@localdomain.pw/
+http://XY>.7d8T\205pZM@www.whitelisteddomain.tld@localdomain.pw/
+
+# IPv6 patterns
+http://[::216.58.214.206]
+http://[::ffff:216.58.214.206]
+
+# Domain confusion
+http://example.com%2egoogle.com/
+http://example.com+&@google.com#+@example.com/
+http://example.com:80%40google.com/
+
+# More IP address auth bypass
+http://example.com@00330.00072.0000326.00000316
+http://example.com@00330.0x3a.54990
+http://example.com@00330.3856078
+http://example.com@0330.072.0326.0316
+http://example.com@0xd8.072.54990
+http://example.com@0xd8.0x3a.0xd6.0xce
+http://example.com@0xd8.3856078
+http://example.com@0xd83ad6ce
+http://example.com@3627734734
+http://example.com@472.314.470.462
+http://example.com@[::216.58.214.206]
+http://example.com@[::ffff:216.58.214.206]
+
+# Fragment and query injection
+http://google.com%23.example.com/
+http://google.com%2f%2f.example.com/
+http://google.com%3F.example.com/
+http://google.com%5c%5c.example.com/
+http://google.com:80#@example.com/
+http://google.com:80#@www.whitelisteddomain.tld/
+http://google.com:80?@example.com/
+http://google.com:80?@www.whitelisteddomain.tld/
+http://google.com\texample.com/
+
+# More domain confusion
+http://localdomain.pw%23.www.whitelisteddomain.tld/
+http://localdomain.pw%2f%2f.www.whitelisteddomain.tld/
+http://localdomain.pw%3F.www.whitelisteddomain.tld/
+http://localdomain.pw%5c%5c.www.whitelisteddomain.tld/
+http://localdomain.pw:80#@www.whitelisteddomain.tld/
+http://localdomain.pw:80?@www.whitelisteddomain.tld/
+http://localdomain.pw\twww.whitelisteddomain.tld/
+
+# Escaped domain patterns
+http://www.localdomain.pw\.www.whitelisteddomain.tld
+http://www.whitelisteddomain.tld%2elocaldomain.pw/
+http://www.whitelisteddomain.tld+&@localdomain.pw#+@www.whitelisteddomain.tld/
+http://www.whitelisteddomain.tld:80%40localdomain.pw/
+
+# More complex domain spoofing
+http://www.whitelisteddomain.tld@00330.00072.0000326.00000316
+http://www.whitelisteddomain.tld@00330.0x3a.54990
+http://www.whitelisteddomain.tld@00330.3856078
+http://www.whitelisteddomain.tld@0330.072.0326.0316
+http://www.whitelisteddomain.tld@0xd8.072.54990
+http://www.whitelisteddomain.tld@0xd8.0x3a.0xd6.0xce
+http://www.whitelisteddomain.tld@0xd8.3856078
+http://www.whitelisteddomain.tld@0xd83ad6ce
+http://www.whitelisteddomain.tld@3627734734
+http://www.whitelisteddomain.tld@472.314.470.462
+http://www.whitelisteddomain.tld@[::216.58.214.206]
+http://www.whitelisteddomain.tld@[::ffff:216.58.214.206]
+
+# Protocol-less variations
+http:00330.00072.0000326.00000316
+http:00330.0x3a.54990
+http:00330.3856078
+http:0330.072.0326.0316
+http:0xd8.072.54990
+http:0xd8.0x3a.0xd6.0xce
+http:0xd8.3856078
+http:0xd83ad6ce
+http:3627734734
+
+# Protocol-less with auth
+http:3H6k7lIAiqjfNeN@00330.00072.0000326.00000316
+http:3H6k7lIAiqjfNeN@00330.0x3a.54990
+http:3H6k7lIAiqjfNeN@00330.3856078
+http:3H6k7lIAiqjfNeN@0330.072.0326.0316
+http:3H6k7lIAiqjfNeN@0xd8.072.54990
+http:3H6k7lIAiqjfNeN@0xd8.0x3a.0xd6.0xce
+http:3H6k7lIAiqjfNeN@0xd8.3856078
+http:3H6k7lIAiqjfNeN@0xd83ad6ce
+http:3H6k7lIAiqjfNeN@3627734734
+http:3H6k7lIAiqjfNeN@472.314.470.462
+http:3H6k7lIAiqjfNeN@[::216.58.214.206]
+http:3H6k7lIAiqjfNeN@[::ffff:216.58.214.206]
+
+# More protocol-less
+http:472.314.470.462
+
+# Complex protocol-less patterns
+http:XY>.7d8T\205pZM@00330.00072.0000326.00000316
+http:XY>.7d8T\205pZM@00330.0x3a.54990
+http:XY>.7d8T\205pZM@00330.3856078
+http:XY>.7d8T\205pZM@0330.072.0326.0316
+http:XY>.7d8T\205pZM@0xd8.072.54990
+http:XY>.7d8T\205pZM@0xd8.0x3a.0xd6.0xce
+http:XY>.7d8T\205pZM@0xd8.3856078
+http:XY>.7d8T\205pZM@0xd83ad6ce
+http:XY>.7d8T\205pZM@3627734734
+http:XY>.7d8T\205pZM@472.314.470.462
+http:XY>.7d8T\205pZM@[::216.58.214.206]
+http:XY>.7d8T\205pZM@[::ffff:216.58.214.206]
+
+# Protocol-less IPv6
+http:[::216.58.214.206]
+http:[::ffff:216.58.214.206]
+
+# Protocol-less domain spoofing
+http:example.com@00330.00072.0000326.00000316
+http:example.com@00330.0x3a.54990
+http:example.com@00330.3856078
+http:example.com@0330.072.0326.0316
+http:example.com@0xd8.072.54990
+http:example.com@0xd8.0x3a.0xd6.0xce
+http:example.com@0xd8.3856078
+http:example.com@0xd83ad6ce
+http:example.com@3627734734
+http:example.com@472.314.470.462
+http:example.com@[::216.58.214.206]
+http:example.com@[::ffff:216.58.214.206]
+
+# Protocol-less whitelist bypass
+http:www.whitelisteddomain.tld@00330.00072.0000326.00000316
+http:www.whitelisteddomain.tld@00330.0x3a.54990
+http:www.whitelisteddomain.tld@00330.3856078
+http:www.whitelisteddomain.tld@0330.072.0326.0316
+http:www.whitelisteddomain.tld@0xd8.072.54990
+http:www.whitelisteddomain.tld@0xd8.0x3a.0xd6.0xce
+http:www.whitelisteddomain.tld@0xd8.3856078
+http:www.whitelisteddomain.tld@0xd83ad6ce
+http:www.whitelisteddomain.tld@3627734734
+http:www.whitelisteddomain.tld@472.314.470.462
+http:www.whitelisteddomain.tld@[::216.58.214.206]
+http:www.whitelisteddomain.tld@[::ffff:216.58.214.206]
+
+# HTTPS with tabs
+https://%09/example.com@google.com
+https://%09/google.com
+https://%09/localdomain.pw
+https://%09/www.whitelisteddomain.tld@google.com
+https://%09/www.whitelisteddomain.tld@localdomain.pw
+
+# HTTPS with backslashes
+https://%5cexample.com@google.com
+https://%5cgoogle.com
+https://%5clocaldomain.pw
+https://%5cwww.whitelisteddomain.tld@google.com
+https://%5cwww.whitelisteddomain.tld@localdomain.pw
+
+# HTTPS triple slash with domain spoofing
+https:///example.com@google.com/%2e%2e
+https:///example.com@google.com/%2f%2e%2e
+https:///google.com/%2e%2e
+https:///google.com/%2f%2e%2e
+https:///localdomain.pw/%2e%2e
+https:///localdomain.pw/%2f%2e%2e
+https:///www.google.com/%2e%2e
+https:///www.google.com/%2f%2e%2e
+https:///www.whitelisteddomain.tld@localdomain.pw/%2e%2e
+https:///www.whitelisteddomain.tld@localdomain.pw/%2f%2e%2e
+https:///www.whitelisteddomain.tld@www.google.com/%2e%2e
+https:///www.whitelisteddomain.tld@www.google.com/%2f%2e%2e
+
+# HTTPS with auth bypass
+https://:@google.com\@example.com
+https://:@google.com\@www.whitelisteddomain.tld
+https://:@localdomain.pw\@www.whitelisteddomain.tld
+
+# HTTPS with nested protocols
+https://example.com/https://google.com/
+
+# Standard HTTPS patterns
+https://example.com@google.com
+https://example.com@google.com/
+https://example.com@google.com/%2e%2e%2f
+https://example.com@google.com/%2f%2e%2e
+https://example.com@google.com/%2f..
+https://example.com@google.com//
+
+# Simple HTTPS
+https://google.com
+https://google.com/
+https://google.com/%2e%2e%2f
+https://google.com/%2f%2e%2e
+https://google.com/%2f..
+https://google.com//
+
+# HTTPS localdomain
+https://localdomain.pw
+https://localdomain.pw/
+https://localdomain.pw/%2e%2e%2f
+https://localdomain.pw/%2f%2e%2e
+https://localdomain.pw/%2f..
+https://localdomain.pw//
+
+# HTTPS www patterns
+https://www.google.com/%2e%2e%2f
+https://www.google.com/%2f%2e%2e
+
+# HTTPS whitelist bypass
+https://www.whitelisteddomain.tld@google.com
+https://www.whitelisteddomain.tld@google.com/
+https://www.whitelisteddomain.tld@google.com/%2f..
+https://www.whitelisteddomain.tld@google.com//
+https://www.whitelisteddomain.tld@localdomain.pw
+https://www.whitelisteddomain.tld@localdomain.pw/
+https://www.whitelisteddomain.tld@localdomain.pw/%2e%2e%2f
+https://www.whitelisteddomain.tld@localdomain.pw/%2f%2e%2e
+https://www.whitelisteddomain.tld@localdomain.pw/%2f..
+https://www.whitelisteddomain.tld@localdomain.pw//
+https://www.whitelisteddomain.tld@www.google.com/%2e%2e%2f
+https://www.whitelisteddomain.tld@www.google.com/%2f%2e%2e
+
+# Protocol-less HTTPS
+https:google.com
+https:localdomain.pw
+
+# JavaScript with newlines
+jaVAscript://www.whitelisteddomain.tld//%0d%0aalert(1);//
+ja\nva\tscript\r:alert(1)
+
+# JavaScript with tabs
+java%09script:alert(1)
+java%0ascript:alert(1)
+java%0d%0ascript%0d%0a:alert(0)
+java%0dscript:alert(1)
+
+# JavaScript with complex encoding
+javascripT://anything%0D%0A%0D%0Awindow.alert(document.cookie)
+javascript://%0aalert(1)
+javascript://example.com?%a0alert%281%29
+javascript://https://example.com/?z=%0Aalert(1)
+javascript://https://www.whitelisteddomain.tld/?z=%0Aalert(1)
+javascript://www.whitelisteddomain.tld?%a0alert%281%29
+
+# Simple JavaScript
+javascript:alert(1)
+javascript:alert(1);
+
+# Unicode domain variations
+〱google.com
+〱localdomain.pw
+〵google.com
+〵localdomain.pw
+ゝgoogle.com
+ゝlocaldomain.pw
+ーgoogle.com
+ーlocaldomain.pw
+ｰgoogle.com
+ｰlocaldomain.pw
+
+# Additional implementation-specific test cases
+# Control characters and special encodings
+/%00example.com
+/%01example.com
+/%02example.com
+/%0aexample.com
+/%0dexample.com
+/%09%09example.com
+/%0a%0dexample.com
+
+# Additional protocol variations  
+ftp://example.com
+file://example.com
+javascript://example.com
+vbscript:alert(1)
+livescript:alert(1)
+mocha:alert(1)
+data://example.com
+
+# More complex regex bypass attempts
+//ex%61mple.com
+//goo%67le.com
+//local%64omain.pw
+/%2e%2e/%2e%2e/example.com
+/..%2f..%2fexample.com
+/..%2f..%2f..%2fexample.com
+
+# Mixed case protocol injection
+HtTp://example.com
+HtTpS://example.com
+FtP://example.com
+jAvAsCrIpT:alert(1)
+
+# Additional encoding variations
+%2f%2fexample%2ecom
+%2f%2fgoogle%2ecom  
+%2f%2flocaldomain%2epw
+%2f%2f%65xample.com
+%2f%2f%67oogle.com
+
+# Tab and newline variations with domains
+//ex%09ample.com
+//goo%0agle.com
+//local%0ddomain.pw
+//exam%0a%0dple.com
+
+# Fragment identifier bypass
+//example.com#
+//google.com#anything
+//localdomain.pw#test
+
+# More complex at-sign bypass
+user:pass@example.com
+admin@example.com@google.com
+test@localdomain.pw@trusted.com

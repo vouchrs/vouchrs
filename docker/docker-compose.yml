@@ -2,9 +2,10 @@ version: '3.8'
 
 services:
   vouchrs:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/vouchrs/vouchrs:dev  # Use the dev image from GitHub Container Registry
+    #build:
+    #  context: ..
+    #  dockerfile: docker/Dockerfile
     ports:
       - "8080:8080"
     volumes:
