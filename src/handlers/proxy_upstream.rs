@@ -11,11 +11,11 @@ use crate::{
     utils::user_agent::is_browser_request,
 };
 
-/// HTTP client for making upstream API requests
+/// HTTP client for making upstream requests
 static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::new);
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
-/// Proxy generic API requests with authentication
+/// Proxy requests with authentication
 /// 
 /// # Errors
 /// 
@@ -24,7 +24,7 @@ static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::ne
 /// - Request building fails
 /// - Upstream server is unreachable
 #[allow(clippy::implicit_hasher)]
-pub async fn proxy_generic_api(
+pub async fn proxy_upstream(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
     body: web::Bytes,
@@ -112,7 +112,7 @@ async fn forward_upstream_response(
 
     // Check if this is a 401 Unauthorized response
     if status_code == reqwest::StatusCode::UNAUTHORIZED {
-        // Determine if this is a browser request vs API request
+        // Determine if this is a browser request 
         if is_browser_request(req) {
             // Redirect browser requests to sign-in page
             let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
@@ -124,7 +124,7 @@ async fn forward_upstream_response(
                     "redirect_url": sign_in_url
                 })));
         }
-        // For API requests, return 401 with JSON error
+        // For non-browser requests, return 401 with JSON error
         return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
             "error": "unauthorized",
             "message": "Authentication required. Please obtain a valid session cookie or bearer token."
@@ -175,7 +175,7 @@ fn extract_session_from_request(
                 .insert_header(("Location", sign_in_url))
                 .finish()
         } else {
-            // For API requests, return JSON error
+            // For non-browser requests, return JSON error
             HttpResponse::Unauthorized().json(serde_json::json!({
                 "error": "unauthorized",
                 "message": message

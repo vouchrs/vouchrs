@@ -1,10 +1,9 @@
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
-    api_proxy::proxy_generic_api,
     handlers::{
         health, jwt_oauth_callback, jwt_oauth_debug, jwt_oauth_sign_in, jwt_oauth_sign_out,
-        jwt_oauth_userinfo, serve_static,
+        jwt_oauth_userinfo, serve_static, proxy_upstream
     },
     oauth::OAuthConfig,
     session::SessionManager,
@@ -101,7 +100,7 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
                     let path = req.head().uri.path();
                     !path.starts_with("/oauth2") && !path.starts_with("/ping")
                 }))
-                .to(proxy_generic_api),
+                .to(proxy_upstream),
         );
 }
 
