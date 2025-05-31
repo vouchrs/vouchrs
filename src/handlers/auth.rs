@@ -64,7 +64,7 @@ pub async fn jwt_oauth_sign_in(
             );
 
             // Get authorization URL
-            match oauth_config.get_auth_url(provider, &actual_state).await {
+            match oauth_config.get_auth_url(provider, &actual_state) {
                 Ok(auth_url) => {
                     info!("Redirecting to {provider} OAuth: {auth_url}");
                     Ok(response_builder

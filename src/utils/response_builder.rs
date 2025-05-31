@@ -193,7 +193,7 @@ impl ResponseBuilder {
 mod tests {
     use super::ResponseBuilder;
 
-    /// Test that legitimate upstream URLs still work with simplified build_upstream_url
+    /// Test that legitimate upstream URLs still work with simplified `build_upstream_url`
     #[test]
     fn test_upstream_url_building() {
         let base_url = "https://api.example.com";

@@ -61,7 +61,7 @@ impl SessionManager {
         // If key is shorter than 32 bytes, derive the rest using a simple hash
         if key_len < 32 {
             for i in key_len..32 {
-                encryption_key[i] = encryption_key[i % key_len].wrapping_add((i % 256) as u8);
+                encryption_key[i] = encryption_key[i % key_len].wrapping_add(u8::try_from(i % 256).unwrap_or(0));
             }
         }
 
@@ -513,7 +513,7 @@ mod tests {
         let token_json = serde_json::to_string(&session).unwrap();
 
         println!("Token JSON size: {} bytes", token_json.len());
-        println!("Token cookie size: {} bytes", token_size);
+        println!("Token cookie size: {token_size} bytes");
 
         // Log the compact nature of the token data
         assert!(!token_json.is_empty());

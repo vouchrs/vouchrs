@@ -193,10 +193,14 @@ impl VouchrsSettings {
     /// 
     /// # Errors
     /// 
-    /// Returns an error if environment file loading fails
+    /// Initialize environment and logging
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if logger initialization fails
     fn initialize_environment() -> Result<(), Box<dyn std::error::Error>> {
-        Self::load_env_file()?;
-        env_logger::init();
+        Self::load_env_file();
+        env_logger::try_init()?;
         Ok(())
     }
 
@@ -329,11 +333,7 @@ impl VouchrsSettings {
     }
 
     /// Load environment variables from .env file
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if the .env file exists but cannot be read
-    fn load_env_file() -> Result<(), Box<dyn std::error::Error>> {
+    fn load_env_file() {
         if let Ok(contents) = std::fs::read_to_string(".env") {
             for line in contents.lines() {
                 if let Some((key, value)) = line.split_once('=') {
@@ -341,7 +341,6 @@ impl VouchrsSettings {
                 }
             }
         }
-        Ok(())
     }
 
     /// Get the bind address for the server

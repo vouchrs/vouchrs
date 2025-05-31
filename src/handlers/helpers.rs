@@ -65,6 +65,7 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
         .join("\n                ")
 }
 
+#[allow(clippy::too_many_lines)]
 fn get_sign_in_styles() -> &'static str {
     r"
         * {

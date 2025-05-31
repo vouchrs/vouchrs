@@ -79,9 +79,13 @@ pub fn log_cookies(req: &HttpRequest) {
 pub fn filter_vouchrs_cookies(cookie_str: &str) -> Option<String> {
     let filtered_cookies: Vec<&str> = cookie_str
         .split(';')
-        .filter(|cookie| {
+        .filter_map(|cookie| {
             let trimmed = cookie.trim();
-            !trimmed.starts_with(&format!("{COOKIE_NAME}="))
+            if trimmed.is_empty() || trimmed.starts_with(&format!("{COOKIE_NAME}=")) {
+                None
+            } else {
+                Some(trimmed)
+            }
         })
         .collect();
 

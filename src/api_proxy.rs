@@ -23,6 +23,7 @@ static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::ne
 /// - Authentication fails (missing or invalid session)
 /// - Request building fails
 /// - Upstream server is unreachable
+#[allow(clippy::implicit_hasher)]
 pub async fn proxy_generic_api(
     req: HttpRequest,
     query_params: web::Query<HashMap<String, String>>,
@@ -32,7 +33,7 @@ pub async fn proxy_generic_api(
     oauth_config: web::Data<OAuthConfig>,
 ) -> ActixResult<HttpResponse> {
     // Extract and validate session from encrypted cookie
-    let session = match extract_session_from_request(&req, &session_manager).await {
+    let session = match extract_session_from_request(&req, &session_manager) {
         Ok(session) => session,
         Err(response) => return Ok(response),
     };
@@ -161,7 +162,7 @@ async fn forward_upstream_response(
 /// Returns an `HttpResponse` error if:
 /// - No session cookie is found
 /// - Session is invalid or expired
-async fn extract_session_from_request(
+fn extract_session_from_request(
     req: &HttpRequest,
     session_manager: &SessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {

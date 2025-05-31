@@ -256,7 +256,7 @@ impl OAuthConfig {
     /// - The specified provider is not configured
     /// - The client ID is not configured for the provider
     /// - The authorization URL is malformed
-    pub async fn get_auth_url(&self, provider: &str, state: &str) -> Result<String, String> {
+    pub fn get_auth_url(&self, provider: &str, state: &str) -> Result<String, String> {
         let runtime_provider = self
             .providers
             .get(provider)
@@ -391,7 +391,7 @@ impl OAuthConfig {
 
         // Calculate token expiration
         let expires_at = if let Some(expires_in) = token_response.expires_in {
-            Utc::now() + chrono::Duration::seconds(expires_in as i64)
+            Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600))
         } else {
             // Default to 1 hour if no expiration provided
             Utc::now() + chrono::Duration::hours(1)
@@ -403,7 +403,7 @@ impl OAuthConfig {
             token_response.refresh_token.as_ref(),
             token_response.id_token.as_ref(),
             &token_response.token_type,
-            token_response.expires_in.map(|v| v as i64),
+            token_response.expires_in.map(|v| i64::try_from(v).unwrap_or(3600)),
         );
 
         let id_token = token_response.id_token;
@@ -606,7 +606,7 @@ pub async fn refresh_oauth_tokens(
 
     let new_id_token = token_response["id_token"].as_str().map(ToString::to_string);
 
-    let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in as i64);
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600));
 
     Ok((new_id_token, new_refresh_token, new_expires_at))
 }

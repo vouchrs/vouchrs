@@ -233,8 +233,8 @@ mod tests {
         // JWT with only 'sub' claim, base64-encoded header and payload, signature ignored
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"none\"}");
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(format!("{{\"sub\":\"{}\"}}", sub).as_bytes());
-        format!("{}.{}.ignored", header, payload)
+            .encode(format!(r#"{{"sub":"{sub}"}}"#).as_bytes());
+        format!("{header}.{payload}.ignored")
     }
 
     #[test]
