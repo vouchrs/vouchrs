@@ -13,7 +13,7 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::oauth::decode_jwt_payload;
+use crate::oauth::decode_token;
 use crate::models::CompleteSessionData;
 use crate::utils::apple::AppleUserInfo;
 use chrono::{DateTime, TimeZone, Utc};
@@ -64,7 +64,7 @@ impl SessionBuilder {
     ) -> Result<CompleteSessionData, String> {
         let id_token_ref = id_token.as_ref().ok_or("No ID token available")?;
 
-        let claims = decode_jwt_payload(id_token_ref)
+        let claims = decode_token(id_token_ref)
             .map_err(|e| format!("Failed to decode ID token: {e}"))?;
 
         info!(

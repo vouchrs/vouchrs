@@ -1,5 +1,5 @@
 // OAuth callback handler
-use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_oauth_state_from_callback};
+use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_state_from_callback};
 use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
@@ -50,7 +50,7 @@ pub async fn jwt_oauth_callback(
 
     // Exchange code for OAuth tokens
     let token_result = oauth_config
-        .exchange_code_for_session_data(&oauth_state.provider, &code)
+        .exchange_code_for_tokens(&oauth_state.provider, &code)
         .await;
 
     let (id_token, refresh_token, expires_at, apple_user_info) = match token_result {
@@ -141,7 +141,7 @@ fn validate_callback(
     };
 
     // Parse and validate OAuth state
-    match get_oauth_state_from_callback(&received_state, session_manager, req) {
+    match get_state_from_callback(&received_state, session_manager, req) {
         Ok(state) => {
             debug!("OAuth state verified for provider: {}", state.provider);
             Ok((code, state))

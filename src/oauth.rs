@@ -351,7 +351,7 @@ impl OAuthConfig {
     /// - Client credentials are missing
     /// - Token exchange request fails
     /// - Response parsing fails
-    pub async fn exchange_code_for_session_data(
+    pub async fn exchange_code_for_tokens(
         &self,
         provider: &str,
         code: &str,
@@ -548,7 +548,7 @@ pub async fn check_and_refresh_tokens(
     })?;
 
     // Call refresh_oauth_tokens and update session fields
-    match refresh_oauth_tokens(refresh_token, oauth_config, provider).await {
+    match refresh_tokens(refresh_token, oauth_config, provider).await {
         Ok((new_id_token, new_refresh_token, new_expires_at)) => {
             session.id_token = new_id_token;
             session.refresh_token = new_refresh_token;
@@ -571,7 +571,7 @@ pub async fn check_and_refresh_tokens(
 /// - Client credentials are missing or cannot be generated
 /// - Token refresh request fails
 /// - Response parsing fails
-pub async fn refresh_oauth_tokens(
+pub async fn refresh_tokens(
     refresh_token: &str,
     oauth_config: &OAuthConfig,
     provider: &str,
@@ -668,7 +668,7 @@ pub async fn refresh_oauth_tokens(
 /// - Base64 decoding fails
 /// - UTF-8 decoding fails
 /// - JSON parsing fails
-pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
+pub fn decode_token(token: &str) -> Result<serde_json::Value, String> {
     use base64::{engine::general_purpose, Engine as _};
     
     let parts: Vec<&str> = token.split('.').collect();
@@ -700,7 +700,7 @@ pub fn decode_jwt_payload(token: &str) -> Result<serde_json::Value, String> {
 /// - The received state does not match the stored CSRF token
 /// - No stored state is found and stateless parsing fails
 /// - The stateless state format is invalid
-pub fn get_oauth_state_from_callback(
+pub fn get_state_from_callback(
     received_state: &str,
     session_manager: &crate::session::SessionManager,
     req: &actix_web::HttpRequest,
