@@ -2,7 +2,6 @@
 pub mod auth;
 pub mod callback;
 pub mod debug;
-pub mod session_builder;
 pub mod static_files;
 pub mod types;
 

@@ -1,5 +1,5 @@
 // Tests for JWT handlers - now focused on SessionBuilder functionality
-use crate::handlers::session_builder::SessionBuilder;
+use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{AppleUserInfo, AppleUserName};
 use chrono::Utc;
 

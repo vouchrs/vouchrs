@@ -5,7 +5,7 @@ use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, error};
 
-use super::session_builder::SessionBuilder;
+use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{process_apple_callback, AppleUserInfo};
 use crate::utils::logging::LoggingHelper;
 use crate::utils::oauth_utils::get_oauth_state_from_callback;

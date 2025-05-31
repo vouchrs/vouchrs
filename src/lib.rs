@@ -3,6 +3,7 @@ pub mod handlers;
 pub mod models;
 pub mod oauth;
 pub mod session;
+pub mod session_builder;
 pub mod settings;
 pub mod utils;
 
