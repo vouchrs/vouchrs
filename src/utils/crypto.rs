@@ -19,7 +19,7 @@ pub const ENCRYPTION_KEY_SIZE: usize = 32;
 /// 
 /// This generates a more compact token with higher entropy than UUID v4:
 /// - 24 bytes (192 bits) of entropy vs UUID's 122 bits
-/// - Base64URL encoding results in 32 characters vs UUID's 36 characters
+/// - `Base64URL` encoding results in 32 characters vs UUID's 36 characters
 /// - Uses the same secure random source as our AES-GCM encryption
 /// 
 /// Inspired by oauth2-proxy's approach but optimized for URL length
@@ -191,7 +191,7 @@ pub fn decrypt_data<T: DeserializeOwned>(encrypted_data: &str, key: &[u8]) -> Re
 /// 
 /// This is a simple key derivation method. For production use with weak keys,
 /// consider using proper key derivation functions like PBKDF2 or HKDF.
-pub fn derive_encryption_key(input_key: &[u8]) -> [u8; ENCRYPTION_KEY_SIZE] {
+#[must_use] pub fn derive_encryption_key(input_key: &[u8]) -> [u8; ENCRYPTION_KEY_SIZE] {
     let mut encryption_key = [0u8; ENCRYPTION_KEY_SIZE];
     let key_len = std::cmp::min(input_key.len(), ENCRYPTION_KEY_SIZE);
     encryption_key[..key_len].copy_from_slice(&input_key[..key_len]);
