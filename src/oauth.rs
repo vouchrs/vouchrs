@@ -404,7 +404,7 @@ impl OAuthConfig {
                 .settings
                 .get_client_id()
                 .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
-            let client_secret = crate::utils::apple::generate_apple_client_secret(jwt_config, &client_id)?;
+            let client_secret = crate::utils::apple::generate_jwt_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret".to_string(), client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
@@ -598,12 +598,13 @@ pub async fn refresh_tokens(
     let client_secret = if let Some(ref secret) = runtime_provider.client_secret {
         secret.clone()
     } else if let Some(ref jwt_config) = runtime_provider.settings.jwt_signing {
-        // Generate JWT client secret for Apple using apple_utils
-        apple::generate_apple_client_secret_for_refresh(
-            jwt_config,
-            &runtime_provider.settings,
-        )
-        .map_err(|e| format!("Failed to generate client secret: {e}"))?
+        // Generate JWT client secret for Apple
+        let client_id = runtime_provider
+            .settings
+            .get_client_id()
+            .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
+        apple::generate_jwt_client_secret(jwt_config, &client_id)
+            .map_err(|e| format!("Failed to generate client secret: {e}"))?
     } else {
         return Err(format!(
             "No client secret or JWT signing configuration for provider {provider}"

@@ -50,6 +50,8 @@ once_cell = { version = "1.19", default-features = false }
 # Crypto (keep these for security)
 aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8"] }
+hmac = { version = "0.12", default-features = false }
+sha2 = { version = "0.10", default-features = false }
 rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 urlencoding = "2.1.3"
 

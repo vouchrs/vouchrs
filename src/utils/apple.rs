@@ -105,14 +105,12 @@ pub fn process_apple_callback(
 /// - Private key file cannot be read
 /// - Private key cannot be parsed
 /// - JWT serialization fails
-pub fn generate_apple_client_secret(
+pub fn generate_jwt_client_secret(
     jwt_config: &crate::settings::JwtSigningConfig,
     client_id: &str,
 ) -> Result<String, String> {
-    use base64::{engine::general_purpose, Engine as _};
+    use crate::utils::crypto::{create_jwt, create_jwt_header, JwtAlgorithm};
     use chrono::{Duration, Utc};
-    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-    use p256::pkcs8::DecodePrivateKey;
 
     // Get required values using the getter methods
     let team_id = jwt_config
@@ -129,22 +127,14 @@ pub fn generate_apple_client_secret(
     let private_key_pem = std::fs::read_to_string(&private_key_path)
         .map_err(|_| "Failed to read Apple private key file".to_string())?;
 
-    // Use the correct p256 method for parsing PKCS#8 PEM
-    let signing_key = SigningKey::from_pkcs8_pem(&private_key_pem)
-        .map_err(|e| format!("Failed to parse Apple private key: {e:?}"))?;
+    // Create JWT header with Apple-specific key ID
+    let header = create_jwt_header(&JwtAlgorithm::ES256, Some(&key_id));
 
-    // Create JWT header
-    let header = serde_json::json!({
-        "alg": "ES256",
-        "kid": key_id,
-        "typ": "JWT"
-    });
-
-    // Create JWT claims
+    // Create JWT payload with Apple-specific claims
     let now = Utc::now();
     let exp = now + Duration::minutes(5);
 
-    let claims = serde_json::json!({
+    let payload = serde_json::json!({
         "iss": team_id,
         "iat": now.timestamp(),
         "exp": exp.timestamp(),
@@ -152,62 +142,15 @@ pub fn generate_apple_client_secret(
         "sub": client_id
     });
 
-    // Encode header and payload
-    let header_json =
-        serde_json::to_string(&header).map_err(|_| "Failed to serialize JWT header".to_string())?;
-    let claims_json =
-        serde_json::to_string(&claims).map_err(|_| "Failed to serialize JWT claims".to_string())?;
-
-    let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header_json.as_bytes());
-    let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
-
-    let message = format!("{header_b64}.{payload_b64}");
-
-    // Sign with ES256
-    let signature: Signature = signing_key.sign(message.as_bytes());
-    let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
-
-    let jwt = format!("{message}.{signature_b64}");
+    // Use the generic JWT creation function
+    let jwt = create_jwt(&header, &payload, JwtAlgorithm::ES256, private_key_pem.as_bytes())
+        .map_err(|e| format!("Failed to create Apple JWT: {e}"))?;
 
     log::debug!("Generated Apple client secret JWT");
     Ok(jwt)
 }
 
-/// Generate Apple client secret JWT for token refresh
-/// This function creates a properly signed JWT that can be used as a client secret
-/// with Apple's OAuth token refresh endpoint.
-/// 
-/// # Errors
-/// 
-/// Returns an error if:
-/// - Client ID is not configured
-/// - JWT generation fails (see `generate_apple_client_secret` for details)
-pub fn generate_apple_client_secret_for_refresh(
-    jwt_config: &crate::settings::JwtSigningConfig,
-    provider_settings: &crate::settings::ProviderSettings,
-) -> Result<String, String> {
-    use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Serialize, Deserialize)]
-    struct AppleJwtClaims {
-        iss: String, // Team ID
-        iat: i64,    // Issued at time
-        exp: i64,    // Expiration time
-        aud: String, // Audience (always "https://appleid.apple.com")
-        sub: String, // Client ID
-    }
-
-    // Get client_id from provider settings
-    let client_id = provider_settings
-        .get_client_id()
-        .ok_or_else(|| "Client ID not configured for Apple provider".to_string())?;
-
-    // Delegate to the general purpose function
-    let jwt = generate_apple_client_secret(jwt_config, &client_id)?;
-
-    log::debug!("Generated Apple client secret JWT for token refresh");
-    Ok(jwt)
-}
 
 #[cfg(test)]
 mod tests {
