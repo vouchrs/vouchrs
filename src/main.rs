@@ -46,7 +46,7 @@ async fn start_server_with_jwt(
 
     // Initialize session manager with encryption key from settings
     let session_manager = SessionManager::new(
-        settings.jwt.session_secret.as_bytes(),
+        settings.session.session_secret.as_bytes(),
         settings.cookies.secure,
     );
 

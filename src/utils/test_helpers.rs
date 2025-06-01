@@ -1,6 +1,6 @@
 // Test utilities shared across modules
 use crate::models::VouchrsSession;
-use crate::settings::{ApplicationSettings, JwtSettings, ProxySettings, VouchrsSettings};
+use crate::settings::{ApplicationSettings, SessionSettings, ProxySettings, VouchrsSettings};
 use chrono::{Duration, Utc};
 
 /// Create a test session for use in unit tests
@@ -27,11 +27,9 @@ pub fn create_test_settings() -> VouchrsSettings {
         proxy: ProxySettings {
             upstream_url: "http://localhost:3000".to_string(),
         },
-        jwt: JwtSettings {
+        session: SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret-key".to_string(),
-            issuer: "https://vouchrs.app".to_string(),
-            audience: "http://localhost:3000".to_string(),
         },
         ..Default::default()
     }

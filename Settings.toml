@@ -26,7 +26,7 @@ upstream_url = "http://localhost:3000"
 # Environment variable: STATIC_FOLDER_PATH
 assets_folder = "src/static"
 
-[jwt]
+[session]
 # JWT session expiration in hours
 # Environment variable: JWT_SESSION_DURATION_HOURS
 session_duration_hours = 24
