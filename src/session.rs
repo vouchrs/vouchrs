@@ -1,19 +1,12 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
 use crate::utils::cookie::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
+use crate::utils::crypto::{derive_encryption_key, encrypt_data, decrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Key, Nonce,
-};
-use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
-use rand::Rng;
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-const NONCE_SIZE: usize = 12; // 96 bits for AES-GCM
 
 // Custom error wrapper for ResponseError implementation
 #[derive(Debug)]
@@ -54,16 +47,7 @@ impl SessionManager {
     /// Create a new session manager with the provided key and cookie settings
     #[must_use]
     pub fn new(key: &[u8], cookie_secure: bool) -> Self {
-        let mut encryption_key = [0u8; 32];
-        let key_len = std::cmp::min(key.len(), 32);
-        encryption_key[..key_len].copy_from_slice(&key[..key_len]);
-
-        // If key is shorter than 32 bytes, derive the rest using a simple hash
-        if key_len < 32 {
-            for i in key_len..32 {
-                encryption_key[i] = encryption_key[i % key_len].wrapping_add(u8::try_from(i % 256).unwrap_or(0));
-            }
-        }
+        let encryption_key = derive_encryption_key(key);
 
         Self {
             encryption_key,
@@ -335,26 +319,7 @@ impl SessionManager {
     /// - Serialization fails
     /// - AES encryption fails
     pub fn encrypt_data<T: Serialize>(&self, data: &T) -> Result<String> {
-        // Serialize the data to JSON
-        let json_data = serde_json::to_string(data).context("Failed to serialize data")?;
-
-        // Generate random nonce
-        let mut nonce_bytes = [0u8; NONCE_SIZE];
-        rand::thread_rng().fill(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        // Encrypt the data
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let ciphertext = cipher
-            .encrypt(nonce, json_data.as_bytes())
-            .map_err(|e| anyhow!("AES encryption failed: {e}"))?;
-
-        // Combine nonce + ciphertext and encode as base64
-        let mut combined = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
-        combined.extend_from_slice(&nonce_bytes);
-        combined.extend_from_slice(&ciphertext);
-
-        Ok(general_purpose::URL_SAFE_NO_PAD.encode(&combined))
+        encrypt_data(data, &self.encryption_key)
     }
 
     /// Generic decryption function for any deserializable data
@@ -367,30 +332,7 @@ impl SessionManager {
     /// - AES decryption fails
     /// - Deserialization fails
     pub fn decrypt_data<T: DeserializeOwned>(&self, encrypted_data: &str) -> Result<T> {
-        // Decode from base64
-        let combined = general_purpose::URL_SAFE_NO_PAD
-            .decode(encrypted_data)
-            .context("Failed to decode base64 data")?;
-
-        if combined.len() < NONCE_SIZE {
-            return Err(anyhow!("Invalid data length"));
-        }
-
-        // Split nonce and ciphertext
-        let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
-        let nonce = Nonce::from_slice(nonce_bytes);
-
-        // Decrypt the data
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| anyhow!("AES decryption failed: {e}"))?;
-
-        // Deserialize the data from JSON
-        let data: T = serde_json::from_slice(&plaintext)
-            .context("Failed to deserialize data from decrypted JSON")?;
-
-        Ok(data)
+        decrypt_data(encrypted_data, &self.encryption_key)
     }
 }
 
