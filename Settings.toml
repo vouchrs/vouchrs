@@ -28,7 +28,7 @@ assets_folder = "src/static"
 
 [session]
 # JWT session expiration in hours
-# Environment variable: JWT_SESSION_DURATION_HOURS
+# Environment variable: SESSION_DURATION_HOURS
 session_duration_hours = 24
 
 # Session secret for encrypting session cookies

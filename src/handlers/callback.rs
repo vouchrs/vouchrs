@@ -22,7 +22,7 @@ struct SessionFinalizeParams {
     redirect_url: Option<String>,
 }
 
-/// JWT OAuth callback handler
+/// OAuth callback handler
 /// 
 /// # Errors
 /// 
@@ -31,7 +31,7 @@ struct SessionFinalizeParams {
 /// - Authorization code exchange fails
 /// - Session building fails
 /// - Cookie creation fails
-pub async fn jwt_oauth_callback(
+pub async fn oauth_callback(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
     req: HttpRequest,

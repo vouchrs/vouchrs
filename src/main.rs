@@ -2,8 +2,8 @@ use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
     handlers::{
-        health, jwt_oauth_callback, jwt_oauth_debug, oauth_sign_in, oauth_sign_out,
-        jwt_oauth_userinfo, serve_static, proxy_upstream
+        health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out,
+        oauth_userinfo, serve_static, proxy_upstream
     },
     oauth::OAuthConfig,
     session::SessionManager,
@@ -26,23 +26,23 @@ async fn main() -> std::io::Result<()> {
             std::io::Error::other(format!("Failed to initialize OAuth providers: {e}"))
         })?;
 
-    println!("✓ Using JWT-based stateless sessions with encrypted cookies");
-    start_server_with_jwt(oauth_config, settings).await
+    println!("✓ Using stateless sessions with encrypted cookies");
+    start_server(oauth_config, settings).await
 }
 
-/// Start the server with JWT-based stateless sessions
+/// Start the server with stateless sessions
 /// 
 /// # Errors
 /// 
 /// Returns an error if:
 /// - Server binding fails
 /// - Server fails to start
-async fn start_server_with_jwt(
+async fn start_server(
     oauth_config: OAuthConfig,
     settings: VouchrsSettings,
 ) -> std::io::Result<()> {
     let bind_address = settings.get_bind_address();
-    print_startup_info(&bind_address, "JWT (Stateless)", &settings);
+    print_startup_info(&bind_address, "Stateless", &settings);
 
     // Initialize session manager with encryption key from settings
     let session_manager = SessionManager::new(
@@ -81,14 +81,14 @@ async fn start_server_with_jwt(
 
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
-        // OAuth2 endpoints - using JWT handlers for stateless operation
+        // OAuth2 endpoints 
         .route("/oauth2/sign_in", web::get().to(oauth_sign_in))
         .route("/oauth2/sign_out", web::get().to(oauth_sign_out))
         .route("/oauth2/sign_out", web::post().to(oauth_sign_out))
-        .route("/oauth2/callback", web::get().to(jwt_oauth_callback))
-        .route("/oauth2/callback", web::post().to(jwt_oauth_callback))
-        .route("/oauth2/debug", web::get().to(jwt_oauth_debug))
-        .route("/oauth2/userinfo", web::get().to(jwt_oauth_userinfo))
+        .route("/oauth2/callback", web::get().to(oauth_callback))
+        .route("/oauth2/callback", web::post().to(oauth_callback))
+        .route("/oauth2/debug", web::get().to(oauth_debug))
+        .route("/oauth2/userinfo", web::get().to(oauth_userinfo))
         // Static files endpoint
         .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint
@@ -121,7 +121,7 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
         settings.application.redirect_base_url
     );
     println!();
-    if session_backend == "JWT (Stateless)" {
+    if session_backend == "Stateless" {
         println!("Sidecar Proxy endpoints (with automatic OAuth token injection):");
         println!("  ALL {{any path}}                   - Proxy to upstream service as-is");
         println!("                                    (except /oauth2/* and /health)");

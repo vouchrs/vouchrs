@@ -10,7 +10,7 @@ mod tests;
 
 // Re-export the main handler functions
 pub use auth::{oauth_sign_in, oauth_sign_out};
-pub use callback::jwt_oauth_callback;
-pub use debug::{jwt_oauth_debug, jwt_oauth_userinfo};
+pub use callback::oauth_callback;
+pub use debug::{oauth_debug, oauth_userinfo};
 pub use static_files::{health, serve_static};
 pub use proxy_upstream::proxy_upstream;

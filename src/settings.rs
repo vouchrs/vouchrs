@@ -294,9 +294,9 @@ impl VouchrsSettings {
         }
     }
 
-    /// Apply environment overrides for JWT settings
+    /// Apply environment overrides for session settings
     pub fn apply_session_env_overrides(session_settings: &mut SessionSettings) {
-        if let Ok(session_duration_str) = std::env::var("JWT_SESSION_DURATION_HOURS") {
+        if let Ok(session_duration_str) = std::env::var("SESSION_DURATION_HOURS") {
             if let Ok(session_duration) = session_duration_str.parse::<u64>() {
                 session_settings.session_duration_hours = session_duration;
             }
@@ -428,17 +428,17 @@ mod tests {
     #[test]
     fn test_session_secret_configuration() {
         // Test default value
-        let default_jwt_settings = SessionSettings::default();
+        let default_session_settings = SessionSettings::default();
         assert_eq!(
-            default_jwt_settings.session_secret,
+            default_session_settings.session_secret,
             "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
         );
-        assert_eq!(default_jwt_settings.session_duration_hours, 24);
+        assert_eq!(default_session_settings.session_duration_hours, 24);
     }
 
     #[test]
     fn test_session_secret_env_override() {
-        let mut jwt_settings = SessionSettings {
+        let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "default-secret".to_string(),
         };
@@ -447,9 +447,9 @@ mod tests {
         std::env::set_var("SESSION_SECRET", "env-override-secret");
 
         // Apply environment overrides
-        VouchrsSettings::apply_session_env_overrides(&mut jwt_settings);
+        VouchrsSettings::apply_session_env_overrides(&mut session_settings);
 
-        assert_eq!(jwt_settings.session_secret, "env-override-secret");
+        assert_eq!(session_settings.session_secret, "env-override-secret");
 
         // Clean up
         std::env::remove_var("SESSION_SECRET");
@@ -457,43 +457,35 @@ mod tests {
 
     #[test]
     fn test_session_duration_env_override() {
-        let mut jwt_settings = SessionSettings {
-            session_duration_hours: 24,
-            session_secret: "test-secret".to_string(),
-        };
-
-        // Set environment variable
-        std::env::set_var("JWT_SESSION_DURATION_HOURS", "48");
-
-        // Apply environment overrides
-        VouchrsSettings::apply_session_env_overrides(&mut jwt_settings);
-
-        assert_eq!(jwt_settings.session_duration_hours, 48);
-        assert_eq!(jwt_settings.session_secret, "test-secret"); // Should remain unchanged
-
-        // Clean up
-        std::env::remove_var("JWT_SESSION_DURATION_HOURS");
-    }
-
-    #[test]
-    fn test_jwt_issuer_and_audience_env_override() {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
         };
 
-        // Set environment variables
-        std::env::set_var("JWT_ISSUER", "https://env-override-issuer.app");
-        std::env::set_var("JWT_AUDIENCE", "https://env-override-audience.app");
+        // Set environment variable
+        std::env::set_var("SESSION_DURATION_HOURS", "48");
+
+        // Apply environment overrides
+        VouchrsSettings::apply_session_env_overrides(&mut session_settings);
+
+        assert_eq!(session_settings.session_duration_hours, 48);
+        assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
+
+        // Clean up
+        std::env::remove_var("SESSION_DURATION_HOURS");
+    }
+
+    #[test]
+    fn test_session_env_override() {
+        let mut session_settings = SessionSettings {
+            session_duration_hours: 24,
+            session_secret: "test-secret".to_string(),
+        };
 
         // Apply environment overrides
         VouchrsSettings::apply_session_env_overrides(&mut session_settings);
 
         assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
-
-        // Clean up
-        std::env::remove_var("JWT_ISSUER");
-        std::env::remove_var("JWT_AUDIENCE");
     }
 
     #[test]
@@ -504,10 +496,8 @@ mod tests {
 
         // Create a Settings.toml in the root with specific values
         let root_settings_content = r#"
-[jwt]
+[session]
 session_secret = "root-secret-key"
-issuer = "https://root.example.com"
-audience = "https://root-audience.example.com"
 "#;
 
         // Create a Settings.toml in the "secrets" dir with different values
@@ -515,10 +505,8 @@ audience = "https://root-audience.example.com"
         std::fs::create_dir_all(&secrets_dir).unwrap();
 
         let secrets_settings_content = r#"
-[jwt]
+[session]
 session_secret = "secrets-secret-key"
-issuer = "https://secrets.example.com"
-audience = "https://secrets-audience.example.com"
 "#;
 
         // Write the files

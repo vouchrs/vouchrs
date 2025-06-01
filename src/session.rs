@@ -10,21 +10,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // Custom error wrapper for ResponseError implementation
 #[derive(Debug)]
-pub struct JwtSessionError(anyhow::Error);
+pub struct SessionError(anyhow::Error);
 
-impl std::fmt::Display for JwtSessionError {
+impl std::fmt::Display for SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl From<anyhow::Error> for JwtSessionError {
+impl From<anyhow::Error> for SessionError {
     fn from(err: anyhow::Error) -> Self {
-        JwtSessionError(err)
+        SessionError(err)
     }
 }
 
-impl ResponseError for JwtSessionError {
+impl ResponseError for SessionError {
     fn error_response(&self) -> HttpResponse {
         let error_msg = self.0.to_string();
 
@@ -218,7 +218,7 @@ impl SessionManager {
         Ok(session)
     }
 
-    /// Get OAuth state from either temporary cookie (Google) or stateless JWT (Apple)
+    /// Get OAuth state
     /// 
     /// # Errors
     /// 

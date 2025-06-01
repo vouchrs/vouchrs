@@ -7,7 +7,7 @@ use log::{debug, error, info};
 /// 
 /// # Errors
 /// Returns an error if session extraction fails or user data is invalid
-pub async fn jwt_oauth_userinfo(
+pub async fn oauth_userinfo(
     req: HttpRequest,
     session_manager: web::Data<SessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
@@ -49,7 +49,7 @@ pub async fn jwt_oauth_userinfo(
 /// 
 /// # Errors
 /// Returns an error if session extraction fails or debug data is invalid
-pub async fn jwt_oauth_debug(
+pub async fn oauth_debug(
     req: HttpRequest,
     session_manager: web::Data<SessionManager>,
     _settings: web::Data<crate::settings::VouchrsSettings>,
