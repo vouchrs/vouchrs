@@ -2,7 +2,7 @@ use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
     handlers::{
-        health, jwt_oauth_callback, jwt_oauth_debug, jwt_oauth_sign_in, jwt_oauth_sign_out,
+        health, jwt_oauth_callback, jwt_oauth_debug, oauth_sign_in, oauth_sign_out,
         jwt_oauth_userinfo, serve_static, proxy_upstream
     },
     oauth::OAuthConfig,
@@ -82,9 +82,9 @@ async fn start_server_with_jwt(
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
         // OAuth2 endpoints - using JWT handlers for stateless operation
-        .route("/oauth2/sign_in", web::get().to(jwt_oauth_sign_in))
-        .route("/oauth2/sign_out", web::get().to(jwt_oauth_sign_out))
-        .route("/oauth2/sign_out", web::post().to(jwt_oauth_sign_out))
+        .route("/oauth2/sign_in", web::get().to(oauth_sign_in))
+        .route("/oauth2/sign_out", web::get().to(oauth_sign_out))
+        .route("/oauth2/sign_out", web::post().to(oauth_sign_out))
         .route("/oauth2/callback", web::get().to(jwt_oauth_callback))
         .route("/oauth2/callback", web::post().to(jwt_oauth_callback))
         .route("/oauth2/debug", web::get().to(jwt_oauth_debug))

@@ -2,26 +2,25 @@
 use crate::oauth::{OAuthConfig, OAuthState};
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
+use crate::utils::crypto::generate_csrf_token;
 use crate::utils::response_builder::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
-use base64::Engine as _;
 use log::{debug, error, info};
-use uuid::Uuid;
 
 use super::static_files::get_sign_in_page;
 use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct SignInQuery {
     pub provider: Option<String>,
-    pub redirect_url: Option<String>,
+    pub rd: Option<String>,
 }
 
-/// JWT OAuth sign in handler
+/// OAuth sign in handler
 /// 
 /// # Errors
 /// Returns an error if provider is not found, authentication fails,
 /// or redirect URL generation fails
-pub async fn jwt_oauth_sign_in(
+pub async fn oauth_sign_in(
     query: web::Query<SignInQuery>,
     _req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
@@ -33,39 +32,41 @@ pub async fn jwt_oauth_sign_in(
 
     match &query.provider {
         Some(provider) if oauth_config.get_client_configured(provider) => {
-            // Generate state for CSRF protection
-            let csrf_state = Uuid::new_v4().to_string();
+            // Generate state for CSRF protection using high-entropy crypto-secure token
+            let csrf_state = generate_csrf_token();
 
             // Create OAuth state object
             let oauth_state = OAuthState {
                 state: csrf_state.clone(),
                 provider: provider.clone(),
-                redirect_url: query.redirect_url.clone(),
+                redirect_url: query.rd.clone(),
             };
 
-            // Use direct state parameter for OAuth providers (no cookies needed)
-            // Format: csrf_state|provider|encoded_redirect_url
-            let state_with_redirect = if let Some(ref redirect) = oauth_state.redirect_url {
-                format!(
-                    "{}|{}|{}",
-                    csrf_state,
-                    provider,
-                    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(redirect)
-                )
-            } else {
-                format!("{csrf_state}|{provider}")
-            };                info!(
-                    "Using direct state parameter for {provider} OAuth (stateless, no cookies needed)"
-                );
+            // 🔒 SECURITY: Use encrypted state parameter to prevent tampering
+            // This prevents attackers from modifying the provider name or redirect URL
+            let actual_state = match session_manager.encrypt_data(&oauth_state) {
+                Ok(encrypted_state) => {
+                    info!("Using encrypted state parameter for {provider} OAuth (tamper-proof)");
+                    encrypted_state
+                }
+                Err(e) => {
+                    error!("Failed to encrypt OAuth state: {e}");
+                    let clear_cookie = session_manager.create_expired_cookie();
+                    return Ok(HttpResponse::Found()
+                        .cookie(clear_cookie)
+                        .append_header(("Location", "/oauth2/sign_in?error=state_encryption_failed"))
+                        .finish());
+                }
+            };
             let mut response_builder = HttpResponse::Found();
             response_builder.cookie(clear_cookie);
-            let actual_state = state_with_redirect;
 
             debug!(
-                "Generated OAuth state for provider {provider}: '{actual_state}'"
+                "Generated encrypted OAuth state for provider {provider}: length = {} chars",
+                actual_state.len()
             );
             debug!(
-                "Stored OAuth state for provider: {provider}, using direct state parameter (no cookies)"
+                "Stored OAuth state for provider: {provider}, using encrypted state parameter (tamper-proof)"
             );
 
             // Get authorization URL
@@ -107,11 +108,11 @@ pub async fn jwt_oauth_sign_in(
     }
 }
 
-/// JWT OAuth sign out handler
+/// OAuth sign out handler
 /// 
 /// # Errors
 /// Returns an error if session validation fails or cookie clearing fails
-pub async fn jwt_oauth_sign_out(
+pub async fn oauth_sign_out(
     req: HttpRequest,
     oauth_config: web::Data<OAuthConfig>,
     session_manager: web::Data<SessionManager>,

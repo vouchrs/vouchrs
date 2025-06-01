@@ -4,9 +4,9 @@
 
 | Endpoint | Method | Purpose | Parameters |
 |----------|---------|---------|------------|
-| `/oauth2/sign_in` | GET | Display sign-in page or initiate OAuth flow | `provider` (google/apple), `redirect_url` (optional) |
+| `/oauth2/sign_in` | GET | Display sign-in page or initiate OAuth flow | `provider` (google/apple), `rd` (optional) |
 | `/oauth2/callback` | GET/POST | OAuth callback handler | Auto-handled by OAuth providers |
-| `/oauth2/sign_out` | GET/POST | Sign out user and clear session | `redirect_url` (optional) |
+| `/oauth2/sign_out` | GET/POST | Sign out user and clear session | `rd` (optional) |
 
 ## Health Check
 
@@ -30,7 +30,7 @@ curl "http://localhost:8080/oauth2/sign_in?provider=apple"
 
 ### Sign In with Redirect
 ```bash
-curl "http://localhost:8080/oauth2/sign_in?provider=google&redirect_url=https://example.com/dashboard"
+curl "http://localhost:8080/oauth2/sign_in?provider=google&rd=https://example.com/dashboard"
 # After successful auth, redirects to: https://example.com/dashboard
 ```
 
@@ -42,7 +42,7 @@ curl "http://localhost:8080/oauth2/sign_out"
 
 ### Sign Out with Redirect
 ```bash
-curl "http://localhost:8080/oauth2/sign_out?redirect_url=https://example.com/home"
+curl "http://localhost:8080/oauth2/sign_out?rd=https://example.com/home"
 # Returns: Redirect to: https://example.com/home
 ```
 
@@ -63,7 +63,7 @@ curl "http://localhost:8080/oauth2/sign_out?redirect_url=https://example.com/hom
 ### JavaScript Frontend
 ```javascript
 // Initiate Google OAuth
-window.location.href = '/oauth2/sign_in?provider=google&redirect_url=' + 
+window.location.href = '/oauth2/sign_in?provider=google&rd=' + 
   encodeURIComponent(window.location.href);
 
 // Check authentication status
