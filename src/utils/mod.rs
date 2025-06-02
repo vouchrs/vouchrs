@@ -1,7 +1,6 @@
 pub mod apple;
 pub mod cookie;
 pub mod crypto;
-pub mod logging;
 pub mod redirect_validator;
 pub mod response_builder;
 pub mod user_agent;
