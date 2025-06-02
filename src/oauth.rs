@@ -309,17 +309,29 @@ impl OAuthConfig {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or_else(|| format!("Provider {provider} not configured"))?;
+            .ok_or("Provider not configured")?;
 
         // Get client ID using the new getter method
         let client_id = runtime_provider
             .settings
             .get_client_id()
-            .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
+            .ok_or("Client ID not configured for provider")?;
 
-        // Build authorization URL
-        let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
-        let scopes = runtime_provider.settings.scopes.join(" ");
+        // Pre-allocate redirect URI string with known capacity to avoid reallocation
+        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
+        redirect_uri.push_str(&self.redirect_base_url);
+        redirect_uri.push_str("/oauth2/callback");
+
+        // Pre-allocate scopes string with estimated capacity
+        let total_scope_len: usize = runtime_provider.settings.scopes.iter().map(|s| s.len()).sum();
+        let scope_separators = runtime_provider.settings.scopes.len().saturating_sub(1);
+        let mut scopes = String::with_capacity(total_scope_len + scope_separators);
+        for (i, scope) in runtime_provider.settings.scopes.iter().enumerate() {
+            if i > 0 {
+                scopes.push(' ');
+            }
+            scopes.push_str(scope);
+        }
 
         // Start with base parameters
         let mut url = url::Url::parse(&runtime_provider.auth_url).map_err(|e| e.to_string())?;

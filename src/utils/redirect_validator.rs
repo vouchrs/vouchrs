@@ -1,6 +1,9 @@
 use actix_web::HttpResponse;
 use log::{debug, warn};
 
+// Pre-serialized JSON error responses for performance
+const INVALID_REDIRECT_JSON: &str = r#"{"error":"invalid_redirect","error_description":"The redirect URL is invalid or potentially unsafe"}"#;
+
 /// Validate post-authentication redirect URLs to prevent open redirect attacks
 /// Balanced approach between security and simplicity
 /// 
@@ -20,73 +23,65 @@ pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<String, HttpRes
     
     // Empty redirects are invalid
     if redirect_url.is_empty() {
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Length limit to prevent DoS
     if redirect_url.len() > 2048 {
         warn!("Redirect URL too long: {} characters", redirect_url.len());
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Must start with a single slash (relative URL only)
     if !redirect_url.starts_with('/') || redirect_url.starts_with("//") {
         warn!("Invalid redirect URL format: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Check for control characters and other dangerous characters
     if contains_dangerous_characters(redirect_url) {
         warn!("Dangerous characters in redirect URL: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Simple path traversal check (including encoded variants)
     if contains_path_traversal(redirect_url) {
         warn!("Path traversal attempt in redirect: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Check for encoded slashes that could create // 
     if contains_encoded_double_slash(redirect_url) {
         warn!("Encoded double slash in redirect: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Basic protocol injection check (including mixed case)
     if contains_protocol_injection(redirect_url) {
         warn!("Protocol injection attempt in redirect: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     // Check for suspicious query parameters that could be open redirects
     if contains_redirect_in_query(redirect_url) {
         warn!("Redirect parameter in query string: {redirect_url}");
-        return Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "invalid_redirect",
-            "error_description": "The redirect URL is invalid or potentially unsafe"
-        })));
+        return Err(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(INVALID_REDIRECT_JSON));
     }
     
     Ok(redirect_url.to_string())
@@ -100,16 +95,21 @@ fn contains_dangerous_characters(url: &str) -> bool {
     }
     
     // Check for control characters (both raw and encoded)
-    let control_patterns = [
-        "\n", "\r", "\t", // Raw control chars
-        "%0a", "%0A", "%0d", "%0D", "%09", // Encoded newline, carriage return, tab
-        "%01", "%02", "%03", "%04", "%05", "%06", "%07", "%08", // Other control chars
-        "%0b", "%0B", "%0c", "%0C", "%0e", "%0E", "%0f", "%0F",
+    // Raw control chars (case-sensitive)
+    if url.contains('\n') || url.contains('\r') || url.contains('\t') {
+        return true;
+    }
+    
+    // Encoded control chars - check both cases without allocation
+    let encoded_patterns = [
+        ("%0a", "%0A"), ("%0d", "%0D"), ("%09", "%09"), // newline, carriage return, tab
+        ("%01", "%01"), ("%02", "%02"), ("%03", "%03"), ("%04", "%04"), // Other control chars
+        ("%05", "%05"), ("%06", "%06"), ("%07", "%07"), ("%08", "%08"),
+        ("%0b", "%0B"), ("%0c", "%0C"), ("%0e", "%0E"), ("%0f", "%0F"),
     ];
     
-    let url_lower = url.to_lowercase();
-    for pattern in &control_patterns {
-        if url.contains(pattern) || url_lower.contains(pattern) {
+    for (lower_pattern, upper_pattern) in &encoded_patterns {
+        if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
     }
@@ -142,21 +142,20 @@ fn contains_path_traversal(url: &str) -> bool {
         return true;
     }
     
-    // Check URL-encoded variants
+    // Check URL-encoded variants - check both cases without allocation
     let encoded_patterns = [
-        "%2e%2e", "%2E%2E", // ..
-        "%2e%2e%2f", "%2E%2E%2F", // ../
-        "%2e%2e%5c", "%2E%2E%5C", // ..\
-        "%252e%252e", "%252E%252E", // Double-encoded ..
-        "%c0%ae", "%c1%9c", // Unicode encoding tricks
-        "%5c", "%5C", // \
-        "%252f", "%252F", // Double-encoded /
-        "%255c", "%255C", // Double-encoded \
+        ("%2e%2e", "%2E%2E"), // ..
+        ("%2e%2e%2f", "%2E%2E%2F"), // ../
+        ("%2e%2e%5c", "%2E%2E%5C"), // ..\
+        ("%252e%252e", "%252E%252E"), // Double-encoded ..
+        ("%c0%ae", "%c0%ae"), ("%c1%9c", "%c1%9c"), // Unicode encoding tricks (case-sensitive)
+        ("%5c", "%5C"), // \
+        ("%252f", "%252F"), // Double-encoded /
+        ("%255c", "%255C"), // Double-encoded \
     ];
     
-    let url_lower = url.to_lowercase();
-    for pattern in &encoded_patterns {
-        if url_lower.contains(pattern) {
+    for (lower_pattern, upper_pattern) in &encoded_patterns {
+        if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
     }
@@ -167,16 +166,15 @@ fn contains_path_traversal(url: &str) -> bool {
 /// Check for encoded slashes that could create //
 fn contains_encoded_double_slash(url: &str) -> bool {
     let patterns = [
-        "%2f%2f", "%2F%2F", // //
-        "%252f%252f", "%252F%252F", // Double-encoded //
-        "%2f%252f", "%252f%2f", // Mixed encoding
-        "/%2f", "/%2F", // Leading to //
-        "%5c%5c", "%5C%5C", // \\
+        ("%2f%2f", "%2F%2F"), // //
+        ("%252f%252f", "%252F%252F"), // Double-encoded //
+        ("%2f%252f", "%252f%2f"), // Mixed encoding (case-sensitive for mixed)
+        ("/%2f", "/%2F"), // Leading to //
+        ("%5c%5c", "%5C%5C"), // \\
     ];
     
-    let url_lower = url.to_lowercase();
-    for pattern in &patterns {
-        if url_lower.contains(pattern) {
+    for (lower_pattern, upper_pattern) in &patterns {
+        if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
     }
@@ -198,7 +196,8 @@ fn contains_protocol_injection(url: &str) -> bool {
         "opera:", "brave:", "edge:",
     ];
     
-    let url_lower = url.to_lowercase();
+    // Single allocation for case-insensitive comparison
+    let url_lower = url.to_ascii_lowercase();
     
     // Direct protocol check
     for protocol in &protocols {
@@ -207,7 +206,7 @@ fn contains_protocol_injection(url: &str) -> bool {
         }
     }
     
-    // Check for encoded protocols
+    // Check for encoded protocols (these are case-sensitive)
     let encoded_protocols = [
         "%6a%61%76%61%73%63%72%69%70%74%3a", // javascript:
         "%64%61%74%61%3a", // data:
@@ -234,11 +233,10 @@ fn contains_redirect_in_query(url: &str) -> bool {
         "callback", "callback_url", "success_url", "failure_url",
     ];
     
-    let url_lower = url.to_lowercase();
-    
     // Check if URL has query string
-    if let Some(query_start) = url_lower.find('?') {
-        let query_part = &url_lower[query_start + 1..];
+    if let Some(query_start) = url.find('?') {
+        let query_part = &url[query_start + 1..];
+        let query_lower = query_part.to_ascii_lowercase();
         
         for param in &redirect_params {
             // Check for parameter=value pattern
@@ -246,11 +244,10 @@ fn contains_redirect_in_query(url: &str) -> bool {
                 format!("{param}="),
                 format!("{param}&"),
                 format!("{param}%3d"), // URL encoded =
-                format!("{param}%3D"),
             ];
             
             for pattern in &patterns {
-                if query_part.contains(pattern) {
+                if query_lower.contains(pattern) {
                     return true;
                 }
             }
