@@ -9,7 +9,7 @@ use std::env;
 use actix_web::HttpResponse;
 use base64::Engine as _;
 use chrono::Utc;
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::apple;
-use crate::utils::logging::LoggingHelper;
+
 
 // ============================================================================
 // Error Types
@@ -239,32 +239,34 @@ impl OAuthConfig {
         &mut self,
         settings: &VouchrsSettings,
     ) -> Result<(), String> {
-        LoggingHelper::log_oauth_provider_initialization();
+        info!("🔧 Initializing OAuth providers from configuration...");
 
         for provider_settings in &settings.providers {
             if !provider_settings.enabled {
-                LoggingHelper::log_oauth_provider_disabled(&provider_settings.name);
+                info!("⏭️  Provider {} is disabled, skipping", provider_settings.name);
                 continue;
             }
 
             match RuntimeProvider::from_settings(provider_settings.clone()).await {
                 Ok(runtime_provider) => {
                     if runtime_provider.is_configured() {
-                        LoggingHelper::log_oauth_provider_configured(
+                        info!(
+                            "✅ {} OAuth2 configured ({})",
                             provider_settings
                                 .display_name
                                 .as_deref()
                                 .unwrap_or(&provider_settings.name),
-                            &provider_settings.name,
+                            provider_settings.name
                         );
                         self.providers
                             .insert(provider_settings.name.clone(), runtime_provider);
                     } else {
-                        LoggingHelper::log_oauth_provider_not_configured(
+                        info!(
+                            "❌ {} OAuth2 not configured - missing environment variables",
                             provider_settings
                                 .display_name
                                 .as_deref()
-                                .unwrap_or(&provider_settings.name),
+                                .unwrap_or(&provider_settings.name)
                         );
                     }
                 }
@@ -280,7 +282,7 @@ impl OAuthConfig {
             return Err("No OAuth providers are configured. Please configure at least one provider in Settings.toml and set the required environment variables.".to_string());
         }
         let provider_names: Vec<_> = self.providers.keys().collect();
-        LoggingHelper::log_oauth_providers_summary(&provider_names);
+        info!("🎯 Configured OAuth providers: {provider_names:?}");
 
         Ok(())
     }
@@ -331,10 +333,9 @@ impl OAuthConfig {
             url.query_pairs_mut().append_pair(key, value);
         }
 
-        LoggingHelper::log_oauth_url_built(
-            provider,
-            &scopes,
-            &runtime_provider.settings.extra_auth_params,
+        info!(
+            "🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}",
+            provider, scopes, runtime_provider.settings.extra_auth_params
         );
 
         Ok(url.to_string())
@@ -420,7 +421,7 @@ impl OAuthConfig {
         runtime_provider: &RuntimeProvider,
         params: &HashMap<String, String>,
     ) -> Result<String, String> {
-        LoggingHelper::log_token_exchange_start(provider);
+        info!("🔄 Exchanging authorization code for tokens with {}", provider);
         
         let response = self
             .http_client
@@ -454,9 +455,11 @@ impl OAuthConfig {
     ) -> TokenExchangeResult {
         // Log the raw token response for debugging
         if provider == "apple" {
-            LoggingHelper::log_apple_token_response_raw(response_text);
+            info!("=== Raw Apple Token Response ===");
+            info!("Response text: {}", response_text);
+            info!("=== End Raw Apple Token Response ===");
         } else {
-            LoggingHelper::log_token_response_raw(provider, response_text);
+            debug!("Raw {} token response: {}", provider, response_text);
         }
 
         let token_response: TokenResponse = serde_json::from_str(response_text)
@@ -471,13 +474,12 @@ impl OAuthConfig {
         });
 
         // Log detailed information about what we extracted
-        LoggingHelper::log_token_exchange_summary(
-            provider,
-            token_response.refresh_token.as_ref(),
-            token_response.id_token.as_ref(),
-            &token_response.token_type,
-            token_response.expires_in.map(|v| i64::try_from(v).unwrap_or(3600)),
-        );
+        let refresh_status = token_response.refresh_token.as_ref().map_or("No", |_| "Yes");
+        let id_status = token_response.id_token.as_ref().map_or("No", |_| "Yes");
+        let expires_in = token_response.expires_in.map(|v| i64::try_from(v).unwrap_or(3600));
+        
+        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}", 
+            provider, refresh_status, id_status, token_response.token_type, expires_in);
 
         Ok((
             token_response.id_token,
