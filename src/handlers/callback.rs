@@ -1,17 +1,11 @@
 // OAuth callback handler
 use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_state_from_callback};
 use crate::session::SessionManager;
-use crate::utils::cookie::{create_expired_cookie, OAUTH_STATE_COOKIE};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
-use chrono::{DateTime, Utc};
 use log::{debug, error, info, warn};
 
-use crate::session_builder::SessionBuilder;
-use crate::utils::apple::{process_apple_callback, AppleUserInfo};
-
-use crate::utils::redirect_validator::validate_post_auth_redirect;
-use crate::utils::response_builder::success_redirect_with_cookies;
-use crate::utils::user_agent::extract_user_agent_info;
+use crate::session_builder::{AuthenticationData, SessionBuilder};
+use crate::utils::apple::process_apple_callback;
 
 // SessionFinalizeParams struct removed - parameters passed directly to simplify code
 
@@ -94,15 +88,19 @@ pub async fn oauth_callback(
     // Process additional Apple user info if available
     let processed_apple_info = process_apple_callback(&callback_data, apple_user_info);
 
-    // Build and complete the session
-    let result = build_and_finalize_session(
-        &req,
-        &session_manager,
-        oauth_state.provider,
+    // Build and complete the session using the SessionBuilder
+    // Create authentication data object
+    let auth_data = AuthenticationData::new(
+        &oauth_state.provider,
         id_token,
         refresh_token,
-        expires_at,
-        processed_apple_info,
+        expires_at
+    ).with_apple_info(processed_apple_info);
+    
+    let result = SessionBuilder::finalize_session(
+        &req,
+        &session_manager,
+        &auth_data,
         oauth_state.redirect_url,
     );
 
@@ -179,95 +177,4 @@ fn validate_callback(
     }
 }
 
-// Function moved to utils/apple_utils.rs
-
-/// Build session and finalize the authentication process
-fn build_and_finalize_session(
-    req: &HttpRequest,
-    session_manager: &SessionManager,
-    provider: String,
-    id_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_at: DateTime<Utc>,
-    apple_user_info: Option<AppleUserInfo>,
-    redirect_url: Option<String>,
-) -> HttpResponse {
-    // Extract client info
-    let client_ip = req
-        .connection_info()
-        .realip_remote_addr()
-        .map(std::string::ToString::to_string);
-    let user_agent_info = extract_user_agent_info(req);
-
-    // Build the session (without access token)
-    let session_result = SessionBuilder::build_session_with_apple_info(
-        provider.clone(),
-        id_token,
-        refresh_token,
-        expires_at,
-        apple_user_info,
-    );
-
-    match session_result {
-        Ok(complete_session) => {
-            info!(
-                "Successfully built session for user: {} (provider: {})",
-                complete_session.user_email, provider
-            );
-
-            // Split complete session into token data and user data
-            let session = complete_session.to_session();
-            let user_data =
-                complete_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
-
-            // Create both session and user cookies
-            let session_cookie = match session_manager.create_session_cookie(&session) {
-                Ok(cookie) => cookie,
-                Err(e) => {
-                    error!("Failed to create session cookie: {e}");
-                    let clear_cookie = session_manager.create_expired_cookie();
-                    return HttpResponse::Found()
-                        .cookie(clear_cookie)
-                        .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
-                        .finish();
-                }
-            };
-
-            let user_cookie = match session_manager.create_user_cookie(&user_data) {
-                Ok(cookie) => cookie,
-                Err(e) => {
-                    error!("Failed to create user cookie: {e}");
-                    let clear_cookie = session_manager.create_expired_cookie();
-                    return HttpResponse::Found()
-                        .cookie(clear_cookie)
-                        .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
-                        .finish();
-                }
-            };
-
-            let clear_temp_cookie = create_expired_cookie(OAUTH_STATE_COOKIE, session_manager.cookie_secure());
-            let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
-
-            // Validate the redirect URL to prevent open redirect attacks
-            let validated_redirect = validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
-                error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
-                // Fallback to safe default on validation failure
-                "/".to_string()
-            });
-
-            // Create response with multiple cookies
-            success_redirect_with_cookies(
-                &validated_redirect,
-                vec![session_cookie, user_cookie, clear_temp_cookie],
-            )
-        }
-        Err(e) => {
-            error!("Failed to build session from ID token: {e}");
-            let clear_cookie = session_manager.create_expired_cookie();
-            HttpResponse::Found()
-                .cookie(clear_cookie)
-                .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
-                .finish()
-        }
-    }
-}
+// Note: Session finalization logic has been moved to SessionBuilder::finalize_session

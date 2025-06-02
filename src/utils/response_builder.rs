@@ -117,9 +117,9 @@ pub fn forward_request_headers(
 }
 
 /// Forward query parameters
-pub fn forward_query_parameters(
+pub fn forward_query_parameters<S: ::std::hash::BuildHasher>(
     mut request_builder: reqwest::RequestBuilder,
-    query_params: &web::Query<HashMap<String, String>>,
+    query_params: &web::Query<HashMap<String, String, S>>,
 ) -> reqwest::RequestBuilder {
     if !query_params.is_empty() {
         for (key, value) in query_params.iter() {

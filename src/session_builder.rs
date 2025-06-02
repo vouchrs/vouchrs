@@ -20,9 +20,130 @@ use chrono::{DateTime, TimeZone, Utc};
 use log::{debug, info, warn};
 use serde_json::Value;
 
+/// Contains all OAuth-related data for session creation
+#[derive(Debug, Clone)]
+pub struct AuthenticationData {
+    /// OAuth provider name
+    pub provider: String,
+    /// ID token from OAuth provider
+    pub id_token: Option<String>,
+    /// Refresh token from OAuth provider
+    pub refresh_token: Option<String>,
+    /// Token expiration time
+    pub expires_at: DateTime<Utc>,
+    /// Additional user info for Apple Sign In
+    pub apple_user_info: Option<AppleUserInfo>,
+}
+
+impl AuthenticationData {
+    /// Creates a new authentication data object with the given parameters
+    pub fn new(
+        provider: &str,
+        id_token: Option<String>,
+        refresh_token: Option<String>,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            provider: provider.to_string(),
+            id_token,
+            refresh_token,
+            expires_at,
+            apple_user_info: None,
+        }
+    }
+    
+    /// Sets the Apple user info
+    pub fn with_apple_info(mut self, apple_user_info: Option<AppleUserInfo>) -> Self {
+        self.apple_user_info = apple_user_info;
+        self
+    }
+}
+
+pub struct SessionFinalizationBuilder<'a> {
+    req: &'a actix_web::HttpRequest,
+    session_manager: &'a crate::session::SessionManager,
+    auth_data: AuthenticationData,
+    redirect_url: Option<String>,
+}
+
+impl<'a> SessionFinalizationBuilder<'a> {
+    /// Creates a new session finalization builder with required parameters
+    pub fn new(
+        req: &'a actix_web::HttpRequest,
+        session_manager: &'a crate::session::SessionManager,
+        provider: &str,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            req,
+            session_manager,
+            auth_data: AuthenticationData::new(provider, None, None, expires_at),
+            redirect_url: None,
+        }
+    }
+
+    /// Sets the ID token for the session
+    pub fn with_id_token(mut self, id_token: Option<String>) -> Self {
+        self.auth_data.id_token = id_token;
+        self
+    }
+
+    /// Sets the refresh token for the session
+    pub fn with_refresh_token(mut self, refresh_token: Option<String>) -> Self {
+        self.auth_data.refresh_token = refresh_token;
+        self
+    }
+
+    /// Sets the Apple user info for the session
+    pub fn with_apple_user_info(mut self, apple_user_info: Option<AppleUserInfo>) -> Self {
+        self.auth_data.apple_user_info = apple_user_info;
+        self
+    }
+
+    /// Sets the redirect URL for after authentication
+    pub fn with_redirect_url(mut self, redirect_url: Option<String>) -> Self {
+        self.redirect_url = redirect_url;
+        self
+    }
+
+    /// Finalizes the session and returns an HTTP response with session cookies
+    pub fn finalize(self) -> actix_web::HttpResponse {
+        SessionBuilder::finalize_session(
+            self.req,
+            self.session_manager,
+            &self.auth_data,
+            self.redirect_url,
+        )
+    }
+}
+
 pub struct SessionBuilder;
 
 impl SessionBuilder {
+    /// Example method showing how to use the SessionFinalizationBuilder
+    /// 
+    /// # Example
+    /// 
+    /// ```rust,ignore
+    /// let response = SessionBuilder::finalize_session_with_builder(
+    ///     req,
+    ///     session_manager,
+    ///     "google",
+    ///     expires_at
+    /// )
+    /// .with_id_token(Some(id_token))
+    /// .with_refresh_token(Some(refresh_token))
+    /// .finalize();
+    /// ```
+    pub fn finalize_session_with_builder<'a>(
+        req: &'a actix_web::HttpRequest,
+        session_manager: &'a crate::session::SessionManager,
+        provider: &str,
+        expires_at: DateTime<Utc>,
+    ) -> SessionFinalizationBuilder<'a> {
+        SessionFinalizationBuilder::new(req, session_manager, provider, expires_at)
+    }
+    
     /// Creates a `CompleteSessionData` from OAuth tokens, extracting standard claims from the ID token
     /// and using Apple user info to fill in missing fields if available
     ///
@@ -222,6 +343,124 @@ impl SessionBuilder {
 
         // Fall back to the provider passed in from the state
         provider.to_string()
+    }
+
+    /// Extract client information from the request
+    fn extract_client_info(req: &actix_web::HttpRequest) -> (Option<String>, crate::utils::user_agent::UserAgentInfo) {
+        use crate::utils::user_agent::extract_user_agent_info;
+        
+        let client_ip = req
+            .connection_info()
+            .realip_remote_addr()
+            .map(std::string::ToString::to_string);
+        
+        let user_agent_info = extract_user_agent_info(req);
+        
+        (client_ip, user_agent_info)
+    }
+    
+    /// Create error response for session building failures
+    fn create_error_response(session_manager: &crate::session::SessionManager, error_msg: &str) -> actix_web::HttpResponse {
+        use log::error;
+        
+        error!("{}", error_msg);
+        let clear_cookie = session_manager.create_expired_cookie();
+        actix_web::HttpResponse::Found()
+            .cookie(clear_cookie)
+            .append_header(("Location", "/oauth2/sign_in?error=session_build_error"))
+            .finish()
+    }
+
+    /// Finalizes a session and creates an HTTP response with session cookies
+    /// 
+    /// This method encapsulates the complete session finalization process:
+    /// 1. Builds the session from OAuth tokens
+    /// 2. Creates session and user cookies
+    /// 3. Validates redirect URL
+    /// 4. Returns HttpResponse with all cookies
+    /// 
+    /// # Arguments
+    /// 
+    /// * `req` - HTTP request for extracting client info
+    /// * `session_manager` - Session manager for cookie creation
+    /// * `provider` - OAuth provider name
+    /// * `id_token` - Optional ID token from OAuth provider
+    /// * `refresh_token` - Optional refresh token from OAuth provider
+    /// * `expires_at` - Token expiration time
+    /// * `apple_user_info` - Optional Apple user info (for Apple Sign In)
+    /// * `redirect_url` - Optional URL to redirect to after successful authentication
+    pub fn finalize_session(
+        req: &actix_web::HttpRequest,
+        session_manager: &crate::session::SessionManager,
+        auth_data: &AuthenticationData,
+        redirect_url: Option<String>,
+    ) -> actix_web::HttpResponse {
+        use crate::utils::cookie::{create_expired_cookie, OAUTH_STATE_COOKIE};
+        use crate::utils::redirect_validator::validate_post_auth_redirect;
+        use crate::utils::response_builder::success_redirect_with_cookies;
+
+        // Extract client info
+        let (client_ip, user_agent_info) = Self::extract_client_info(req);
+
+        // Build the session (without access token)
+        let session_result = Self::build_session_with_apple_info(
+            auth_data.provider.to_string(),
+            auth_data.id_token.clone(),
+            auth_data.refresh_token.clone(),
+            auth_data.expires_at,
+            auth_data.apple_user_info.clone(),
+        );
+
+        match session_result {
+            Ok(complete_session) => {
+                info!(
+                    "Successfully built session for user: {} (provider: {})",
+                    complete_session.user_email, auth_data.provider
+                );
+
+                // Split complete session into token data and user data
+                let session = complete_session.to_session();
+                let user_data =
+                    complete_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
+
+                // Create both session and user cookies
+                let session_cookie = match session_manager.create_session_cookie(&session) {
+                    Ok(cookie) => cookie,
+                    Err(e) => {
+                        let error_msg = format!("Failed to create session cookie: {e}");
+                        return Self::create_error_response(session_manager, &error_msg);
+                    }
+                };
+
+                let user_cookie = match session_manager.create_user_cookie(&user_data) {
+                    Ok(cookie) => cookie,
+                    Err(e) => {
+                        let error_msg = format!("Failed to create user cookie: {e}");
+                        return Self::create_error_response(session_manager, &error_msg);
+                    }
+                };
+
+                let clear_temp_cookie = create_expired_cookie(OAUTH_STATE_COOKIE, session_manager.cookie_secure());
+                let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
+
+                // Validate the redirect URL to prevent open redirect attacks
+                let validated_redirect = validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
+                    log::error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
+                    // Fallback to safe default on validation failure
+                    "/".to_string()
+                });
+
+                // Create response with multiple cookies
+                success_redirect_with_cookies(
+                    &validated_redirect,
+                    vec![session_cookie, user_cookie, clear_temp_cookie],
+                )
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to build session from ID token: {e}");
+                Self::create_error_response(session_manager, &error_msg)
+            }
+        }
     }
 }
 

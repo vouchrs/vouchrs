@@ -35,7 +35,7 @@ fn generate_test_session_secret() -> String {
     general_purpose::STANDARD.encode(secret)
 }
 
-/// Create a test SessionManager from provided settings
+/// Create a test `SessionManager` from provided settings
 #[must_use]
 pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> SessionManager {
     SessionManager::new(
