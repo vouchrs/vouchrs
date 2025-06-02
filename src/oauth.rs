@@ -4,6 +4,7 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::env;
+use std::time::Duration;
 
 // Third-party imports
 use actix_web::HttpResponse;
@@ -221,10 +222,19 @@ impl OAuthConfig {
         let redirect_base_url =
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
+        // Create an optimized HTTP client with connection pooling
+        let http_client = reqwest::Client::builder()
+            .pool_max_idle_per_host(10)           // Keep up to 10 idle connections per host
+            .pool_idle_timeout(Duration::from_secs(90))  // Keep connections alive for 90 seconds
+            .timeout(Duration::from_secs(30))     // 30 second request timeout
+            .connect_timeout(Duration::from_secs(10))    // 10 second connection timeout
+            .build()
+            .expect("Failed to create HTTP client");
+
         Self {
             providers: HashMap::new(),
             redirect_base_url,
-            http_client: reqwest::Client::new(),
+            http_client,
         }
     }
 
@@ -374,7 +384,7 @@ impl OAuthConfig {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or_else(|| format!("Provider {provider} not configured"))?;
+            .ok_or("Provider not configured")?;
 
         // Prepare token exchange parameters
         let params = self.prepare_token_exchange_params(provider, code, runtime_provider)?;
@@ -389,11 +399,15 @@ impl OAuthConfig {
     /// Prepare parameters for token exchange request
     fn prepare_token_exchange_params(
         &self,
-        provider: &str,
+        _provider: &str,
         code: &str,
         runtime_provider: &RuntimeProvider,
     ) -> Result<HashMap<String, String>, String> {
-        let redirect_uri = format!("{}/oauth2/callback", self.redirect_base_url);
+        // Pre-allocate redirect URI string to avoid format! allocation
+        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
+        redirect_uri.push_str(&self.redirect_base_url);
+        redirect_uri.push_str("/oauth2/callback");
+        
         let mut params = HashMap::new();
         
         // Basic OAuth parameters
@@ -405,7 +419,7 @@ impl OAuthConfig {
         let client_id = runtime_provider
             .settings
             .get_client_id()
-            .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
+            .ok_or("Client ID not configured for provider")?;
 
         params.insert("client_id".to_string(), client_id);
 
@@ -418,7 +432,7 @@ impl OAuthConfig {
             let client_id = runtime_provider
                 .settings
                 .get_client_id()
-                .ok_or_else(|| format!("Client ID not configured for provider {provider}"))?;
+                .ok_or("Client ID not configured for provider")?;
             let client_secret = crate::utils::apple::generate_jwt_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret".to_string(), client_secret);
         } else {

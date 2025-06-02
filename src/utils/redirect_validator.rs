@@ -4,6 +4,53 @@ use log::{debug, warn};
 // Pre-serialized JSON error responses for performance
 const INVALID_REDIRECT_JSON: &str = r#"{"error":"invalid_redirect","error_description":"The redirect URL is invalid or potentially unsafe"}"#;
 
+// Static pattern arrays for optimal performance
+const ENCODED_CONTROL_PATTERNS: &[(&str, &str)] = &[
+    ("%0a", "%0A"), ("%0d", "%0D"), ("%09", "%09"), // newline, carriage return, tab
+    ("%01", "%01"), ("%02", "%02"), ("%03", "%03"), ("%04", "%04"), // Other control chars
+    ("%05", "%05"), ("%06", "%06"), ("%07", "%07"), ("%08", "%08"),
+    ("%0b", "%0B"), ("%0c", "%0C"), ("%0e", "%0E"), ("%0f", "%0F"),
+];
+
+const PATH_TRAVERSAL_PATTERNS: &[(&str, &str)] = &[
+    ("%2e%2e", "%2E%2E"), // ..
+    ("%2e%2e%2f", "%2E%2E%2F"), // ../
+    ("%2e%2e%5c", "%2E%2E%5C"), // ..\
+    ("%252e%252e", "%252E%252E"), // Double-encoded ..
+    ("%c0%ae", "%c0%ae"), ("%c1%9c", "%c1%9c"), // Unicode encoding tricks (case-sensitive)
+    ("%5c", "%5C"), // \
+    ("%252f", "%252F"), // Double-encoded /
+    ("%255c", "%255C"), // Double-encoded \
+];
+
+const DOUBLE_SLASH_PATTERNS: &[(&str, &str)] = &[
+    ("%2f%2f", "%2F%2F"), // //
+    ("%252f%252f", "%252F%252F"), // Double-encoded //
+    ("%2f%252f", "%252f%2f"), // Mixed encoding (case-sensitive for mixed)
+    ("/%2f", "/%2F"), // Leading to //
+    ("%5c%5c", "%5C%5C"), // \\
+];
+
+const DANGEROUS_PROTOCOLS: &[&str] = &[
+    "javascript:", "data:", "vbscript:", "file:", "about:",
+    "chrome:", "chrome-extension:", "ms-browser-extension:",
+    "opera:", "brave:", "edge:",
+];
+
+const ENCODED_PROTOCOLS: &[&str] = &[
+    "%6a%61%76%61%73%63%72%69%70%74%3a", // javascript:
+    "%64%61%74%61%3a", // data:
+    "&#106;&#97;&#118;&#97;&#115;&#99;&#114;&#105;&#112;&#116;&#58;", // HTML entity encoded javascript:
+    "\\x6A\\x61\\x76\\x61\\x73\\x63\\x72\\x69\\x70\\x74\\x3A", // Hex escaped javascript:
+];
+
+const REDIRECT_PARAM_NAMES: &[&str] = &[
+    "redirect", "redirect_uri", "redirect_url", "return", "returnurl",
+    "return_url", "returnto", "return_to", "next", "goto", "target",
+    "destination", "dest", "continue", "url", "link", "ref",
+    "callback", "callback_url", "success_url", "failure_url",
+];
+
 /// Validate post-authentication redirect URLs to prevent open redirect attacks
 /// Balanced approach between security and simplicity
 /// 
@@ -101,14 +148,7 @@ fn contains_dangerous_characters(url: &str) -> bool {
     }
     
     // Encoded control chars - check both cases without allocation
-    let encoded_patterns = [
-        ("%0a", "%0A"), ("%0d", "%0D"), ("%09", "%09"), // newline, carriage return, tab
-        ("%01", "%01"), ("%02", "%02"), ("%03", "%03"), ("%04", "%04"), // Other control chars
-        ("%05", "%05"), ("%06", "%06"), ("%07", "%07"), ("%08", "%08"),
-        ("%0b", "%0B"), ("%0c", "%0C"), ("%0e", "%0E"), ("%0f", "%0F"),
-    ];
-    
-    for (lower_pattern, upper_pattern) in &encoded_patterns {
+    for (lower_pattern, upper_pattern) in ENCODED_CONTROL_PATTERNS {
         if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
@@ -143,18 +183,7 @@ fn contains_path_traversal(url: &str) -> bool {
     }
     
     // Check URL-encoded variants - check both cases without allocation
-    let encoded_patterns = [
-        ("%2e%2e", "%2E%2E"), // ..
-        ("%2e%2e%2f", "%2E%2E%2F"), // ../
-        ("%2e%2e%5c", "%2E%2E%5C"), // ..\
-        ("%252e%252e", "%252E%252E"), // Double-encoded ..
-        ("%c0%ae", "%c0%ae"), ("%c1%9c", "%c1%9c"), // Unicode encoding tricks (case-sensitive)
-        ("%5c", "%5C"), // \
-        ("%252f", "%252F"), // Double-encoded /
-        ("%255c", "%255C"), // Double-encoded \
-    ];
-    
-    for (lower_pattern, upper_pattern) in &encoded_patterns {
+    for (lower_pattern, upper_pattern) in PATH_TRAVERSAL_PATTERNS {
         if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
@@ -165,15 +194,7 @@ fn contains_path_traversal(url: &str) -> bool {
 
 /// Check for encoded slashes that could create //
 fn contains_encoded_double_slash(url: &str) -> bool {
-    let patterns = [
-        ("%2f%2f", "%2F%2F"), // //
-        ("%252f%252f", "%252F%252F"), // Double-encoded //
-        ("%2f%252f", "%252f%2f"), // Mixed encoding (case-sensitive for mixed)
-        ("/%2f", "/%2F"), // Leading to //
-        ("%5c%5c", "%5C%5C"), // \\
-    ];
-    
-    for (lower_pattern, upper_pattern) in &patterns {
+    for (lower_pattern, upper_pattern) in DOUBLE_SLASH_PATTERNS {
         if url.contains(lower_pattern) || url.contains(upper_pattern) {
             return true;
         }
@@ -190,31 +211,18 @@ fn contains_encoded_double_slash(url: &str) -> bool {
 
 /// Check for protocol injection attempts
 fn contains_protocol_injection(url: &str) -> bool {
-    let protocols = [
-        "javascript:", "data:", "vbscript:", "file:", "about:",
-        "chrome:", "chrome-extension:", "ms-browser-extension:",
-        "opera:", "brave:", "edge:",
-    ];
-    
     // Single allocation for case-insensitive comparison
     let url_lower = url.to_ascii_lowercase();
     
     // Direct protocol check
-    for protocol in &protocols {
+    for protocol in DANGEROUS_PROTOCOLS {
         if url_lower.contains(protocol) {
             return true;
         }
     }
     
     // Check for encoded protocols (these are case-sensitive)
-    let encoded_protocols = [
-        "%6a%61%76%61%73%63%72%69%70%74%3a", // javascript:
-        "%64%61%74%61%3a", // data:
-        "&#106;&#97;&#118;&#97;&#115;&#99;&#114;&#105;&#112;&#116;&#58;", // HTML entity encoded javascript:
-        "\\x6A\\x61\\x76\\x61\\x73\\x63\\x72\\x69\\x70\\x74\\x3A", // Hex escaped javascript:
-    ];
-    
-    for encoded_protocol in &encoded_protocols {
+    for encoded_protocol in ENCODED_PROTOCOLS {
         if url_lower.contains(encoded_protocol) {
             return true;
         }
@@ -225,20 +233,12 @@ fn contains_protocol_injection(url: &str) -> bool {
 
 /// Check for redirect parameters in query string
 fn contains_redirect_in_query(url: &str) -> bool {
-    // Common redirect parameter names
-    let redirect_params = [
-        "redirect", "redirect_uri", "redirect_url", "return", "returnurl",
-        "return_url", "returnto", "return_to", "next", "goto", "target",
-        "destination", "dest", "continue", "url", "link", "ref",
-        "callback", "callback_url", "success_url", "failure_url",
-    ];
-    
     // Check if URL has query string
     if let Some(query_start) = url.find('?') {
         let query_part = &url[query_start + 1..];
         let query_lower = query_part.to_ascii_lowercase();
         
-        for param in &redirect_params {
+        for param in REDIRECT_PARAM_NAMES {
             // Check for parameter=value pattern
             let patterns = [
                 format!("{param}="),
