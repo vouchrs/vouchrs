@@ -7,16 +7,6 @@ pub const COOKIE_NAME: &str = "vouchrs_session";
 pub const USER_COOKIE_NAME: &str = "vouchrs_user";
 pub const OAUTH_STATE_COOKIE: &str = "vouchr_oauth_state";
 
-/// Trait for converting objects to cookies
-pub trait ToCookie<T> {
-    /// Convert self to a cookie with provided name using `SessionManager` for encryption
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if the cookie creation fails (e.g., encryption failure)
-    fn to_cookie(&self, manager: &T) -> Result<Cookie<'static>>;
-}
-
 /// Options for cookie creation
 pub struct CookieOptions {
     pub http_only: bool,
