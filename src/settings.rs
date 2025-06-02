@@ -459,6 +459,14 @@ impl JwtSigningConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+
+    // Helper function to clean all relevant environment variables for tests
+    fn clean_env_vars() {
+        std::env::remove_var("SESSION_SECRET");
+        std::env::remove_var("SESSION_DURATION_HOURS");
+        std::env::remove_var("VOUCHRS_SECRETS_DIR");
+    }
 
     #[test]
     fn test_session_secret_configuration() {
@@ -469,7 +477,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_session_secret_env_override() {
+        // Make sure the environment is clean
+        clean_env_vars();
+
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "default-secret".to_string(),
@@ -488,7 +500,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_session_duration_env_override() {
+        // Make sure the environment is clean
+        clean_env_vars();
+
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
@@ -504,11 +520,15 @@ mod tests {
         assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
 
         // Clean up
-        std::env::remove_var("SESSION_DURATION_HOURS");
+        clean_env_vars();
     }
 
     #[test]
+    #[serial]
     fn test_session_env_override() {
+        // Make sure the environment is clean
+        clean_env_vars();
+
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
@@ -518,10 +538,15 @@ mod tests {
         VouchrsSettings::apply_session_env_overrides(&mut session_settings);
 
         assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
+        
+        clean_env_vars();
     }
 
     #[test]
+    #[serial]
     fn test_settings_dir_precedence() {
+        clean_env_vars();
+        
         // Setup temp dirs for testing
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path();
@@ -561,10 +586,15 @@ session_secret = "secrets-secret-key"
         // Add a proper integration test that would validate this behavior in a controlled environment
         // For now, we'll just document how it should work
         println!("Note: Full precedence testing requires integration tests with file path control");
+        
+        clean_env_vars();
     }
 
     #[test]
+    #[serial]
     fn test_vouchrs_secrets_dir_precedence() {
+        clean_env_vars();
+        
         // This is a conceptual test illustrating the expected behavior
         // of the settings precedence. A full integration test would require
         // more control over the file system.
@@ -596,11 +626,15 @@ session_secret = "secrets-secret-key"
         assert_eq!(settings_with_env.session.session_secret, "env-secret-key");
 
         // Clean up
-        std::env::remove_var("SESSION_SECRET");
+        clean_env_vars();
     }
 
     #[test]
+    #[serial]
     fn test_session_secret_auto_generation() {
+        // Make sure the environment is clean
+        clean_env_vars();
+        
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(), // Empty, should trigger auto-generation
@@ -622,5 +656,7 @@ session_secret = "secrets-secret-key"
         
         // Should be different each time
         assert_ne!(session_settings.session_secret, session_settings2.session_secret);
+        
+        clean_env_vars();
     }
 }
