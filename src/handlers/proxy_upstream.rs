@@ -82,30 +82,8 @@ async fn execute_upstream_request(
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
-    // Forward headers (excluding Authorization, Cookie with `vouchrs_session`, and hop-by-hop headers)
-    for (name, value) in req.headers() {
-        let name_str = name.as_str().to_lowercase();
-
-        // Skip authorization and hop-by-hop headers
-        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
-            continue;
-        }
-
-        // Special handling for cookies
-        if name_str == "cookie" {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
-                }
-            }
-            continue;
-        }
-
-        // Add other headers
-        if let Ok(value_str) = value.to_str() {
-            request_builder = request_builder.header(name.as_str(), value_str);
-        }
-    }
+    // Forward headers 
+    request_builder = forward_request_headers(req, request_builder);
 
     // Forward query parameters
     if !query_params.is_empty() {
@@ -227,7 +205,52 @@ fn extract_session_from_request(
     )), Ok)
 }
 
-// is_hop_by_hop_header function has been moved to utils::response_builder
+/// Forward request headers to upstream, filtering out restricted headers
+/// 
+/// This function handles:
+/// - Skipping authorization headers (handled separately by auth)
+/// - Skipping hop-by-hop headers (not meant for upstream)
+/// - Filtering `vouchrs_session` from cookies
+/// - Converting header values to strings safely
+/// 
+/// # Arguments
+/// 
+/// * `req` - The incoming HTTP request
+/// * `request_builder` - The reqwest `RequestBuilder` to add headers to
+/// 
+/// # Returns
+/// 
+/// The updated `RequestBuilder` with forwarded headers
+fn forward_request_headers(
+    req: &HttpRequest,
+    mut request_builder: reqwest::RequestBuilder,
+) -> reqwest::RequestBuilder {
+    for (name, value) in req.headers() {
+        let name_str = name.as_str().to_lowercase();
+
+        // Skip authorization and hop-by-hop headers
+        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
+            continue;
+        }
+
+        // Special handling for cookies
+        if name_str == "cookie" {
+            if let Ok(cookie_str) = value.to_str() {
+                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
+                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
+                }
+            }
+            continue;
+        }
+
+        // Add other headers
+        if let Ok(value_str) = value.to_str() {
+            request_builder = request_builder.header(name.as_str(), value_str);
+        }
+    }
+
+    request_builder
+}
 
 #[cfg(test)]
 mod tests {
@@ -289,46 +312,72 @@ mod tests {
             "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
         let req = TestRequestBuilder::with_cookies(cookies);
 
-        // Create a reqwest RequestBuilder
+        // Create a reqwest RequestBuilder and apply header forwarding
         let client = Client::new();
         let request_builder = client.get("http://example.com");
+        let modified_builder = apply_header_forwarding_for_test(&req, request_builder);
 
-        // Apply header forwarding using inline logic
-        let mut modified_builder = request_builder;
+        // Convert to request and check headers
+        let request = modified_builder.build().expect("Failed to build request");
+        let headers = request.headers();
+
+        // Verify cookie filtering
+        verify_cookie_filtering(headers);
+    }
+
+    /// Helper function to apply header forwarding logic for testing
+    fn apply_header_forwarding_for_test(
+        req: &HttpRequest,
+        mut request_builder: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
         for (name, value) in req.headers() {
             let name_str = name.as_str().to_lowercase();
 
             // Skip authorization and hop-by-hop headers
-            if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
+            if should_skip_header(&name_str) {
                 continue;
             }
 
-            // Special handling for cookies
+            // Handle cookie filtering
             if name_str == "cookie" {
-                if let Ok(cookie_str) = value.to_str() {
-                    if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                        modified_builder = modified_builder.header(name.as_str(), filtered_cookie);
-                    }
-                }
+                request_builder = handle_cookie_header(value, request_builder, &name_str);
                 continue;
             }
 
             // Add other headers
             if let Ok(value_str) = value.to_str() {
-                modified_builder = modified_builder.header(name.as_str(), value_str);
+                request_builder = request_builder.header(name.as_str(), value_str);
             }
         }
+        request_builder
+    }
 
-        // Since we can't inspect the actual headers directly in the builder,
-        // we need to convert it to a request and check the headers
-        let request = modified_builder.build().expect("Failed to build request");
-        let headers = request.headers();
+    /// Check if header should be skipped
+    fn should_skip_header(name_str: &str) -> bool {
+        name_str == "authorization" || is_hop_by_hop_header(name_str)
+    }
 
-        // Check that the Cookie header exists but doesn't contain vouchrs_session
+    /// Handle cookie header filtering
+    fn handle_cookie_header(
+        value: &actix_web::http::header::HeaderValue,
+        mut request_builder: reqwest::RequestBuilder,
+        name_str: &str,
+    ) -> reqwest::RequestBuilder {
+        if let Ok(cookie_str) = value.to_str() {
+            if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
+                request_builder = request_builder.header(name_str, filtered_cookie);
+            }
+        }
+        request_builder
+    }
+
+    /// Verify that cookie filtering worked correctly
+    fn verify_cookie_filtering(headers: &reqwest::header::HeaderMap) {
         if let Some(cookie_header) = headers.get(reqwest::header::COOKIE) {
             let cookie_str = cookie_header
                 .to_str()
                 .expect("Failed to convert cookie header to string");
+            
             assert!(
                 !cookie_str.contains("vouchrs_session="),
                 "Cookie header should not contain vouchrs_session"
