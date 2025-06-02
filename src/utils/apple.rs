@@ -23,18 +23,6 @@ pub struct AppleUserName {
     pub last_name: Option<String>,
 }
 
-impl AppleUserName {
-    /// Get the full name by concatenating first and last name with a space
-    #[must_use]
-    pub fn full_name(&self) -> String {
-        format!(
-            "{} {}",
-            self.first_name.as_deref().unwrap_or(""),
-            self.last_name.as_deref().unwrap_or("")
-        )
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppleUserInfo {
     pub name: AppleUserName,
