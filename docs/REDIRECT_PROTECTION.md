@@ -149,12 +149,12 @@ pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, 
 
 ## Conclusion
 
-Our redirect protection implementation focuses on where open redirect vulnerabilities actually matter - user-controlled post-authentication redirects. By combining:
+The redirect protection implementation focuses on where open redirect vulnerabilities actually matter - user-controlled post-authentication redirects. Key features include:
 
-1. **Focused Protection Scope**: Target user-controlled redirects while simplifying admin-controlled URL handling
+1. **Focused Protection Scope**: Targets user-controlled redirects while simplifying admin-controlled URL handling
 2. **Layered Validation**: Multi-stage security checks for maximum protection
 3. **Comprehensive Attack Coverage**: Protection against 692+ known attack vectors
 4. **Performance Optimization**: Fast pattern matching with early returns
 5. **Modern Security Principles**: Clear separation between trusted and untrusted inputs
 
-This approach ensures robust security against actual open redirect attack vectors while maintaining high performance and code clarity. The security policy change from protecting all URLs to focusing on user-controlled post-authentication redirects provides better security with improved maintainability.
+This approach ensures robust security against actual open redirect attack vectors while maintaining high performance and code clarity.

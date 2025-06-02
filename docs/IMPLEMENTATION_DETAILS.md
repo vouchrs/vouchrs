@@ -100,19 +100,16 @@ private_key_path_env = "APPLE_PRIVATE_KEY_PATH"
 - **Benefit**: Automatic updates when providers change endpoints
 
 #### 3. **Flexibility**
-- **Before**: Fixed scopes and parameters per provider
-- **After**: Fully customizable scopes and authentication parameters
-- **Use Case**: Different deployments can request different permissions
+- Fully customizable scopes and authentication parameters
+- Different deployments can request different permissions as needed
 
 #### 4. **Security**
-- **Before**: Hardcoded environment variable names
-- **After**: Configurable environment variable mapping
-- **Benefit**: Support for different credential storage strategies
+- Configurable environment variable mapping
+- Support for different credential storage strategies
 
 #### 5. **User Experience**
-- **Before**: Static sign-in page with fixed providers
-- **After**: Dynamic page generation based on enabled providers
-- **Result**: Consistent UI regardless of provider configuration
+- Dynamic page generation based on enabled providers
+- Consistent UI regardless of provider configuration
 
 ### Deployment Compatibility
 
@@ -145,7 +142,7 @@ Vouchrs creates and injects custom JWTs instead of using the OAuth provider's `i
 - Maintained minimal dependency approach with lightweight library
 
 #### 3. **Modified API Proxy** (`src/api_proxy.rs`)
-- **Breaking Change**: Replaced provider's `id_token` injection with custom vouchr JWT
+- Replaced provider's `id_token` injection with custom vouchr JWT
 - Updated `execute_upstream_request()` function signature to accept session and settings
 - Added proper error handling for JWT creation failures
 - Added comprehensive tests for JWT creation in proxy context
@@ -282,24 +279,24 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - Comprehensive JWT creation and validation tests
 - Client IP and user agent extraction tests
 
-## Migration Guide
+## Implementation Details
 
-### ⚠️ Breaking Changes
+### Custom JWT Format
 
-**Custom JWT Implementation**: Upstream APIs that currently expect provider-specific JWTs will need to be updated to handle the new vouchr JWT format.
+**Custom JWT Implementation**: Vouchrs uses a custom JWT format that upstream APIs need to be configured to handle.
 
-### Migration Steps
+### Integration Requirements
 
-1. **Update JWT Validation**: Change upstream API JWT validation to expect HS256 (HMAC-SHA256) instead of RS256 (RSA)
-2. **Update Claims**: Update claim extraction to use standardized vouchr claim names
-3. **Verify Signature**: Ensure JWT signature validation uses the same secret configured in vouchr's `SESSION_SECRET`
-4. **Handle Optional Claims**: Handle optional `client_ip` claim for security auditing and rate limiting features
-5. **Utilize New Claims**: Use new user agent claims (`user_agent`, `platform`, `lang`, `mobile`) for analytics and personalization
+1. **JWT Validation**: Configure upstream API JWT validation to expect HS256 (HMAC-SHA256)
+2. **Claims Mapping**: Extract user information using standardized vouchr claim names
+3. **Signature Verification**: Ensure JWT signature validation uses the same secret configured in vouchr's `SESSION_SECRET`
+4. **Optional Claims**: Handle optional `client_ip` claim for security auditing and rate limiting features
+5. **User Agent Claims**: Use user agent claims (`user_agent`, `platform`, `lang`, `mobile`) for analytics and personalization
 
-### Deployment Compatibility
+### Deployment Options
 
-- **Immediate**: No action required for basic functionality, defaults provide same authentication behavior
-- **Optional**: Add `Settings.toml` for custom provider configurations
+- **Basic**: Default configuration provides standard authentication behavior
+- **Customized**: Add `Settings.toml` for custom provider configurations
 - **Advanced**: Enable additional providers like Microsoft through configuration
 
 ## Future Enhancements

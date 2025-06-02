@@ -176,5 +176,3 @@ fn validate_callback(
         }
     }
 }
-
-// Note: Session finalization logic has been moved to SessionBuilder::finalize_session

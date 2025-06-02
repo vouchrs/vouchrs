@@ -5,7 +5,7 @@ use crate::utils::crypto::{derive_encryption_key, encrypt_data, decrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 
 // Custom error wrapper for ResponseError implementation
 #[derive(Debug)]
@@ -308,32 +308,6 @@ impl SessionManager {
             .path(options.path)
             .max_age(options.max_age)
             .finish())
-    }
-
-    /// Generic encryption function for any serializable data
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - AES encryption fails
-    #[deprecated(note = "Use utils::crypto::encrypt_data() directly with SessionManager::encryption_key()")]
-    pub fn encrypt_data<T: Serialize>(&self, data: &T) -> Result<String> {
-        encrypt_data(data, &self.encryption_key)
-    }
-
-    /// Generic decryption function for any deserializable data
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if:
-    /// - Base64 decoding fails
-    /// - Data length is invalid
-    /// - AES decryption fails
-    /// - Deserialization fails
-    #[deprecated(note = "Use utils::crypto::decrypt_data() directly with SessionManager::encryption_key()")]
-    pub fn decrypt_data<T: DeserializeOwned>(&self, encrypted_data: &str) -> Result<T> {
-        decrypt_data(encrypted_data, &self.encryption_key)
     }
 }
 

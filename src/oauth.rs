@@ -217,6 +217,10 @@ impl Default for OAuthConfig {
 
 impl OAuthConfig {
     /// Create a new OAuth configuration
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the HTTP client cannot be created due to invalid configuration.
     #[must_use]
     pub fn new() -> Self {
         let redirect_base_url =
@@ -333,7 +337,7 @@ impl OAuthConfig {
         redirect_uri.push_str("/oauth2/callback");
 
         // Pre-allocate scopes string with estimated capacity
-        let total_scope_len: usize = runtime_provider.settings.scopes.iter().map(|s| s.len()).sum();
+        let total_scope_len: usize = runtime_provider.settings.scopes.iter().map(std::string::String::len).sum();
         let scope_separators = runtime_provider.settings.scopes.len().saturating_sub(1);
         let mut scopes = String::with_capacity(total_scope_len + scope_separators);
         for (i, scope) in runtime_provider.settings.scopes.iter().enumerate() {
@@ -709,10 +713,10 @@ pub fn get_state_from_callback(
 ) -> Result<crate::oauth::OAuthState, String> {
     debug!("Received OAuth state parameter: length = {} characters", received_state.len());
 
-    // First, try to get the stored OAuth state from temporary cookie (legacy compatibility)
+    // First, try to get the stored OAuth state from temporary cookie
     match session_manager.get_temporary_state_from_request(req) {
         Ok(Some(stored_state)) => {
-            // For legacy cookie-based state, verify the received state matches the stored CSRF token
+            // For cookie-based state, verify the received state matches the stored CSRF token
             if stored_state.state == received_state {
                 debug!(
                     "OAuth state verified: stored state matches received state for provider {}",
