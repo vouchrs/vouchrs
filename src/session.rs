@@ -6,7 +6,6 @@ use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::{de::DeserializeOwned, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // Custom error wrapper for ResponseError implementation
 #[derive(Debug)]
@@ -57,6 +56,12 @@ impl SessionManager {
         }
     }
 
+    /// Get reference to encryption key for direct use with crypto utils
+    #[must_use]
+    pub fn encryption_key(&self) -> &[u8] {
+        &self.encryption_key
+    }
+
     /// Create an encrypted session cookie from `VouchrsSession` (token data only)
     /// 
     /// # Errors
@@ -89,7 +94,7 @@ impl SessionManager {
             .value()
             .to_string();
 
-        let session: VouchrsSession = self.decrypt_data(&cookie_value)?;
+        let session: VouchrsSession = decrypt_data(&cookie_value, &self.encryption_key)?;
 
         // Check if tokens are expired
         if session.expires_at <= Utc::now() {
@@ -107,17 +112,13 @@ impl SessionManager {
         session.expires_at <= now + buffer_time
     }
 
-    /// Create a sign-out cookie (empty with immediate expiration)
+    /// Get the cookie secure setting
     #[must_use]
-    pub fn create_signout_cookie(&self) -> Cookie {
-        Cookie::build(COOKIE_NAME, "")
-            .http_only(true)
-            .secure(self.cookie_secure)
-            .same_site(actix_web::cookie::SameSite::Lax)
-            .path("/")
-            .max_age(actix_web::cookie::time::Duration::seconds(0))
-            .finish()
+    pub const fn cookie_secure(&self) -> bool {
+        self.cookie_secure
     }
+
+
 
     /// Create an expired cookie to clear the session
     #[must_use]
@@ -176,7 +177,7 @@ impl SessionManager {
                 "Found temporary state cookie with value length: {}",
                 cookie.value().len()
             );
-            match self.decrypt_data::<OAuthState>(cookie.value()) {
+            match decrypt_data::<OAuthState>(cookie.value(), &self.encryption_key) {
                 Ok(oauth_state) => Ok(Some(oauth_state)),
                 Err(e) => {
                     log::warn!("Failed to decrypt OAuth state cookie: {e}");
@@ -193,7 +194,7 @@ impl SessionManager {
     /// Returns an error if decryption fails (expired sessions return None)
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
         if let Some(cookie) = req.cookie(COOKIE_NAME) {
-            match self.decrypt_data::<VouchrsSession>(cookie.value()) {
+            match decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key) {
                 Ok(session) => {
                     // Check if session has expired
                     if session.expires_at <= Utc::now() {
@@ -217,12 +218,6 @@ impl SessionManager {
         }
     }
 
-    /// Create an expired temporary state cookie to clear it
-    #[must_use]
-    pub fn create_expired_temp_state_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie::create_expired_cookie(crate::utils::cookie::OAUTH_STATE_COOKIE, self.cookie_secure)
-    }
-
     /// Decrypt and validate session from cookie value
     /// 
     /// # Errors
@@ -231,7 +226,7 @@ impl SessionManager {
     /// - Decryption fails
     /// - Session has expired
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
-        let session: VouchrsSession = self.decrypt_data(cookie_value)?;
+        let session: VouchrsSession = decrypt_data(cookie_value, &self.encryption_key)?;
 
         // Check if session has expired
         if session.expires_at <= Utc::now() {
@@ -272,7 +267,7 @@ impl SessionManager {
             .value()
             .to_string();
 
-        self.decrypt_data(&cookie_value)
+        decrypt_data(&cookie_value, &self.encryption_key)
     }
 
     /// Get user data from HTTP request cookies (returns None if not found)
@@ -281,19 +276,13 @@ impl SessionManager {
     /// 
     /// Returns an error if a critical failure occurs (decryption failures return None)
     pub fn get_user_data_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsUserData>> {
-        req.cookie(USER_COOKIE_NAME).map_or_else(|| Ok(None), |cookie| match self.decrypt_data::<VouchrsUserData>(cookie.value()) {
+        req.cookie(USER_COOKIE_NAME).map_or_else(|| Ok(None), |cookie| match decrypt_data::<VouchrsUserData>(cookie.value(), &self.encryption_key) {
                 Ok(user_data) => Ok(Some(user_data)),
                 Err(e) => {
                     log::warn!("Failed to decrypt user data cookie: {e}");
                     Ok(None)
                 }
             })
-    }
-
-    /// Create an expired user cookie to clear user data
-    #[must_use]
-    pub fn create_expired_user_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie::create_expired_cookie(USER_COOKIE_NAME, self.cookie_secure)
     }
 
     /// Generic method to create a cookie with encrypted data
@@ -308,7 +297,7 @@ impl SessionManager {
         options: CookieOptions,
     ) -> Result<Cookie<'static>> {
         let value = match data {
-            Some(data) => self.encrypt_data(data)?,
+            Some(data) => encrypt_data(data, &self.encryption_key)?,
             None => String::new(),
         };
 
@@ -328,6 +317,7 @@ impl SessionManager {
     /// Returns an error if:
     /// - Serialization fails
     /// - AES encryption fails
+    #[deprecated(note = "Use utils::crypto::encrypt_data() directly with SessionManager::encryption_key()")]
     pub fn encrypt_data<T: Serialize>(&self, data: &T) -> Result<String> {
         encrypt_data(data, &self.encryption_key)
     }
@@ -341,6 +331,7 @@ impl SessionManager {
     /// - Data length is invalid
     /// - AES decryption fails
     /// - Deserialization fails
+    #[deprecated(note = "Use utils::crypto::decrypt_data() directly with SessionManager::encryption_key()")]
     pub fn decrypt_data<T: DeserializeOwned>(&self, encrypted_data: &str) -> Result<T> {
         decrypt_data(encrypted_data, &self.encryption_key)
     }
@@ -348,39 +339,23 @@ impl SessionManager {
 
 
 
-/// Helper function to get current timestamp
-/// 
-/// # Panics
-/// 
-/// Panics if the system time is before the Unix epoch (1970-01-01)
-#[must_use]
-pub fn current_timestamp() -> i64 {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("System time is before Unix epoch");
-    
-    // Use try_from to safely convert, but realistically this won't overflow for centuries
-    i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_helpers::create_test_session;
+    use crate::utils::test_helpers::{create_test_session, create_test_session_manager};
     use chrono::Duration;
 
     #[test]
     fn test_token_encryption_decryption() {
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false, 24);
+        let manager = create_test_session_manager();
         let session = create_test_session();
 
         // Test encryption with generic method
-        let encrypted = manager.encrypt_data(&session).unwrap();
+        let encrypted = encrypt_data(&session, manager.encryption_key()).unwrap();
         assert!(!encrypted.is_empty());
 
         // Test decryption with generic method
-        let decrypted: VouchrsSession = manager.decrypt_data(&encrypted).unwrap();
+        let decrypted: VouchrsSession = decrypt_data(&encrypted, manager.encryption_key()).unwrap();
         assert_eq!(session.provider, decrypted.provider);
         assert_eq!(session.id_token, decrypted.id_token);
         assert_eq!(session.refresh_token, decrypted.refresh_token);
@@ -389,8 +364,7 @@ mod tests {
 
     #[test]
     fn test_needs_token_refresh() {
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false, 24);
+        let manager = create_test_session_manager();
         // Session with token expiring in 10 minutes (should NOT need refresh)
         let mut session = create_test_session();
         session.expires_at = Utc::now() + Duration::minutes(10);
@@ -404,48 +378,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cookie_size_reduction() {
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false, 24);
-        let session = create_test_session();
-
-        // Create cookie with token data (current approach)
-        let token_cookie = manager.create_session_cookie(&session).unwrap();
-        let token_size = token_cookie.value().len();
-
-        // The current approach should work fine
-        let token_json = serde_json::to_string(&session).unwrap();
-
-        println!("Token JSON size: {} bytes", token_json.len());
-        println!("Token cookie size: {token_size} bytes");
-
-        // Log the compact nature of the token data
-        assert!(!token_json.is_empty());
-        assert!(!token_cookie.value().is_empty());
-    }
-
-    #[test]
-    fn test_generic_encryption_decryption() {
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false, 24);
-        let session = create_test_session();
-
-        // Test generic encryption
-        let encrypted = manager.encrypt_data(&session).unwrap();
-        assert!(!encrypted.is_empty());
-
-        // Test generic decryption
-        let decrypted: VouchrsSession = manager.decrypt_data(&encrypted).unwrap();
-        assert_eq!(session.provider, decrypted.provider);
-        assert_eq!(session.id_token, decrypted.id_token);
-        assert_eq!(session.refresh_token, decrypted.refresh_token);
-        assert_eq!(session.expires_at, decrypted.expires_at);
-    }
-
-    #[test]
-    fn test_to_cookie_trait() {
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false, 24);
+    fn test_create_session_cookie() {
+        let manager = create_test_session_manager();
         let session = create_test_session();
 
         // Test session cookie creation via SessionManager
@@ -454,7 +388,7 @@ mod tests {
         assert!(!cookie.value().is_empty());
 
         // Verify we can decrypt the cookie
-        let decrypted: VouchrsSession = manager.decrypt_data(cookie.value()).unwrap();
+        let decrypted: VouchrsSession = crate::utils::crypto::decrypt_data(cookie.value(), manager.encryption_key()).unwrap();
         assert_eq!(session.provider, decrypted.provider);
         assert_eq!(session.id_token, decrypted.id_token);
     }

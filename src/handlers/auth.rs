@@ -2,8 +2,9 @@
 use crate::oauth::{OAuthConfig, OAuthState};
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
-use crate::utils::crypto::generate_csrf_token;
-use crate::utils::response_builder::ResponseBuilder;
+use crate::utils::cookie::{create_expired_cookie, USER_COOKIE_NAME, COOKIE_NAME};
+use crate::utils::crypto::{encrypt_data, generate_csrf_token};
+use crate::utils::response_builder::{redirect_with_cookie, success_redirect_with_cookies};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
@@ -28,7 +29,7 @@ pub async fn oauth_sign_in(
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Clear any existing session by setting an expired cookie
-    let clear_cookie = session_manager.create_expired_cookie();
+    let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
 
     match &query.provider {
         Some(provider) if oauth_config.get_client_configured(provider) => {
@@ -44,14 +45,14 @@ pub async fn oauth_sign_in(
 
             // 🔒 SECURITY: Use encrypted state parameter to prevent tampering
             // This prevents attackers from modifying the provider name or redirect URL
-            let actual_state = match session_manager.encrypt_data(&oauth_state) {
+            let actual_state = match encrypt_data(&oauth_state, session_manager.encryption_key()) {
                 Ok(encrypted_state) => {
                     info!("Using encrypted state parameter for {provider} OAuth (tamper-proof)");
                     encrypted_state
                 }
                 Err(e) => {
                     error!("Failed to encrypt OAuth state: {e}");
-                    let clear_cookie = session_manager.create_expired_cookie();
+                    let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
                     return Ok(HttpResponse::Found()
                         .cookie(clear_cookie)
                         .append_header(("Location", "/oauth2/sign_in?error=state_encryption_failed"))
@@ -79,8 +80,8 @@ pub async fn oauth_sign_in(
                 }
                 Err(e) => {
                     error!("Failed to get auth URL for {provider}: {e}");
-                    let error_clear_cookie = session_manager.create_expired_cookie();
-                    Ok(ResponseBuilder::redirect_with_cookie(
+                    let error_clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
+                    Ok(redirect_with_cookie(
                         "/oauth2/sign_in?error=oauth_config",
                         Some(error_clear_cookie),
                     ))
@@ -88,18 +89,18 @@ pub async fn oauth_sign_in(
             }
         }
         Some(provider) => {
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
             let error_url = format!(
                 "/oauth2/sign_in?error=unsupported_provider&provider={provider}"
             );
-            Ok(ResponseBuilder::redirect_with_cookie(
+            Ok(redirect_with_cookie(
                 &error_url,
                 Some(clear_cookie),
             ))
         }
         None => {
             // Return login page HTML
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
             Ok(HttpResponse::Ok()
                 .cookie(clear_cookie)
                 .content_type("text/html")
@@ -125,14 +126,14 @@ pub async fn oauth_sign_out(
 
     // Create expired cookies to clear both session and user data
     let clear_session_cookie = session_manager.create_expired_cookie();
-    let clear_user_cookie = session_manager.create_expired_user_cookie();
+    let clear_user_cookie = create_expired_cookie(USER_COOKIE_NAME, session_manager.cookie_secure());
     info!("User signed out and both session and user data cleared");
 
     // If we have a provider, check if it supports sign-out URL
     if let Some(provider_name) = provider {
         if let Some(signout_url) = oauth_config.get_signout_url(&provider_name) {
             info!("Redirecting to {provider_name} sign-out: {signout_url}");
-            return Ok(ResponseBuilder::success_redirect_with_cookies(
+            return Ok(success_redirect_with_cookies(
                 &signout_url,
                 vec![clear_session_cookie, clear_user_cookie],
             ));
@@ -143,7 +144,7 @@ pub async fn oauth_sign_out(
     }
 
     // Default: redirect to login page
-    Ok(ResponseBuilder::success_redirect_with_cookies(
+    Ok(success_redirect_with_cookies(
         "/oauth2/sign_in",
         vec![clear_session_cookie, clear_user_cookie],
     ))

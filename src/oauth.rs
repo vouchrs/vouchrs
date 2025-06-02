@@ -17,6 +17,9 @@ use serde_json::Value;
 use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::apple;
+use crate::utils::crypto::decrypt_data;
+#[cfg(test)]
+use crate::utils::crypto::encrypt_data;
 
 
 // ============================================================================
@@ -701,7 +704,7 @@ pub fn get_state_from_callback(
         Ok(None) => {
             // 🔒 SECURITY: Try to decrypt the received state parameter
             // This prevents tampering with provider name or redirect URL
-            match session_manager.decrypt_data::<crate::oauth::OAuthState>(received_state) {
+            match decrypt_data::<crate::oauth::OAuthState>(received_state, session_manager.encryption_key()) {
                 Ok(decrypted_state) => {
                     debug!(
                         "Successfully decrypted OAuth state for provider: {}",
@@ -719,7 +722,7 @@ pub fn get_state_from_callback(
         Err(e) => {
             debug!("Failed to retrieve stored OAuth state: {e}");
             // Try decrypting the state parameter directly
-            match session_manager.decrypt_data::<crate::oauth::OAuthState>(received_state) {
+            match decrypt_data::<crate::oauth::OAuthState>(received_state, session_manager.encryption_key()) {
                 Ok(decrypted_state) => {
                     debug!(
                         "Successfully decrypted OAuth state for provider: {}",
@@ -855,11 +858,10 @@ mod tests {
 
     #[test]
     fn test_encrypted_state_security_fix() {
-        use crate::session::SessionManager;
+        use crate::utils::test_helpers::create_test_session_manager;
         
         // Create a session manager for encryption/decryption
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let session_manager = SessionManager::new(key, false, 24);
+        let session_manager = create_test_session_manager();
         
         // Create an OAuth state
         let original_state = OAuthState {
@@ -869,7 +871,7 @@ mod tests {
         };
         
         // Encrypt the state (this is what we now do in auth.rs)
-        let encrypted_state = session_manager.encrypt_data(&original_state).unwrap();
+        let encrypted_state = encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
         
         // Verify that the encrypted state doesn't contain plain text provider info
         assert!(!encrypted_state.contains("google"));
@@ -877,7 +879,7 @@ mod tests {
         assert!(!encrypted_state.contains("csrf_token_123"));
         
         // Verify that we can decrypt it back correctly
-        let decrypted_state: OAuthState = session_manager.decrypt_data(&encrypted_state).unwrap();
+        let decrypted_state: OAuthState = decrypt_data(&encrypted_state, session_manager.encryption_key()).unwrap();
         assert_eq!(decrypted_state.state, original_state.state);
         assert_eq!(decrypted_state.provider, original_state.provider);
         assert_eq!(decrypted_state.redirect_url, original_state.redirect_url);
@@ -885,10 +887,9 @@ mod tests {
 
     #[test]
     fn test_tampered_encrypted_state_fails() {
-        use crate::session::SessionManager;
+        use crate::utils::test_helpers::create_test_session_manager;
         
-        let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let session_manager = SessionManager::new(key, false, 24);
+        let session_manager = create_test_session_manager();
         
         let original_state = OAuthState {
             state: "csrf_token_123".to_string(),
@@ -896,7 +897,7 @@ mod tests {
             redirect_url: Some("/dashboard".to_string()),
         };
         
-        let encrypted_state = session_manager.encrypt_data(&original_state).unwrap();
+        let encrypted_state = encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
         
         // Tamper with the encrypted state by changing one character
         let mut chars: Vec<char> = encrypted_state.chars().collect();
@@ -906,7 +907,7 @@ mod tests {
         let tampered_state: String = chars.into_iter().collect();
         
         // Attempting to decrypt tampered state should fail
-        let result = session_manager.decrypt_data::<OAuthState>(&tampered_state);
+        let result = decrypt_data::<OAuthState>(&tampered_state, session_manager.encryption_key());
         assert!(result.is_err());
     }
 

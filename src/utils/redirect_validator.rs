@@ -20,49 +20,73 @@ pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<String, HttpRes
     
     // Empty redirects are invalid
     if redirect_url.is_empty() {
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Length limit to prevent DoS
     if redirect_url.len() > 2048 {
         warn!("Redirect URL too long: {} characters", redirect_url.len());
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Must start with a single slash (relative URL only)
     if !redirect_url.starts_with('/') || redirect_url.starts_with("//") {
         warn!("Invalid redirect URL format: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Check for control characters and other dangerous characters
     if contains_dangerous_characters(redirect_url) {
         warn!("Dangerous characters in redirect URL: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Simple path traversal check (including encoded variants)
     if contains_path_traversal(redirect_url) {
         warn!("Path traversal attempt in redirect: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Check for encoded slashes that could create // 
     if contains_encoded_double_slash(redirect_url) {
         warn!("Encoded double slash in redirect: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Basic protocol injection check (including mixed case)
     if contains_protocol_injection(redirect_url) {
         warn!("Protocol injection attempt in redirect: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     // Check for suspicious query parameters that could be open redirects
     if contains_redirect_in_query(redirect_url) {
         warn!("Redirect parameter in query string: {redirect_url}");
-        return Err(invalid_redirect_error());
+        return Err(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid_redirect",
+            "error_description": "The redirect URL is invalid or potentially unsafe"
+        })));
     }
     
     Ok(redirect_url.to_string())
@@ -234,14 +258,6 @@ fn contains_redirect_in_query(url: &str) -> bool {
     }
     
     false
-}
-
-/// Create a generic invalid redirect error response
-fn invalid_redirect_error() -> HttpResponse {
-    HttpResponse::BadRequest().json(serde_json::json!({
-        "error": "invalid_redirect",
-        "error_description": "The redirect URL is invalid or potentially unsafe"
-    }))
 }
 
 #[cfg(test)]

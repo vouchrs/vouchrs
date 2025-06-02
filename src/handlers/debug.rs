@@ -21,7 +21,7 @@ pub async fn oauth_userinfo(
             "error": "no_user_data",
             "error_description": "No user data cookie found. Please authenticate first."
         })))
-    }, |cookie| match session_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
+    }, |cookie| match crate::utils::crypto::decrypt_data::<crate::models::VouchrsUserData>(cookie.value(), session_manager.encryption_key()) {
         Ok(user_data) => {
             info!(
                 "Userinfo endpoint: returning raw user data for user: {}",

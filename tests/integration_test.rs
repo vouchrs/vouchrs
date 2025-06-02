@@ -1,7 +1,6 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::models::VouchrsUserData;
-use vouchrs::session::SessionManager;
-use vouchrs::utils::test_helpers::{create_test_session, create_test_settings};
+use vouchrs::utils::test_helpers::{create_test_session, create_test_settings, create_test_session_manager_from_settings, create_request_with_cookie};
 use vouchrs::utils::user_agent::UserAgentInfo;
 
 /// Helper function to create test user data with optional context
@@ -77,7 +76,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_data.mobile, 0, "Mobile flag should be set");
 
     // Test user cookie encryption/decryption
-    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false, settings.session.session_duration_hours);
+    let session_manager = create_test_session_manager_from_settings(&settings);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");
@@ -92,9 +91,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_cookie.path(), Some("/"));
 
     // Test that we can decrypt the user data back using a mock request
-    let test_req = actix_web::test::TestRequest::default()
-        .cookie(user_cookie.clone())
-        .to_http_request();
+    let test_req = create_request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
         .get_user_data_from_request(&test_req)
@@ -138,15 +135,13 @@ fn test_minimal_user_data() {
     assert_eq!(user_data.mobile, 0, "Mobile should default to 0");
 
     // Test encryption/decryption with minimal data
-    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false, settings.session.session_duration_hours);
+    let session_manager = create_test_session_manager_from_settings(&settings);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");
 
     // Test that we can decrypt the user data back using a mock request
-    let test_req = actix_web::test::TestRequest::default()
-        .cookie(user_cookie.clone())
-        .to_http_request();
+    let test_req = create_request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
         .get_user_data_from_request(&test_req)

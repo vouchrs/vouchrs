@@ -7,7 +7,7 @@ use crate::{
     oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::response_builder::{is_hop_by_hop_header, ResponseBuilder},
+    utils::response_builder::{is_hop_by_hop_header, build_upstream_url, convert_http_method, forward_request_headers, forward_query_parameters, forward_request_body},
     utils::user_agent::is_browser_request,
 };
 
@@ -47,7 +47,7 @@ pub async fn proxy_upstream(
 
     // Build and execute upstream request
     let upstream_url =
-        match ResponseBuilder::build_upstream_url(&settings.proxy.upstream_url, req.path()) {
+        match build_upstream_url(&settings.proxy.upstream_url, req.path()) {
             Ok(url) => url,
             Err(response) => return Ok(response),
         };
@@ -75,16 +75,16 @@ async fn execute_upstream_request(
     body: &web::Bytes,
     upstream_url: &str,
 ) -> Result<reqwest::Response, HttpResponse> {
-    let reqwest_method = ResponseBuilder::convert_http_method(req.method())?;
+    let reqwest_method = convert_http_method(req.method())?;
 
     let mut request_builder = CLIENT
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
     // Forward headers, query params, and body
-    request_builder = ResponseBuilder::forward_request_headers(request_builder, req);
-    request_builder = ResponseBuilder::forward_query_parameters(request_builder, query_params);
-    request_builder = ResponseBuilder::forward_request_body(request_builder, body);
+    request_builder = forward_request_headers(request_builder, req);
+    request_builder = forward_query_parameters(request_builder, query_params);
+    request_builder = forward_request_body(request_builder, body);
 
     // Execute the request
     request_builder.send().await.map_err(|err| {
@@ -261,7 +261,7 @@ mod tests {
         let request_builder = client.get("http://example.com");
 
         // Apply header forwarding
-        let modified_builder = ResponseBuilder::forward_request_headers(request_builder, &req);
+        let modified_builder = forward_request_headers(request_builder, &req);
 
         // Since we can't inspect the actual headers directly in the builder,
         // we need to convert it to a request and check the headers

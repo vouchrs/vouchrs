@@ -1,6 +1,7 @@
 // OAuth callback handler
 use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_state_from_callback};
 use crate::session::SessionManager;
+use crate::utils::cookie::{create_expired_cookie, OAUTH_STATE_COOKIE};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, error, info, warn};
@@ -9,18 +10,10 @@ use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{process_apple_callback, AppleUserInfo};
 
 use crate::utils::redirect_validator::validate_post_auth_redirect;
-use crate::utils::response_builder::ResponseBuilder;
+use crate::utils::response_builder::success_redirect_with_cookies;
 use crate::utils::user_agent::extract_user_agent_info;
 
-/// Parameters for session finalization
-struct SessionFinalizeParams {
-    provider: String,
-    id_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_at: DateTime<Utc>,
-    apple_user_info: Option<AppleUserInfo>,
-    redirect_url: Option<String>,
-}
+// SessionFinalizeParams struct removed - parameters passed directly to simplify code
 
 /// OAuth callback handler
 /// 
@@ -105,14 +98,12 @@ pub async fn oauth_callback(
     let result = build_and_finalize_session(
         &req,
         &session_manager,
-        SessionFinalizeParams {
-            provider: oauth_state.provider,
-            id_token,
-            refresh_token,
-            expires_at,
-            apple_user_info: processed_apple_info,
-            redirect_url: oauth_state.redirect_url,
-        },
+        oauth_state.provider,
+        id_token,
+        refresh_token,
+        expires_at,
+        processed_apple_info,
+        oauth_state.redirect_url,
     );
 
     Ok(result)
@@ -194,7 +185,12 @@ fn validate_callback(
 fn build_and_finalize_session(
     req: &HttpRequest,
     session_manager: &SessionManager,
-    params: SessionFinalizeParams,
+    provider: String,
+    id_token: Option<String>,
+    refresh_token: Option<String>,
+    expires_at: DateTime<Utc>,
+    apple_user_info: Option<AppleUserInfo>,
+    redirect_url: Option<String>,
 ) -> HttpResponse {
     // Extract client info
     let client_ip = req
@@ -205,18 +201,18 @@ fn build_and_finalize_session(
 
     // Build the session (without access token)
     let session_result = SessionBuilder::build_session_with_apple_info(
-        params.provider.clone(),
-        params.id_token,
-        params.refresh_token,
-        params.expires_at,
-        params.apple_user_info,
+        provider.clone(),
+        id_token,
+        refresh_token,
+        expires_at,
+        apple_user_info,
     );
 
     match session_result {
         Ok(complete_session) => {
             info!(
                 "Successfully built session for user: {} (provider: {})",
-                complete_session.user_email, params.provider
+                complete_session.user_email, provider
             );
 
             // Split complete session into token data and user data
@@ -249,8 +245,8 @@ fn build_and_finalize_session(
                 }
             };
 
-            let clear_temp_cookie = session_manager.create_expired_temp_state_cookie();
-            let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
+            let clear_temp_cookie = create_expired_cookie(OAUTH_STATE_COOKIE, session_manager.cookie_secure());
+            let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
 
             // Validate the redirect URL to prevent open redirect attacks
             let validated_redirect = validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
@@ -260,7 +256,7 @@ fn build_and_finalize_session(
             });
 
             // Create response with multiple cookies
-            ResponseBuilder::success_redirect_with_cookies(
+            success_redirect_with_cookies(
                 &validated_redirect,
                 vec![session_cookie, user_cookie, clear_temp_cookie],
             )
