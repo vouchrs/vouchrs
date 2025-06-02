@@ -1,6 +1,6 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
-use crate::utils::cookie::{CookieOptions, ToCookie, COOKIE_NAME, USER_COOKIE_NAME};
+use crate::utils::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{derive_encryption_key, encrypt_data, decrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
@@ -63,8 +63,15 @@ impl SessionManager {
     /// 
     /// Returns an error if encryption fails
     pub fn create_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
-        // Use the ToCookie trait implementation
-        session.to_cookie(self)
+        self.create_cookie(
+            COOKIE_NAME.to_string(),
+            Some(session),
+            CookieOptions {
+                same_site: actix_web::cookie::SameSite::Lax,
+                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(self.session_duration_hours).unwrap_or(24)),
+                ..Default::default()
+            },
+        )
     }
 
     /// Extract and decrypt session from HTTP request
@@ -127,8 +134,23 @@ impl SessionManager {
         &self,
         oauth_state: &OAuthState,
     ) -> Result<Cookie<'static>> {
-        // Use the ToCookie trait implementation
-        oauth_state.to_cookie(self)
+        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
+        let options = CookieOptions {
+            same_site: actix_web::cookie::SameSite::Lax,
+            max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
+            ..Default::default()
+        };
+
+        let cookie = self.create_cookie(cookie_name.to_string(), Some(oauth_state), options)?;
+
+        log::info!(
+            "Creating temporary state cookie: secure={}, name={}, encrypted_len={}",
+            self.cookie_secure,
+            cookie_name,
+            cookie.value().len()
+        );
+
+        Ok(cookie)
     }
 
     /// Get OAuth state from temporary cookie in request
@@ -225,8 +247,15 @@ impl SessionManager {
     /// 
     /// Returns an error if encryption fails
     pub fn create_user_cookie(&self, user_data: &VouchrsUserData) -> Result<Cookie> {
-        // Use the ToCookie trait implementation
-        user_data.to_cookie(self)
+        self.create_cookie(
+            USER_COOKIE_NAME.to_string(),
+            Some(user_data),
+            CookieOptions {
+                same_site: actix_web::cookie::SameSite::Lax,
+                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(self.session_duration_hours).unwrap_or(24)),
+                ..Default::default()
+            },
+        )
     }
 
     /// Extract user data from HTTP request cookie
@@ -317,59 +346,7 @@ impl SessionManager {
     }
 }
 
-/// Implementation of `ToCookie` for `VouchrsSession`
-impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsSession {
-    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
-        session_manager.create_cookie(
-            COOKIE_NAME.to_string(),
-            Some(self),
-            CookieOptions {
-                same_site: actix_web::cookie::SameSite::Lax,
-                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(session_manager.session_duration_hours).unwrap_or(24)),
-                ..Default::default()
-            },
-        )
-    }
-}
 
-/// Implementation of `ToCookie` for `VouchrsUserData`
-impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsUserData {
-    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
-        session_manager.create_cookie(
-            USER_COOKIE_NAME.to_string(),
-            Some(self),
-            CookieOptions {
-                same_site: actix_web::cookie::SameSite::Lax,
-                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(session_manager.session_duration_hours).unwrap_or(24)),
-                ..Default::default()
-            },
-        )
-    }
-}
-
-/// Implementation of `ToCookie` for `OAuthState`
-impl crate::utils::cookie::ToCookie<SessionManager> for OAuthState {
-    fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
-        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
-        let options = CookieOptions {
-            same_site: actix_web::cookie::SameSite::Lax,
-            max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
-            ..Default::default()
-        };
-
-        let cookie =
-            session_manager.create_cookie(cookie_name.to_string(), Some(self), options)?;
-
-        log::info!(
-            "Creating temporary state cookie: secure={}, name={}, encrypted_len={}",
-            session_manager.cookie_secure,
-            cookie_name,
-            cookie.value().len()
-        );
-
-        Ok(cookie)
-    }
-}
 
 /// Helper function to get current timestamp
 /// 
@@ -471,8 +448,8 @@ mod tests {
         let manager = SessionManager::new(key, false, 24);
         let session = create_test_session();
 
-        // Test ToCookie implementation for VouchrsSession
-        let cookie = session.to_cookie(&manager).unwrap();
+        // Test session cookie creation via SessionManager
+        let cookie = manager.create_session_cookie(&session).unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
 
