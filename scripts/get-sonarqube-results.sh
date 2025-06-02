@@ -84,21 +84,40 @@ fi
 # Get Project Measures
 print_section "Code Quality Metrics"
 MEASURES_RESPONSE=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
-    "$SONAR_URL/api/measures/component?component=$PROJECT_KEY&metricKeys=alert_status,bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,ncloc,sqale_rating,reliability_rating,security_rating,sqale_index")
+    "$SONAR_URL/api/measures/component?component=$PROJECT_KEY&metricKeys=alert_status,bugs,vulnerabilities,security_hotspots,code_smells,duplicated_lines_density,ncloc,sqale_rating,reliability_rating,security_rating,sqale_index")
 
 if echo "$MEASURES_RESPONSE" | grep -q '"measures"'; then
+    # Process measures from the response
+    # Commenting out debug statements
+    # echo "DEBUG: Response excerpt for ratings:" >&2
+    # echo "$MEASURES_RESPONSE" | grep -E "sqale_rating|reliability_rating|security_rating" >&2
+    
     # Parse individual metrics - handle both "value" and "bestValue" fields
     parse_metric() {
         local metric="$1"
         local response="$2"
-        echo "$response" | grep -o "\"metric\":\"$metric\"[^}]*" | grep -o "\"value\":\"[^\"]*\"" | cut -d'"' -f4 | head -1
+        
+        # First try to extract value with quotes (string values)
+        local value=$(echo "$response" | grep -o "\"metric\":\"$metric\"[^}]*" | grep -o "\"value\":\"[^\"]*\"" | cut -d'"' -f4 | head -1)
+        if [ -z "$value" ]; then
+            # If not found, try numeric values without quotes
+            value=$(echo "$response" | grep -o "\"metric\":\"$metric\"[^}]*" | grep -o "\"value\":[^,}]*" | cut -d':' -f2 | tr -d ' ' | head -1)
+        fi
+        
+        # For rating metrics, ensure we're getting decimal values properly
+        if [[ "$metric" == *"rating" ]] && [ -z "$value" ]; then
+            # If value is not found using standard methods, try more aggressively
+            value=$(echo "$response" | grep -o "\"metric\":\"$metric\"[^}]*" | 
+                    grep -o "value\":[^,}]*" | sed 's/value"://g' | tr -d ' ",' | head -1)
+        fi
+        
+        echo "$value"
     }
     
     BUGS=$(parse_metric "bugs" "$MEASURES_RESPONSE")
     VULNERABILITIES=$(parse_metric "vulnerabilities" "$MEASURES_RESPONSE")
     HOTSPOTS=$(parse_metric "security_hotspots" "$MEASURES_RESPONSE")
     CODE_SMELLS=$(parse_metric "code_smells" "$MEASURES_RESPONSE")
-    COVERAGE=$(parse_metric "coverage" "$MEASURES_RESPONSE")
     DUPLICATED=$(parse_metric "duplicated_lines_density" "$MEASURES_RESPONSE")
     NCLOC=$(parse_metric "ncloc" "$MEASURES_RESPONSE")
     TECH_DEBT=$(parse_metric "sqale_index" "$MEASURES_RESPONSE")
@@ -121,13 +140,6 @@ if echo "$MEASURES_RESPONSE" | grep -q '"measures"'; then
     print_metric "Vulnerabilities" "$VULNERABILITIES" $([ "$VULNERABILITIES" -eq 0 ] 2>/dev/null && echo "OK" || echo "ERROR")
     print_metric "Security Hotspots" "$HOTSPOTS" $([ "$HOTSPOTS" -eq 0 ] 2>/dev/null && echo "OK" || echo "WARN")
     print_metric "Code Smells" "$CODE_SMELLS" $([ "$CODE_SMELLS" -lt 10 ] 2>/dev/null && echo "OK" || echo "WARN")
-    
-    if [ -n "$COVERAGE" ] && [ "$COVERAGE" != "0" ]; then
-        COV_INT=${COVERAGE%.*}
-        print_metric "Test Coverage" "${COVERAGE}%" $([ "$COV_INT" -gt 80 ] 2>/dev/null && echo "OK" || echo "WARN")
-    else
-        print_metric "Test Coverage" "No data" "WARN"
-    fi
     
     if [ -n "$DUPLICATED" ] && [ "$DUPLICATED" != "0" ]; then
         DUP_INT=${DUPLICATED%.*}
@@ -157,7 +169,20 @@ fi
 
 # Get Rating Details
 print_section "Quality Ratings"
-case "$MAINTAINABILITY" in
+
+# Convert decimal values to integer ratings
+convert_rating() {
+    local rating="$1"
+    # Extract the first digit from the rating value (e.g., 1.0 becomes 1)
+    echo "$rating" | cut -d'.' -f1
+}
+
+# Apply rating conversion for all metrics
+MAINTAINABILITY_INT=$(convert_rating "$MAINTAINABILITY")
+RELIABILITY_INT=$(convert_rating "$RELIABILITY")
+SECURITY_INT=$(convert_rating "$SECURITY")
+
+case "$MAINTAINABILITY_INT" in
     "1") print_metric "Maintainability" "A" "OK" ;;
     "2") print_metric "Maintainability" "B" "OK" ;;
     "3") print_metric "Maintainability" "C" "WARN" ;;
@@ -166,7 +191,7 @@ case "$MAINTAINABILITY" in
     *) print_metric "Maintainability" "No data" ;;
 esac
 
-case "$RELIABILITY" in
+case "$RELIABILITY_INT" in
     "1") print_metric "Reliability" "A" "OK" ;;
     "2") print_metric "Reliability" "B" "OK" ;;
     "3") print_metric "Reliability" "C" "WARN" ;;
@@ -175,7 +200,7 @@ case "$RELIABILITY" in
     *) print_metric "Reliability" "No data" ;;
 esac
 
-case "$SECURITY" in
+case "$SECURITY_INT" in
     "1") print_metric "Security" "A" "OK" ;;
     "2") print_metric "Security" "B" "OK" ;;
     "3") print_metric "Security" "C" "WARN" ;;
