@@ -7,7 +7,8 @@ use crate::{
     oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::response_builder::{is_hop_by_hop_header, build_upstream_url, convert_http_method, forward_request_headers, forward_query_parameters, forward_request_body},
+    utils::response_builder::{is_hop_by_hop_header, build_upstream_url, convert_http_method},
+    utils::cookie::filter_vouchrs_cookies,
     utils::user_agent::is_browser_request,
 };
 
@@ -81,10 +82,42 @@ async fn execute_upstream_request(
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
-    // Forward headers, query params, and body
-    request_builder = forward_request_headers(request_builder, req);
-    request_builder = forward_query_parameters(request_builder, query_params);
-    request_builder = forward_request_body(request_builder, body);
+    // Forward headers (excluding Authorization, Cookie with `vouchrs_session`, and hop-by-hop headers)
+    for (name, value) in req.headers() {
+        let name_str = name.as_str().to_lowercase();
+
+        // Skip authorization and hop-by-hop headers
+        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
+            continue;
+        }
+
+        // Special handling for cookies
+        if name_str == "cookie" {
+            if let Ok(cookie_str) = value.to_str() {
+                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
+                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
+                }
+            }
+            continue;
+        }
+
+        // Add other headers
+        if let Ok(value_str) = value.to_str() {
+            request_builder = request_builder.header(name.as_str(), value_str);
+        }
+    }
+
+    // Forward query parameters
+    if !query_params.is_empty() {
+        for (key, value) in query_params.iter() {
+            request_builder = request_builder.query(&[(key, value)]);
+        }
+    }
+
+    // Forward request body if present
+    if !body.is_empty() {
+        request_builder = request_builder.body(body.to_vec());
+    }
 
     // Execute the request
     request_builder.send().await.map_err(|err| {
@@ -260,8 +293,31 @@ mod tests {
         let client = Client::new();
         let request_builder = client.get("http://example.com");
 
-        // Apply header forwarding
-        let modified_builder = forward_request_headers(request_builder, &req);
+        // Apply header forwarding using inline logic
+        let mut modified_builder = request_builder;
+        for (name, value) in req.headers() {
+            let name_str = name.as_str().to_lowercase();
+
+            // Skip authorization and hop-by-hop headers
+            if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
+                continue;
+            }
+
+            // Special handling for cookies
+            if name_str == "cookie" {
+                if let Ok(cookie_str) = value.to_str() {
+                    if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
+                        modified_builder = modified_builder.header(name.as_str(), filtered_cookie);
+                    }
+                }
+                continue;
+            }
+
+            // Add other headers
+            if let Ok(value_str) = value.to_str() {
+                modified_builder = modified_builder.header(name.as_str(), value_str);
+            }
+        }
 
         // Since we can't inspect the actual headers directly in the builder,
         // we need to convert it to a request and check the headers

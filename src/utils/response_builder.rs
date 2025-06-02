@@ -1,11 +1,8 @@
 // HTTP response building utilities
-use actix_web::{cookie::Cookie, web, HttpRequest, HttpResponse};
+use actix_web::{cookie::Cookie, HttpResponse};
 use reqwest;
-use std::collections::HashMap;
 use url;
 use log::{debug, warn};
-
-use crate::utils::cookie::filter_vouchrs_cookies;
 
 // Helper function to check for hop-by-hop headers
 #[must_use]
@@ -83,61 +80,6 @@ pub fn convert_http_method(
             "message": format!("HTTP method '{method_str}' is not supported")
         }))),
     }
-}
-
-/// Forward request headers (excluding Authorization, Cookie with `vouchrs_session`, and hop-by-hop headers)
-pub fn forward_request_headers(
-    mut request_builder: reqwest::RequestBuilder,
-    req: &HttpRequest,
-) -> reqwest::RequestBuilder {
-    for (name, value) in req.headers() {
-        let name_str = name.as_str().to_lowercase();
-
-        // Skip authorization and hop-by-hop headers
-        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
-            continue;
-        }
-
-        // Special handling for cookies
-        if name_str == "cookie" {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
-                }
-            }
-            continue;
-        }
-
-        // Add other headers
-        if let Ok(value_str) = value.to_str() {
-            request_builder = request_builder.header(name.as_str(), value_str);
-        }
-    }
-    request_builder
-}
-
-/// Forward query parameters
-pub fn forward_query_parameters<S: ::std::hash::BuildHasher>(
-    mut request_builder: reqwest::RequestBuilder,
-    query_params: &web::Query<HashMap<String, String, S>>,
-) -> reqwest::RequestBuilder {
-    if !query_params.is_empty() {
-        for (key, value) in query_params.iter() {
-            request_builder = request_builder.query(&[(key, value)]);
-        }
-    }
-    request_builder
-}
-
-/// Forward request body if present
-pub fn forward_request_body(
-    mut request_builder: reqwest::RequestBuilder,
-    body: &web::Bytes,
-) -> reqwest::RequestBuilder {
-    if !body.is_empty() {
-        request_builder = request_builder.body(body.to_vec());
-    }
-    request_builder
 }
 
 /// Build the upstream URL by combining base URL with request path
