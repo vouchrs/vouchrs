@@ -3,11 +3,11 @@ use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_state_from_callba
 use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use chrono::{DateTime, Utc};
-use log::{debug, error};
+use log::{debug, error, info, warn};
 
 use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{process_apple_callback, AppleUserInfo};
-use crate::utils::logging::LoggingHelper;
+
 use crate::utils::redirect_validator::validate_post_auth_redirect;
 use crate::utils::response_builder::ResponseBuilder;
 use crate::utils::user_agent::extract_user_agent_info;
@@ -40,7 +40,15 @@ pub async fn oauth_callback(
 ) -> Result<HttpResponse> {
     // Extract callback data from either query params or form
     let callback_data = extract_callback_data(query, form);
-    LoggingHelper::log_callback_debug(&req, &callback_data);
+    debug!(
+        "OAuth callback received via {}: {callback_data:?}",
+        req.method()
+    );
+    debug!("Callback request headers: {:?}", req.headers());
+    debug!(
+        "Callback request connection info: {:?}",
+        req.connection_info()
+    );
 
     // Validate callback and extract required data
     let (code, oauth_state) = match validate_callback(&callback_data, &session_manager, &req) {
@@ -65,7 +73,30 @@ pub async fn oauth_callback(
         }
     };
 
-    LoggingHelper::log_oauth_token_response(&oauth_state.provider, apple_user_info.as_ref());
+    info!("=== OAuth Token Exchange Success for {} ===", oauth_state.provider);
+    // Expires at, refresh token, and id token are now on VouchrSession or passed separately.
+    if oauth_state.provider == "apple" {
+        info!("=== Apple User Info Analysis ===");
+        info!("Apple user info present: {}", apple_user_info.is_some());
+
+        if let Some(user_info) = apple_user_info.as_ref() {
+            info!("Apple user info email: {:?}", user_info.email);
+            info!("Apple user info name: \"{} {}\"", 
+                user_info.name.first_name.as_deref().unwrap_or(""),
+                user_info.name.last_name.as_deref().unwrap_or(""));
+            info!("Apple user info first_name: {:?}", user_info.name.first_name);
+            info!("Apple user info last_name: {:?}", user_info.name.last_name);
+
+            // Log raw JSON serialization for complete debugging
+            if let Ok(user_info_json) = serde_json::to_string_pretty(user_info) {
+                info!("Apple user info JSON:\n{user_info_json}");
+            }
+        } else {
+            warn!("Apple OAuth completed but no user info was returned in the token response");
+            warn!("This may happen on subsequent logins or if user info was not requested");
+        }
+    }
+    info!("=== End OAuth Token Analysis ===");
 
     // Process additional Apple user info if available
     let processed_apple_info = process_apple_callback(&callback_data, apple_user_info);
@@ -183,7 +214,10 @@ fn build_and_finalize_session(
 
     match session_result {
         Ok(complete_session) => {
-            LoggingHelper::log_session_created(&complete_session.user_email, &params.provider);
+            info!(
+                "Successfully built session for user: {} (provider: {})",
+                complete_session.user_email, params.provider
+            );
 
             // Split complete session into token data and user data
             let session = complete_session.to_session();
