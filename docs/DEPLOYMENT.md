@@ -115,6 +115,84 @@ docker build -t ghcr.io/vouchrs/vouchrs:latest .
 | `SESSION_SECRET` | 256-bit secret for session encryption | `your-very-secure-256-bit-secret-here` |
 | `REDIRECT_BASE_URL` | Base URL for OAuth callbacks | `https://auth.example.com` |
 
+### Session Secret Generation
+
+⚠️ **Important**: The `SESSION_SECRET` is critical for securing user sessions. If not provided, Vouchrs will auto-generate a random secret on each startup (causing all existing sessions to be invalidated).
+
+#### Generate a Secure Session Secret
+
+Choose one of these methods to generate a cryptographically secure 256-bit session secret:
+
+**Method 1: Using OpenSSL (Recommended)**
+```bash
+# Generate a 256-bit (32-byte) random secret and base64 encode it
+openssl rand -base64 32
+# Example output: K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=
+```
+
+**Method 2: Using Python**
+```python
+import secrets
+import base64
+
+# Generate 32 random bytes and base64 encode
+secret = base64.b64encode(secrets.token_bytes(32)).decode('utf-8')
+print(f"SESSION_SECRET={secret}")
+# Example output: SESSION_SECRET=K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=
+```
+
+**Method 3: Using Node.js**
+```javascript
+const crypto = require('crypto');
+
+// Generate 32 random bytes and base64 encode
+const secret = crypto.randomBytes(32).toString('base64');
+console.log(`SESSION_SECRET=${secret}`);
+// Example output: SESSION_SECRET=K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=
+```
+
+**Method 4: Using Rust (if you have Rust installed)**
+```bash
+# Quick one-liner using Rust
+cargo eval 'use rand::RngCore; let mut secret = [0u8; 32]; rand::thread_rng().fill_bytes(&mut secret); println!("SESSION_SECRET={}", base64::encode(secret));' --extern rand --extern base64
+```
+
+**Method 5: Online Generator (Use with caution)**
+```bash
+# Generate online and copy to clipboard (only use for development)
+curl -s "https://api.random.org/json-rpc/4/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"4.0","method":"generateBlobs","params":{"apiKey":"00000000-0000-0000-0000-000000000000","n":1,"size":256,"format":"base64"},"id":1}' \
+  | jq -r '.result.random.data[0]'
+```
+
+#### Best Practices
+
+- **Unique per environment**: Use different secrets for development, staging, and production
+- **Store securely**: Never commit secrets to version control
+- **Rotate periodically**: Change secrets during scheduled maintenance (invalidates all sessions)
+- **Use environment variables**: Prefer environment variables over config files for secrets
+- **Length matters**: Always use 256-bit (32-byte) secrets for maximum security
+
+#### Docker Secrets Example
+
+For Docker Swarm deployments, use Docker secrets:
+
+```yaml
+version: '3.8'
+services:
+  vouchrs:
+    image: ghcr.io/vouchrs/vouchrs:latest
+    environment:
+      - SESSION_SECRET_FILE=/run/secrets/session_secret
+    secrets:
+      - session_secret
+
+secrets:
+  session_secret:
+    external: true
+```
+
 ### Optional Variables
 
 | Variable | Default | Description |

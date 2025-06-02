@@ -13,11 +13,11 @@ fn create_test_jwt_config() -> JwtSigningConfig {
 // Helper function to create a test JWT signing config with custom path
 fn create_test_jwt_config_with_path(path: &str) -> JwtSigningConfig {
     // Create a temporary test key file
-    let test_key = r#"-----BEGIN PRIVATE KEY-----
+    let test_key = r"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
 9QFCar9R+eojTjLOXCisVV9xfvehRANCAATyHpTDz7xyWXHaC0FXYlwK5r4IpeHx
 1X4WXDZiAKUxHblBs1Kn15IR334KNiNP7gEWM+9BFuWh9uJwHGOBJXc/
------END PRIVATE KEY-----"#;
+-----END PRIVATE KEY-----";
 
     fs::write(path, test_key).expect("Failed to write test key file");
 
@@ -41,7 +41,7 @@ fn test_apple_jwt_creation_with_crypto_module() {
     
     match &result {
         Ok(_) => println!("✅ Apple JWT generation succeeded"),
-        Err(e) => println!("❌ Apple JWT generation failed: {}", e),
+        Err(e) => println!("❌ Apple JWT generation failed: {e}"),
     }
     
     assert!(result.is_ok(), "Apple JWT generation should succeed: {:?}", result.as_ref().err());
@@ -81,7 +81,7 @@ fn test_apple_jwt_creation_with_crypto_module() {
     }
     
     println!("✅ Apple JWT integration test passed");
-    println!("Generated JWT: {}", jwt);
+    println!("Generated JWT: {jwt}");
 }
 
 #[test]

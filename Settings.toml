@@ -33,7 +33,13 @@ session_duration_hours = 24
 
 # Session secret for encrypting session cookies
 # Environment variable: SESSION_SECRET
-session_secret = "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+# If not set, a random secret will be generated automatically (not recommended for production)
+#
+# Generate a secure 256-bit secret using one of these methods:
+# OpenSSL: openssl rand -base64 32
+# Python:  python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+# Node.js: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+session_secret = ""
 
 # JWT issuer claim (iss) - identifies who issued the token
 # Environment variable: JWT_ISSUER

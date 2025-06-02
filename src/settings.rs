@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use base64::{Engine as _, engine::general_purpose};
 
 // Additional imports for environment and logging setup
 
@@ -118,8 +119,7 @@ impl Default for SessionSettings {
     fn default() -> Self {
         Self {
             session_duration_hours: 24,
-            session_secret: "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
-                .to_string(),
+            session_secret: String::new(), // Will be generated if empty
         }
     }
 }
@@ -301,9 +301,44 @@ impl VouchrsSettings {
                 session_settings.session_duration_hours = session_duration;
             }
         }
-        if let Ok(session_secret) = std::env::var("SESSION_SECRET") {
-            session_settings.session_secret = session_secret;
+        
+        // Check if SESSION_SECRET environment variable is set
+        let env_secret_set = if let Ok(session_secret) = std::env::var("SESSION_SECRET") {
+            if session_secret.is_empty() {
+                false
+            } else {
+                session_settings.session_secret = session_secret;
+                true
+            }
+        } else {
+            false
+        };
+        
+        // Generate random session secret if no environment variable was set and current value is empty
+        if !env_secret_set && session_settings.session_secret.is_empty() {
+            session_settings.session_secret = Self::generate_random_session_secret();
+            Self::warn_about_generated_secret(&session_settings.session_secret);
         }
+    }
+    
+    /// Generate a cryptographically secure random session secret
+    /// 
+    /// Uses the same secure random source as our crypto utilities
+    /// Generates 32 bytes (256 bits) of entropy for AES-256 compatibility
+    fn generate_random_session_secret() -> String {
+        use rand::RngCore;
+        let mut secret = [0u8; 32]; // 256 bits for AES-256
+        rand::thread_rng().fill_bytes(&mut secret);
+        general_purpose::STANDARD.encode(secret)
+    }
+    
+    /// Display warnings about using a generated session secret
+    fn warn_about_generated_secret(secret: &str) {
+        eprintln!("⚠️  WARNING: Using auto-generated session secret");
+        eprintln!("📝 Generated secret: {secret}");
+        eprintln!("🔒 For production use, set the SESSION_SECRET environment variable");
+        eprintln!("   or configure session_secret in Settings.toml");
+        eprintln!("💡 This secret will change on each restart unless explicitly configured");
     }
 
     /// Apply environment overrides for cookie settings
@@ -427,12 +462,9 @@ mod tests {
 
     #[test]
     fn test_session_secret_configuration() {
-        // Test default value
+        // Test default value - should be empty and will be generated when processed
         let default_session_settings = SessionSettings::default();
-        assert_eq!(
-            default_session_settings.session_secret,
-            "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
-        );
+        assert_eq!(default_session_settings.session_secret, "");
         assert_eq!(default_session_settings.session_duration_hours, 24);
     }
 
@@ -523,7 +555,7 @@ session_secret = "secrets-secret-key"
         // This is a limitation of the test due to searching in current directory
         assert_eq!(
             actual_settings.session.session_secret,
-            "your-jwt-secret-key-here-must-be-at-least-32-chars-long-for-aes256"
+            ""  // Default is now empty string
         );
 
         // Add a proper integration test that would validate this behavior in a controlled environment
@@ -565,5 +597,30 @@ session_secret = "secrets-secret-key"
 
         // Clean up
         std::env::remove_var("SESSION_SECRET");
+    }
+
+    #[test]
+    fn test_session_secret_auto_generation() {
+        let mut session_settings = SessionSettings {
+            session_duration_hours: 24,
+            session_secret: String::new(), // Empty, should trigger auto-generation
+        };
+
+        // Apply environment overrides (which includes auto-generation)
+        VouchrsSettings::apply_session_env_overrides(&mut session_settings);
+
+        // Should have generated a non-empty secret
+        assert!(!session_settings.session_secret.is_empty());
+        assert!(session_settings.session_secret.len() > 40); // Base64 encoded 32 bytes should be ~44 chars
+        
+        // Generate another one to ensure they're different
+        let mut session_settings2 = SessionSettings {
+            session_duration_hours: 24,
+            session_secret: String::new(),
+        };
+        VouchrsSettings::apply_session_env_overrides(&mut session_settings2);
+        
+        // Should be different each time
+        assert_ne!(session_settings.session_secret, session_settings2.session_secret);
     }
 }

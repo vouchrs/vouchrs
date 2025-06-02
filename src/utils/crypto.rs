@@ -409,11 +409,11 @@ mod tests {
     const TEST_SECRET: &[u8] = b"test_secret_key_for_hmac_testing_32b";
     
     // Test PKCS#8 private key for ES256 testing
-    const TEST_ES256_PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
+    const TEST_ES256_PRIVATE_KEY: &str = r"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
 9QFCar9R+eojTjLOXCisVV9xfvehRANCAATyHpTDz7xyWXHaC0FXYlwK5r4IpeHx
 1X4WXDZiAKUxHblBs1Kn15IR334KNiNP7gEWM+9BFuWh9uJwHGOBJXc/
------END PRIVATE KEY-----"#;
+-----END PRIVATE KEY-----";
 
     #[test]
     fn test_create_jwt_header_hs256() {
@@ -512,8 +512,8 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
         let header = create_jwt_header(&JwtAlgorithm::HS256, None);
         let payload = json!({
             "sub": "test-user",
-            "iat": 1234567890,
-            "exp": 1234571490
+            "iat": 1_234_567_890,
+            "exp": 1_234_571_490
         });
         
         let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, TEST_SECRET);
@@ -535,8 +535,8 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
         let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
         let decoded_payload: serde_json::Value = serde_json::from_slice(&payload_bytes).unwrap();
         assert_eq!(decoded_payload["sub"], "test-user");
-        assert_eq!(decoded_payload["iat"], 1234567890);
-        assert_eq!(decoded_payload["exp"], 1234571490);
+        assert_eq!(decoded_payload["iat"], 1_234_567_890);
+        assert_eq!(decoded_payload["exp"], 1_234_571_490);
     }
 
     #[test]
@@ -660,18 +660,18 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
         let hs256 = JwtAlgorithm::HS256;
         let es256 = JwtAlgorithm::ES256;
         
-        assert!(format!("{:?}", hs256).contains("HS256"));
-        assert!(format!("{:?}", es256).contains("ES256"));
+        assert!(format!("{hs256:?}").contains("HS256"));
+        assert!(format!("{es256:?}").contains("ES256"));
     }
 
     #[test]
     fn test_jwt_algorithm_clone() {
         // Test that the enum implements Clone properly
         let original = JwtAlgorithm::HS256;
-        let cloned = original.clone();
+        let cloned = original;
         
         // They should be equal (though we can't test equality directly without PartialEq)
-        assert!(format!("{:?}", original) == format!("{:?}", cloned));
+        assert!(format!("{original:?}") == format!("{cloned:?}"));
     }
 
     #[test]

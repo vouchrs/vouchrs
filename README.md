@@ -131,6 +131,31 @@ enabled = false  # Set to true to enable
 | `SESSION_SECRET` | Yes | 256-bit secret for session encryption |
 | `REDIRECT_BASE_URL` | Yes | Base URL for OAuth callbacks |
 
+#### 🔐 Generating a Secure Session Secret
+
+The `SESSION_SECRET` is critical for securing user sessions. Choose one of these methods to generate a cryptographically secure 256-bit secret:
+
+**Method 1: OpenSSL (Recommended)**
+```bash
+openssl rand -base64 32
+```
+
+**Method 2: Python**
+```python
+import secrets
+import base64
+secret = base64.b64encode(secrets.token_bytes(32)).decode('utf-8')
+print(f"SESSION_SECRET={secret}")
+```
+
+**Method 3: Node.js**
+```javascript
+const crypto = require('crypto');
+console.log(`SESSION_SECRET=${crypto.randomBytes(32).toString('base64')}`);
+```
+
+⚠️ **Important**: If no `SESSION_SECRET` is provided, Vouchrs auto-generates one on startup (all existing sessions will be invalidated on restart).
+
 #### Provider Credentials  
 | Variable | Required For | Description |
 |----------|-------------|-------------|
