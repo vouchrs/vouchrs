@@ -97,7 +97,11 @@ impl SessionBuilder {
         // Use Apple user info name as fallback if name not found in ID token
         if user_name.is_none() {
             if let Some(ref apple_info) = apple_user_info {
-                let apple_name = apple_info.name.full_name();
+                let apple_name = format!(
+                    "{} {}",
+                    apple_info.name.first_name.as_deref().unwrap_or(""),
+                    apple_info.name.last_name.as_deref().unwrap_or("")
+                );
                 if !apple_name.trim().is_empty() {
                     debug!("Using Apple user info name as fallback: {apple_name}");
                     user_name = Some(apple_name);
@@ -261,7 +265,11 @@ mod tests {
         assert_eq!(session.user_email, apple_user_info.email.clone().unwrap());
         assert_eq!(
             session.user_name.clone().unwrap(),
-            apple_user_info.name.full_name()
+            format!(
+                "{} {}",
+                apple_user_info.name.first_name.as_deref().unwrap_or(""),
+                apple_user_info.name.last_name.as_deref().unwrap_or("")
+            )
         );
         assert_eq!(session.provider, "apple");
         assert_eq!(session.provider_id, "apple-sub-123");
