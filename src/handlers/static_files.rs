@@ -75,7 +75,7 @@ pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In - {brand_name}</title>
-    <style>{}</style>
+    <style>{styles}</style>
 </head>
 <body>
     <div class="container">
@@ -86,32 +86,51 @@ pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
                 {provider_buttons}
             </div>
             <div class="footer">
-                <p>Protected by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a></p>
+                <p>Protected by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">v{version}</span></p>
             </div>
         </div>
     </div>
 </body>
 </html>"#,
-        get_sign_in_styles(),
+        styles = get_sign_in_styles(),
         brand_name = brand_name,
-        provider_buttons = provider_buttons
+        provider_buttons = provider_buttons,
+        version = crate::VERSION
     )
 }
 
 fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
+    // Define 5 vibrant colors to cycle through
+    let colors = [
+        "#4285f4", // Blue
+        "#ea4335", // Red
+        "#34a853", // Green
+        "#000000", // Black
+        "#8e44ad", // Purple
+    ];
+    
     settings
         .get_enabled_providers()
         .iter()
-        .map(|provider| {
+        .enumerate() // Add index for color rotation
+        .map(|(index, provider)| {
             let display_name = provider.display_name.as_ref()
                 .unwrap_or(&provider.name)
                 .clone();
+            
+            // Generate both standard provider class and our color class
             let provider_class = format!("provider-{}", provider.name.to_lowercase());
+            
+            // Use index % 5 to rotate through our colors
+            let color_index = index % colors.len();
+            let color = colors[color_index];
+            
+            // Create a dynamic style attribute with the color
             format!(
-                r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}">
+                r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}" style="background-color: {}">
                     <span>Continue with {}</span>
                 </a>"#,
-                provider.name, provider_class, display_name
+                provider.name, provider_class, color, display_name
             )
         })
         .collect::<Vec<_>>()
@@ -181,58 +200,13 @@ const fn get_sign_in_styles() -> &'static str {
             font-size: 16px;
             transition: all 0.3s ease;
             border: 2px solid transparent;
+            color: white; /* Text color for all buttons */
         }
         
         .provider-button:hover {
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        /* Provider-specific colors */
-        .provider-google {
-            background: #4285f4;
-            color: white;
-        }
-        
-        .provider-google:hover {
-            background: #3367d6;
-        }
-        
-        .provider-github {
-            background: #24292e;
-            color: white;
-        }
-        
-        .provider-github:hover {
-            background: #1a1e22;
-        }
-        
-        .provider-microsoft {
-            background: #0078d4;
-            color: white;
-        }
-        
-        .provider-microsoft:hover {
-            background: #0063b1;
-        }
-        
-        .provider-apple {
-            background: #000;
-            color: white;
-        }
-        
-        .provider-apple:hover {
-            background: #333;
-        }
-        
-        /* Generic provider style */
-        .provider-button:not(.provider-google):not(.provider-github):not(.provider-microsoft):not(.provider-apple) {
-            background: #6366f1;
-            color: white;
-        }
-        
-        .provider-button:not(.provider-google):not(.provider-github):not(.provider-microsoft):not(.provider-apple):hover {
-            background: #5558e3;
+            filter: brightness(90%); /* Darken on hover */
         }
         
         .footer {
@@ -254,6 +228,13 @@ const fn get_sign_in_styles() -> &'static str {
         
         .footer a:hover {
             text-decoration: underline;
+        }
+        
+        .version {
+            color: #999;
+            font-size: 12px;
+            margin-left: 5px;
+            opacity: 0.7;
         }
         
         @media (max-width: 480px) {

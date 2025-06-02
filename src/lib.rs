@@ -4,6 +4,9 @@
 #![deny(warnings)]
 #![allow(clippy::multiple_crate_versions)]
 
+/// Version of the vouchrs application
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod handlers;
 pub mod models;
 pub mod oauth;

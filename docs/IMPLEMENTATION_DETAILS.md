@@ -123,128 +123,46 @@ private_key_path_env = "APPLE_PRIVATE_KEY_PATH"
 - **Optional**: Add `Settings.toml` for custom provider configurations
 - **Advanced**: Enable additional providers like Microsoft
 
-## Custom JWT Implementation
+## Apple OAuth JWT Integration
 
 ### Overview
 
-Vouchrs creates and injects custom JWTs instead of using the OAuth provider's `id_token`. The JWT is signed with the session secret and includes standardized session information for upstream authentication.
+Vouchrs creates JWTs specifically for Apple OAuth client secret authentication. These JWTs are used only for authenticating with Apple's OAuth endpoints, not for general upstream API requests.
 
 ### Implementation Details
 
-#### 1. **Added JWT Utilities Module** (`src/jwt_utils.rs`)
-- **Function**: `hmac_sha256()` - Proper HMAC-SHA256 implementation using the `hmac-sha256` crate
-- **Function**: `create_jwt()` - Generic JWT creation with HS256 signing
-- **Function**: `create_user_cookie()` - Creates encrypted user data cookie from VouchrsUserData and client context
-- **Tests**: Comprehensive test suite validating JWT structure and claims
+#### Apple Client Secret Generation (`src/utils/apple.rs`)
+- **Function**: `generate_jwt_client_secret()` - Creates Apple-specific JWT client secrets
+- **Algorithm**: ES256 (ECDSA P-256) signing as required by Apple
+- **Purpose**: Authenticate with Apple OAuth endpoints only
+- **Configuration**: Uses JWT signing config from Settings.toml
 
-#### 2. **Updated Dependencies** (`Cargo.toml`)
-- Added `hmac-sha256 = "1.1"` for cryptographically secure HMAC-SHA256 signing
-- Maintained minimal dependency approach with lightweight library
+#### JWT Utilities (`src/utils/crypto.rs`)
+- **Function**: `create_jwt()` - Generic JWT creation supporting HS256 and ES256
+- **Function**: `create_jwt_header()` - JWT header creation for different algorithms
+- **Function**: `create_jwt_payload()` - Standard JWT payload with common claims
+- **Tests**: Comprehensive test suite validating JWT structure and Apple compliance
 
-#### 3. **Modified API Proxy** (`src/api_proxy.rs`)
-- Replaced provider's `id_token` injection with custom vouchr JWT
-- Updated `execute_upstream_request()` function signature to accept session and settings
-- Added proper error handling for JWT creation failures
-- Added comprehensive tests for JWT creation in proxy context
+### Apple JWT Structure
 
-### JWT Structure
-
-The vouchr JWT contains the following standardized claims:
+Apple client secret JWTs contain Apple-specific claims:
 
 ```json
 {
-  "iss": "https://auth.mycompany.com",     // Issuer (redirect_base_url)
-  "aud": "https://api.mycompany.com",      // Audience (upstream_url)
-  "exp": 1672531200,                       // Expiration (session.expires_at)
-  "iat": 1672444800,                       // Issued At (session.created_at)
-  "sub": "user@example.com",               // Subject (user_email)
-  "idp": "google",                         // Identity Provider
-  "idp_id": "google-user-12345",           // Provider User ID
-  "name": "Alice Johnson",                 // User Display Name
-  "client_ip": "203.0.113.42",            // Original Client IP (when available)
-  "user_agent": "Mozilla/5.0...",         // User Agent (sec-ch-ua or User-Agent)
-  "platform": "Windows",                  // Platform (sec-ch-ua-platform or derived)
-  "lang": "en-US",                        // Language (accept-language)
-  "mobile": 0                              // Mobile indicator (0 or 1)
+  "iss": "TEAM123456",                    // Apple Team ID
+  "aud": "https://appleid.apple.com",     // Apple ID audience
+  "sub": "com.example.app",               // Bundle ID (client_id)
+  "iat": 1672444800,                      // Issued At
+  "exp": 1672445100                       // Expiration (5 minutes)
 }
 ```
 
-### Client IP Integration
-
-The JWT includes the original client IP address for enhanced security and auditing:
-
-- **Automatic Detection**: Extracts client IP from standard proxy headers
-- **Header Priority**: Checks `X-Forwarded-For`, `X-Real-IP`, `X-Client-IP`, `CF-Connecting-IP`, etc.
-- **Fallback Support**: Uses peer address if proxy headers unavailable
-- **Optional Field**: Only included when IP can be determined
-
-**Supported Headers** (in order of preference):
-1. `X-Forwarded-For` (handles comma-separated IPs, takes first/original)
-2. `X-Real-IP`
-3. `X-Client-IP` 
-4. `CF-Connecting-IP` (Cloudflare)
-5. `X-Forwarded`
-6. `Forwarded-For`
-7. `Forwarded`
-8. Connection peer address (fallback)
-
-### User Agent Integration
-
-The JWT includes comprehensive user agent information extracted from HTTP headers:
-
-- **User Agent**: Prefers modern `sec-ch-ua` header, falls back to `User-Agent`
-- **Platform Detection**: Uses `sec-ch-ua-platform` or derives from User-Agent string
-- **Language**: Extracts primary language from `accept-language` header
-- **Mobile Detection**: Reads `sec-ch-ua-mobile` header (0 for desktop, 1 for mobile)
-
-**Supported Headers**:
-- `sec-ch-ua` → `user_agent` claim (preferred)
-- `User-Agent` → `user_agent` claim (fallback)
-- `sec-ch-ua-platform` → `platform` claim (preferred)
-- User-Agent parsing → `platform` claim (fallback for Windows, macOS, Linux, Android, iOS, Chrome OS)
-- `accept-language` → `lang` claim (takes first language code)
-- `sec-ch-ua-mobile` → `mobile` claim (0 or 1, defaults to 0)
-
 ### Security Features
 
-1. **HMAC-SHA256 Signing**: Uses proper cryptographic signing with the session secret
-2. **Controlled Claims**: Only includes necessary user information, no provider-specific data
-3. **Consistent Format**: Same JWT structure regardless of OAuth provider (Google, Apple, etc.)
-4. **Session Validation**: JWT expiration tied to vouchr session lifecycle
-5. **Client IP Tracking**: Includes original client IP for security auditing and rate limiting
-6. **User Agent Analysis**: Comprehensive browser/device information for analytics and security
-
-### Benefits
-
-#### For Upstream APIs
-- **Standardized Format**: Always receive the same JWT structure regardless of OAuth provider
-- **Simplified Validation**: Single JWT format to validate, no need to handle multiple provider formats
-- **Clean User Context**: Essential user information without provider-specific noise
-- **Trusted Source**: JWT signed by your authentication service, not external providers
-- **Client Context**: Access to original client IP for rate limiting, geolocation, and security analysis
-- **Device Intelligence**: User agent, platform, language, and mobile detection for analytics and personalization
-
-#### For Security
-- **Controlled Signing**: JWT signed with your own secret, not provider's
-- **Reduced Attack Surface**: No exposure of provider-specific tokens to upstream services
-- **Session Binding**: JWT lifecycle tied to vouchr session management
-- **Audit Trail**: All JWTs traceable to vouchr authentication events
-- **IP Tracking**: Client IP included for security monitoring and compliance auditing
-- **Device Fingerprinting**: User agent information for anomaly detection and fraud prevention
-
-### Integration Example
-
-#### Before (Provider Token)
-```
-Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...
-# Provider-specific JWT with varying claims and signing
-```
-
-#### After (Vouchr JWT) 
-```
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-# Standardized vouchr JWT with consistent claims and HMAC-SHA256 signing
-```
+1. **ES256 Signing**: Uses ECDSA P-256 algorithm as required by Apple
+2. **Short Expiration**: Tokens expire in 5 minutes for security
+3. **Apple-Specific Claims**: Only includes claims required by Apple OAuth
+4. **Private Key Protection**: Keys stored securely and loaded from configured paths
 
 ## Architecture Improvements
 
@@ -281,22 +199,21 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ## Implementation Details
 
-### Custom JWT Format
+### Proxy Authentication
 
-**Custom JWT Implementation**: Vouchrs uses a custom JWT format that upstream APIs need to be configured to handle.
+**Session Validation**: Vouchrs validates user sessions through encrypted cookies but does NOT inject custom JWTs into upstream requests.
 
 ### Integration Requirements
 
-1. **JWT Validation**: Configure upstream API JWT validation to expect HS256 (HMAC-SHA256)
-2. **Claims Mapping**: Extract user information using standardized vouchr claim names
-3. **Signature Verification**: Ensure JWT signature validation uses the same secret configured in vouchr's `SESSION_SECRET`
-4. **Optional Claims**: Handle optional `client_ip` claim for security auditing and rate limiting features
-5. **User Agent Claims**: Use user agent claims (`user_agent`, `platform`, `lang`, `mobile`) for analytics and personalization
+1. **Session Validation**: Upstream APIs should validate Vouchrs session cookies or implement their own authentication
+2. **Header Forwarding**: Vouchrs forwards standard headers (excluding authorization) to upstream services
+3. **Provider Tokens**: Access original OAuth provider tokens through the session if needed for upstream API calls
+4. **Apple OAuth**: Uses JWT client secrets only for Apple OAuth endpoint authentication (not upstream APIs)
 
 ### Deployment Options
 
 - **Basic**: Default configuration provides standard authentication behavior
-- **Customized**: Add `Settings.toml` for custom provider configurations
+- **Customized**: Add `Settings.toml` for custom provider configurations  
 - **Advanced**: Enable additional providers like Microsoft through configuration
 
 ## Future Enhancements

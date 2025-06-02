@@ -19,6 +19,8 @@ static/
 └── [custom files]  # Additional assets (images, JS, etc.)
 ```
 
+> **Example**: See the `/custom-ui` folder in the repository for a ready-to-use dark mode theme with Google and Apple provider styling.
+
 ## 🐳 Docker Volume Mounting
 
 ### Basic Usage
@@ -47,42 +49,44 @@ services:
 
 ## 🎯 Customization Examples
 
-### 1. Corporate Branding
+### 1. Dark Mode Theme with Brand-Specific Provider Styling
 
-Create `custom-ui/sign-in.html`:
+Our repository includes a ready-to-use dark mode example in the `/custom-ui` folder that you can use as a starting point.
+
+Example `sign-in.html`:
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACME Corp - Secure Login</title>
+    <title>Vouchrs OIDC Reverse Proxy - Sign In</title>
     <link rel="stylesheet" href="/oauth2/static/sign-in.css">
-    <style>
-        .container { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); }
-        .login-box { border: 3px solid #ff6b35; }
-        .title::before { content: "🏢 "; }
-    </style>
 </head>
 <body>
     <div class="container">
         <div class="login-box">
-            <h1 class="title">ACME CORP PORTAL</h1>
-            <p class="subtitle">Corporate OAuth2 Gateway</p>
+            <h1>🔐 Secure Authentication</h1>
+            <p class="subtitle">Choose a provider to continue</p>
             
             <div class="provider-buttons">
-                <a href="/oauth2/google" class="oauth-button google">
-                    <!-- Google SVG icon -->
-                    Sign in with Google
+                <a href="/oauth2/sign_in?provider=google" class="provider-btn google-btn">
+                    <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <!-- Google SVG icon path data -->
+                    </svg>
+                    <span>Sign in with Google</span>
                 </a>
-                <a href="/oauth2/apple" class="oauth-button apple">
-                    <!-- Apple SVG icon -->
-                    Sign in with Apple
+                
+                <a href="/oauth2/sign_in?provider=apple" class="provider-btn apple-btn">
+                    <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <!-- Apple SVG icon path data -->
+                    </svg>
+                    <span>Sign in with Apple</span>
                 </a>
             </div>
-
-            <div class="footer-text">
-                <p>🏢 ACME Corporation Internal Portal</p>
+            
+            <div class="footer">
+                <p>Secured by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">OIDC Proxy</span></p>
             </div>
         </div>
     </div>
@@ -92,11 +96,50 @@ Create `custom-ui/sign-in.html`:
 
 ### 2. Custom CSS Overrides
 
-Create `custom-ui/sign-in.css`:
+Our dark mode theme in the `/custom-ui` folder provides complete styling:
+
 ```css
-/* Custom theme overrides */
-.container {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+/* Dark mode theme with provider-specific styling */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #121212; /* Dark mode background */
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e0e0e0;
+}
+
+.login-box {
+    background: #1e1e1e; /* Dark card background */
+    padding: 2.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+/* Provider-specific styling */
+.google-btn {
+    background-color: #4285F4; /* Google blue */
+}
+
+.apple-btn {
+    background-color: #000; /* Apple black */
+}
+```
+
+### 3. Corporate Branding
+
+For corporate branding, you can create custom CSS:
+
+```css
+/* Custom corporate theme */
+body {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+}
+
+.login-box {
+    border: 3px solid #ff6b35;
+    background-color: #ffffff;
 }
 
 .login-box {

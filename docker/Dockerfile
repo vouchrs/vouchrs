@@ -67,9 +67,6 @@ WORKDIR /app
 # Copy the statically linked binary from builder stage
 COPY --from=builder /app/vouchrs /app/vouchrs
 
-# Copy static files from builder stage
-COPY --from=builder /app/src/static /app/static
-
 # Copy default configuration 
 COPY --from=builder /app/Settings.toml /app/Settings.toml
 
