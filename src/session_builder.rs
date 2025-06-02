@@ -37,6 +37,7 @@ pub struct AuthenticationData {
 
 impl AuthenticationData {
     /// Creates a new authentication data object with the given parameters
+    #[must_use]
     pub fn new(
         provider: &str,
         id_token: Option<String>,
@@ -53,6 +54,7 @@ impl AuthenticationData {
     }
     
     /// Sets the Apple user info
+    #[must_use]
     pub fn with_apple_info(mut self, apple_user_info: Option<AppleUserInfo>) -> Self {
         self.apple_user_info = apple_user_info;
         self
@@ -68,6 +70,7 @@ pub struct SessionFinalizationBuilder<'a> {
 
 impl<'a> SessionFinalizationBuilder<'a> {
     /// Creates a new session finalization builder with required parameters
+    #[must_use]
     pub fn new(
         req: &'a actix_web::HttpRequest,
         session_manager: &'a crate::session::SessionManager,
@@ -83,30 +86,35 @@ impl<'a> SessionFinalizationBuilder<'a> {
     }
 
     /// Sets the ID token for the session
+    #[must_use]
     pub fn with_id_token(mut self, id_token: Option<String>) -> Self {
         self.auth_data.id_token = id_token;
         self
     }
 
     /// Sets the refresh token for the session
+    #[must_use]
     pub fn with_refresh_token(mut self, refresh_token: Option<String>) -> Self {
         self.auth_data.refresh_token = refresh_token;
         self
     }
 
     /// Sets the Apple user info for the session
+    #[must_use]
     pub fn with_apple_user_info(mut self, apple_user_info: Option<AppleUserInfo>) -> Self {
         self.auth_data.apple_user_info = apple_user_info;
         self
     }
 
     /// Sets the redirect URL for after authentication
+    #[must_use]
     pub fn with_redirect_url(mut self, redirect_url: Option<String>) -> Self {
         self.redirect_url = redirect_url;
         self
     }
 
     /// Finalizes the session and returns an HTTP response with session cookies
+    #[must_use]
     pub fn finalize(self) -> actix_web::HttpResponse {
         SessionBuilder::finalize_session(
             self.req,
@@ -120,21 +128,33 @@ impl<'a> SessionFinalizationBuilder<'a> {
 pub struct SessionBuilder;
 
 impl SessionBuilder {
-    /// Example method showing how to use the SessionFinalizationBuilder
+    /// Example method showing how to use the `SessionFinalizationBuilder`
     /// 
     /// # Example
     /// 
-    /// ```rust,ignore
-    /// let response = SessionBuilder::finalize_session_with_builder(
-    ///     req,
-    ///     session_manager,
-    ///     "google",
-    ///     expires_at
-    /// )
-    /// .with_id_token(Some(id_token))
-    /// .with_refresh_token(Some(refresh_token))
-    /// .finalize();
+    /// ```rust
+    /// # use chrono::{DateTime, Utc};
+    /// # use vouchrs::session_builder::SessionBuilder;
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// // This is a conceptual example showing the builder pattern usage
+    /// // In practice, you would have actual HttpRequest and SessionManager instances
+    /// 
+    /// // let response = SessionBuilder::finalize_session_with_builder(
+    /// //     req,
+    /// //     session_manager,
+    /// //     "google",
+    /// //     expires_at
+    /// // )
+    /// // .with_id_token(Some(id_token))
+    /// // .with_refresh_token(Some(refresh_token))
+    /// // .finalize();
+    /// 
+    /// // The builder pattern allows optional chaining of configuration methods
+    /// // before calling finalize() to create the final HTTP response
+    /// # Ok(())
+    /// # }
     /// ```
+    #[must_use]
     pub fn finalize_session_with_builder<'a>(
         req: &'a actix_web::HttpRequest,
         session_manager: &'a crate::session::SessionManager,
@@ -363,7 +383,7 @@ impl SessionBuilder {
     fn create_error_response(session_manager: &crate::session::SessionManager, error_msg: &str) -> actix_web::HttpResponse {
         use log::error;
         
-        error!("{}", error_msg);
+        error!("{error_msg}");
         let clear_cookie = session_manager.create_expired_cookie();
         actix_web::HttpResponse::Found()
             .cookie(clear_cookie)
@@ -377,7 +397,7 @@ impl SessionBuilder {
     /// 1. Builds the session from OAuth tokens
     /// 2. Creates session and user cookies
     /// 3. Validates redirect URL
-    /// 4. Returns HttpResponse with all cookies
+    /// 4. Returns `HttpResponse` with all cookies
     /// 
     /// # Arguments
     /// 
@@ -389,6 +409,7 @@ impl SessionBuilder {
     /// * `expires_at` - Token expiration time
     /// * `apple_user_info` - Optional Apple user info (for Apple Sign In)
     /// * `redirect_url` - Optional URL to redirect to after successful authentication
+    #[must_use]
     pub fn finalize_session(
         req: &actix_web::HttpRequest,
         session_manager: &crate::session::SessionManager,
