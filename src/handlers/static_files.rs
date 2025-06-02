@@ -32,7 +32,13 @@ pub async fn serve_static(
 
     debug!("Attempting to serve static file: {file_path}");
 
-    if let Ok(contents) = fs::read(&file_path) {
+    fs::read(&file_path).map_or_else(|_| {
+        debug!("Static file not found: {file_path}");
+        Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "not_found",
+            "message": "File not found"
+        })))
+    }, |contents| {
         let content_type = match file_path.split('.').next_back() {
             Some("html") => "text/html",
             Some("css") => "text/css",
@@ -46,13 +52,7 @@ pub async fn serve_static(
         };
 
         Ok(HttpResponse::Ok().content_type(content_type).body(contents))
-    } else {
-        debug!("Static file not found: {file_path}");
-        Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "not_found",
-            "message": "File not found"
-        })))
-    }
+    })
 }
 
 // Helper function to get sign-in page HTML (reused from original handlers)
@@ -119,7 +119,7 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
 }
 
 #[allow(clippy::too_many_lines)]
-fn get_sign_in_styles() -> &'static str {
+const fn get_sign_in_styles() -> &'static str {
     r"
         * {
             margin: 0;

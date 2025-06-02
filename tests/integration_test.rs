@@ -77,7 +77,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_data.mobile, 0, "Mobile flag should be set");
 
     // Test user cookie encryption/decryption
-    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false);
+    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false, settings.session.session_duration_hours);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");
@@ -138,7 +138,7 @@ fn test_minimal_user_data() {
     assert_eq!(user_data.mobile, 0, "Mobile should default to 0");
 
     // Test encryption/decryption with minimal data
-    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false);
+    let session_manager = SessionManager::new(settings.session.session_secret.as_bytes(), false, settings.session.session_duration_hours);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");

@@ -405,15 +405,28 @@ pub fn create_jwt_payload(
 mod tests {
     use super::*;
     use serde_json::json;
-
-    const TEST_SECRET: &[u8] = b"test_secret_key_for_hmac_testing_32b";
     
-    // Test PKCS#8 private key for ES256 testing
-    const TEST_ES256_PRIVATE_KEY: &str = r"-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
-9QFCar9R+eojTjLOXCisVV9xfvehRANCAATyHpTDz7xyWXHaC0FXYlwK5r4IpeHx
-1X4WXDZiAKUxHblBs1Kn15IR334KNiNP7gEWM+9BFuWh9uJwHGOBJXc/
------END PRIVATE KEY-----";
+    // Test secret key for HMAC operations - generated dynamically
+    fn get_test_secret() -> Vec<u8> {
+        b"test_secret_key_for_hmac_testing_32b".to_vec()
+    }
+    
+    // Generate a test P-256 (NIST curve) private key for ES256 testing
+    // This avoids hardcoding a private key in the source code
+    fn generate_test_es256_key() -> String {
+        // Only import these crates inside the test module
+        use p256::pkcs8::{EncodePrivateKey, LineEnding};
+        use p256::ecdsa::{SigningKey};
+        use rand::thread_rng;
+        
+        // Generate a new random key each time using thread_rng from rand crate
+        let signing_key = SigningKey::random(&mut thread_rng());
+        
+        // Convert to PKCS#8 PEM format
+        signing_key.to_pkcs8_pem(LineEnding::LF)
+            .expect("Failed to generate test ES256 key")
+            .to_string()
+    }
 
     #[test]
     fn test_create_jwt_header_hs256() {
@@ -477,8 +490,9 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
 
     #[test]
     fn test_hmac_sha256_signing() {
+        let test_secret = get_test_secret();
         let message = b"test.message";
-        let result = sign_jwt_hmac_sha256(message, TEST_SECRET);
+        let result = sign_jwt_hmac_sha256(message, &test_secret);
         
         assert!(result.is_ok());
         let signature = result.unwrap();
@@ -489,9 +503,10 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
     #[test]
     fn test_hmac_sha256_deterministic() {
         let message = b"test.message";
+        let test_secret = get_test_secret();
         
-        let sig1 = sign_jwt_hmac_sha256(message, TEST_SECRET).unwrap();
-        let sig2 = sign_jwt_hmac_sha256(message, TEST_SECRET).unwrap();
+        let sig1 = sign_jwt_hmac_sha256(message, &test_secret).unwrap();
+        let sig2 = sign_jwt_hmac_sha256(message, &test_secret).unwrap();
         
         assert_eq!(sig1, sig2, "HMAC signatures should be deterministic");
     }
@@ -500,9 +515,10 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
     fn test_hmac_sha256_different_messages() {
         let message1 = b"test.message1";
         let message2 = b"test.message2";
+        let test_secret = get_test_secret();
         
-        let sig1 = sign_jwt_hmac_sha256(message1, TEST_SECRET).unwrap();
-        let sig2 = sign_jwt_hmac_sha256(message2, TEST_SECRET).unwrap();
+        let sig1 = sign_jwt_hmac_sha256(message1, &test_secret).unwrap();
+        let sig2 = sign_jwt_hmac_sha256(message2, &test_secret).unwrap();
         
         assert_ne!(sig1, sig2, "Different messages should produce different signatures");
     }
@@ -516,7 +532,8 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
             "exp": 1_234_571_490
         });
         
-        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, TEST_SECRET);
+        let test_secret = get_test_secret();
+        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, &test_secret);
         
         assert!(result.is_ok());
         let jwt = result.unwrap();
@@ -547,12 +564,13 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
             "iss": "test-issuer"
         });
         
-        let jwt = create_jwt(&header, &payload, JwtAlgorithm::HS256, TEST_SECRET).unwrap();
+        let test_secret = get_test_secret();
+        let jwt = create_jwt(&header, &payload, JwtAlgorithm::HS256, &test_secret).unwrap();
         let parts: Vec<&str> = jwt.split('.').collect();
         
         // Manually verify HMAC signature
         let message = format!("{}.{}", parts[0], parts[1]);
-        let expected_signature = sign_jwt_hmac_sha256(message.as_bytes(), TEST_SECRET).unwrap();
+        let expected_signature = sign_jwt_hmac_sha256(message.as_bytes(), &test_secret).unwrap();
         let expected_signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&expected_signature);
         
         assert_eq!(parts[2], expected_signature_b64);
@@ -564,8 +582,11 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
         // but we should be able to sign successfully
         let message = b"test.message";
         
-        let result1 = sign_jwt_es256(message, TEST_ES256_PRIVATE_KEY);
-        let result2 = sign_jwt_es256(message, TEST_ES256_PRIVATE_KEY);
+        // Generate a test key for this test
+        let test_es256_key = generate_test_es256_key();
+        
+        let result1 = sign_jwt_es256(message, &test_es256_key);
+        let result2 = sign_jwt_es256(message, &test_es256_key);
         
         assert!(result1.is_ok());
         assert!(result2.is_ok());
@@ -588,7 +609,9 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
             "aud": "https://api.example.com"
         });
         
-        let result = create_jwt(&header, &payload, JwtAlgorithm::ES256, TEST_ES256_PRIVATE_KEY.as_bytes());
+        // Generate a key for this test
+        let test_es256_key = generate_test_es256_key();
+        let result = create_jwt(&header, &payload, JwtAlgorithm::ES256, test_es256_key.as_bytes());
         
         assert!(result.is_ok());
         let jwt = result.unwrap();
@@ -679,7 +702,8 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
         let header = create_jwt_header(&JwtAlgorithm::HS256, None);
         let payload = json!({});
         
-        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, TEST_SECRET);
+        let test_secret = get_test_secret();
+        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, &test_secret);
         
         assert!(result.is_ok());
         let jwt = result.unwrap();
@@ -703,7 +727,8 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
             "sub": "test-user"
         });
         
-        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, TEST_SECRET);
+        let test_secret = get_test_secret();
+        let result = create_jwt(&header, &payload, JwtAlgorithm::HS256, &test_secret);
         
         assert!(result.is_ok());
         let jwt = result.unwrap();

@@ -1,4 +1,9 @@
 
+#![warn(clippy::pedantic)]
+#![warn(clippy::cargo)]
+#![deny(warnings)]
+#![allow(clippy::multiple_crate_versions)]
+
 pub mod handlers;
 pub mod models;
 pub mod oauth;

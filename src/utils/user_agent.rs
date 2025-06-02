@@ -34,11 +34,7 @@ pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
         .and_then(|h| h.to_str().ok())
         .map(|s| s.trim_matches('"').to_string())
         .or_else(|| {
-            if let Some(ref ua) = user_agent {
-                Some(derive_platform_from_user_agent(ua))
-            } else {
-                Some("Unknown".to_string())
-            }
+            user_agent.as_ref().map_or_else(|| Some("Unknown".to_string()), |ua| Some(derive_platform_from_user_agent(ua)))
         });
 
     // Extract language preference from Accept-Language header

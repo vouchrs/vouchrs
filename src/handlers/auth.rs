@@ -37,7 +37,7 @@ pub async fn oauth_sign_in(
 
             // Create OAuth state object
             let oauth_state = OAuthState {
-                state: csrf_state.clone(),
+                state: csrf_state,
                 provider: provider.clone(),
                 redirect_url: query.rd.clone(),
             };

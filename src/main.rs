@@ -1,3 +1,9 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::cargo)]
+#![deny(warnings)]
+#![allow(clippy::multiple_crate_versions)]
+
+
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
@@ -48,6 +54,7 @@ async fn start_server(
     let session_manager = SessionManager::new(
         settings.session.session_secret.as_bytes(),
         settings.cookies.secure,
+        settings.session.session_duration_hours,
     );
 
     // Configure CORS for SPAs

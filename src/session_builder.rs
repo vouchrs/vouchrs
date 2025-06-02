@@ -132,7 +132,7 @@ impl SessionBuilder {
             .get("sub")
             .and_then(|v| v.as_str())
             .map(std::string::ToString::to_string)
-            .ok_or("Missing or invalid 'sub' claim in ID token".to_string())
+            .ok_or_else(|| "Missing or invalid 'sub' claim in ID token".to_string())
     }
 
     /// Extract the email claim - maps to `user_email` (returns Option for fallback logic)

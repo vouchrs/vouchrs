@@ -5,15 +5,15 @@ A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts a
 ## Features
 
 - 🔐 **OIDC Authentication**: Configurable OAuth providers with OpenID Connect support
-- 🛡️ **Secure Sessions**: AES-GCM encrypted cookie-based sessions
+- 🛡️ **Secure Sessions**: AES-GCM encrypted cookie-based sessions with separate user data storage
 - 🎨 **Customizable UI**: Docker volume-mountable sign-in pages with dynamic provider lists
 - ⚡ **High Performance**: Rust-based with minimal dependencies and optimized architecture
-- 🔄 **Reverse Proxy**: Transparent upstream request forwarding 
+- 🔄 **Reverse Proxy**: Transparent upstream request forwarding with client context
 - 🚀 **Lightweight**: Optimized binary size and memory footprint
 - 📦 **Self-Contained**: No external dependencies required
 - 🏗️ **Config-Driven**: Flexible provider configuration through Settings.toml
 - 🔧 **Extensible**: Easy to add new OAuth providers via configuration
-- 🌐 **Client Context**: Automatic client IP and user agent detection for security and analytics
+- 🌐 **Client Context**: Rich client information available via encrypted cookies and debug endpoints
 
 ## Quick Start
 
@@ -73,10 +73,7 @@ scopes = ["openid", "email", "profile"]
 client_id_env = "GOOGLE_CLIENT_ID"
 client_secret_env = "GOOGLE_CLIENT_SECRET"
 enabled = true
-
-[providers.extra_auth_params]
-access_type = "offline"
-prompt = "consent"
+extra_auth_params = { access_type = "offline", prompt = "consent" }
 
 [[providers]]
 name = "apple"
@@ -85,14 +82,8 @@ discovery_url = "https://appleid.apple.com/.well-known/openid-configuration"
 scopes = ["openid", "email", "name"]
 client_id_env = "APPLE_CLIENT_ID"
 enabled = true
-
-[providers.extra_auth_params]
-response_mode = "form_post"
-
-[providers.jwt_signing]
-team_id_env = "APPLE_TEAM_ID"
-key_id_env = "APPLE_KEY_ID"
-private_key_path_env = "APPLE_PRIVATE_KEY_PATH"
+extra_auth_params = { response_mode = "form_post" }
+jwt_signing = { team_id_env = "APPLE_TEAM_ID", key_id_env = "APPLE_KEY_ID", private_key_path_env = "APPLE_PRIVATE_KEY_PATH" }
 
 # Add custom providers easily
 [[providers]]
@@ -118,8 +109,8 @@ enabled = false  # Set to true to enable
 | `client_id_env` | String | Yes | Environment variable for client ID |
 | `client_secret_env` | String | No | Environment variable for client secret |
 | `enabled` | Boolean | Yes | Whether provider is enabled |
-| `extra_auth_params` | Table | No | Additional OAuth parameters |
-| `jwt_signing` | Table | No | JWT signing config (for Apple) |
+| `extra_auth_params` | Inline Table | No | Additional OAuth parameters |
+| `jwt_signing` | Inline Table | No | JWT signing config (for Apple) |
 
 *Either `discovery_url` OR both `auth_url` and `token_url` are required.
 
@@ -192,7 +183,26 @@ The service will start on `http://localhost:8080`.
 | `/oauth2/sign_in` | GET | Display sign-in page or initiate OAuth flow |
 | `/oauth2/callback` | GET/POST | OAuth callback handler (Google=GET, Apple=POST) |
 | `/oauth2/sign_out` | GET/POST | Sign out user and clear session |
+| `/oauth2/userinfo` | GET | Get user data from encrypted cookie (JSON) |
+| `/oauth2/debug` | GET | Debug endpoint with session and user data |
 | `/ping` | GET | Health check and service status |
+
+## Client Context and User Data
+
+Vouchrs stores user information in encrypted cookies (`vouchrs_user`) containing:
+
+- **email**: User's email address
+- **name**: User's display name (optional)
+- **provider**: OAuth provider (google, apple, etc.)
+- **provider_id**: Unique user ID from the OAuth provider
+- **client_ip**: Original client IP address
+- **user_agent**: Browser/device user agent string
+- **platform**: Operating system (Windows, macOS, Linux, etc.)
+- **lang**: Preferred language (en-US, etc.)
+- **mobile**: Mobile device indicator (0 or 1)
+- **session_start**: Unix timestamp of session creation
+
+This information is available to your application via the `/oauth2/userinfo` endpoint or by reading the `vouchrs_user` cookie directly.
 
 ## Dynamic Provider Support
 
@@ -208,7 +218,7 @@ The sign-in page automatically generates buttons for all enabled providers. When
 - 🚀 **[Deployment Guide](./docs/DEPLOYMENT.md)** - Docker, environment setup, and production deployment
 - 🔌 **[API Reference](./docs/API_REFERENCE.md)** - Endpoint documentation and examples
 - 🎨 **[UI Customization](./docs/UI_CUSTOMIZATION.md)** - Custom branding and theming
-- 🔧 **[Implementation Details](./docs/IMPLEMENTATION_DETAILS.md)** - Technical details on config-driven providers and JWT system
+- 🔧 **[Implementation Details](./docs/IMPLEMENTATION_DETAILS.md)** - Technical details on config-driven providers and session management
 | `RUST_LOG` | No | Log level (error, warn, info, debug, trace) |
 
 ## Authentication Flow
@@ -217,35 +227,45 @@ The sign-in page automatically generates buttons for all enabled providers. When
 2. **User selects provider** → Redirected to OAuth provider (Google/Apple)
 3. **User authorizes** → Provider redirects to `/oauth2/callback`
 4. **Token exchange** → User info retrieved and encrypted session created
-5. **JWT generation** → Custom JWT created with standardized claims and HMAC-SHA256 signature
-6. **User authenticated** → JWT injected in Authorization header, request forwarded to upstream
+5. **Session storage** → Two encrypted cookies created:
+   - `vouchrs_session`: OAuth tokens for provider communication
+   - `vouchrs_user`: User data and client context
+6. **User authenticated** → Request forwarded to upstream with original context
 
-## Custom JWT Integration
+## Accessing User Data
 
-Vouchrs injects a standardized JWT (signed with your session secret) instead of forwarding provider tokens. This provides:
+Your upstream application can access authenticated user information through:
 
-- **Standardized Format**: Consistent JWT structure regardless of OAuth provider
-- **Enhanced Security**: JWT signed with your own secret, not external providers
-- **Rich Context**: Includes client IP, user agent, platform, and language information
-- **Simplified Validation**: Single JWT format for all upstream APIs to validate
+### Option 1: API Endpoint
+```bash
+curl -H "Cookie: vouchrs_user=..." http://localhost:8080/oauth2/userinfo
+```
 
-### JWT Claims Structure
+Response format:
 ```json
 {
-  "iss": "https://auth.mycompany.com",     // Your auth service
-  "aud": "https://api.mycompany.com",      // Your upstream API
-  "sub": "user@example.com",               // User email
-  "idp": "google",                         // OAuth provider
-  "name": "Alice Johnson",                 // User display name
-  "client_ip": "203.0.113.42",            // Original client IP
-  "user_agent": "Mozilla/5.0...",         // Browser/device info
-  "platform": "Windows",                  // Operating system
-  "lang": "en-US",                        // Preferred language
-  "mobile": 0                              // Mobile device indicator
+  "email": "user@example.com",
+  "name": "John Doe",
+  "provider": "google",
+  "provider_id": "123456789",
+  "client_ip": "203.0.113.42",
+  "user_agent": "Mozilla/5.0...",
+  "platform": "macOS",
+  "lang": "en-US",
+  "mobile": 0,
+  "session_start": 1703123456
 }
 ```
 
-See [`docs/IMPLEMENTATION_DETAILS.md`](./docs/IMPLEMENTATION_DETAILS.md) for complete technical details.
+### Option 2: Direct Cookie Access
+Decrypt the `vouchrs_user` cookie using your session secret to access the same JSON data structure.
+
+### Option 3: Debug Endpoint
+```bash
+curl -H "Cookie: vouchrs_session=...; vouchrs_user=..." http://localhost:8080/oauth2/debug
+```
+
+Returns both session token data and user data for debugging purposes.
 
 ## Development
 
@@ -272,15 +292,24 @@ cargo run
 
 **"Missing environment variable"**
 - Ensure all required environment variables are set
-- Generate a secure session secret: `openssl rand -hex 32`
+- Generate a secure session secret: `openssl rand -base64 32`
 
 **"OAuth callback error"**
 - Verify redirect URI matches provider configuration exactly
 - Check OAuth provider credentials are correct
 
-**"Apple JWT signing failed"**
+**"Apple authentication failed"**
 - Ensure Apple private key file exists and is readable
 - Verify `APPLE_PRIVATE_KEY_PATH` points to correct `.p8` file
+- Check Apple Team ID and Key ID are correct
+
+**"Session cookie not found"**
+- Verify session secret is consistent across restarts
+- Check cookie security settings match your environment (HTTP vs HTTPS)
+
+**"User data not available"**
+- Ensure the `/oauth2/userinfo` endpoint is accessible
+- Check that both `vouchrs_session` and `vouchrs_user` cookies are present
 
 ## License
 

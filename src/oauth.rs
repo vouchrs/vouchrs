@@ -34,9 +34,9 @@ pub enum OAuthError {
 impl std::fmt::Display for OAuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OAuthError::Configuration(msg) => write!(f, "Configuration error: {msg}"),
-            OAuthError::Network(msg) => write!(f, "Network error: {msg}"),
-            OAuthError::InvalidResponse(msg) => write!(f, "Invalid response: {msg}"),
+            Self::Configuration(msg) => write!(f, "Configuration error: {msg}"),
+            Self::Network(msg) => write!(f, "Network error: {msg}"),
+            Self::InvalidResponse(msg) => write!(f, "Invalid response: {msg}"),
         }
     }
 }
@@ -137,7 +137,7 @@ impl RuntimeProvider {
             (auth_url, token_url)
         };
 
-        Ok(RuntimeProvider {
+        Ok(Self {
             settings,
             auth_url,
             token_url,
@@ -172,7 +172,7 @@ impl RuntimeProvider {
 
     /// Check if the provider is properly configured
     #[must_use]
-    pub fn is_configured(&self) -> bool {
+    pub const fn is_configured(&self) -> bool {
         self.client_id.is_some()
             && (self.client_secret.is_some() || self.settings.jwt_signing.is_some())
     }
@@ -463,12 +463,12 @@ impl OAuthConfig {
             .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
         // Calculate token expiration
-        let expires_at = if let Some(expires_in) = token_response.expires_in {
-            Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600))
-        } else {
+        let expires_at = token_response.expires_in.map_or_else(|| {
             // Default to 1 hour if no expiration provided
             Utc::now() + chrono::Duration::hours(1)
-        };
+        }, |expires_in| {
+            Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600))
+        });
 
         // Log detailed information about what we extracted
         LoggingHelper::log_token_exchange_summary(
@@ -767,11 +767,9 @@ fn parse_stateless_oauth_state(received_state: &str) -> Result<crate::oauth::OAu
 
         let redirect_url = if parts.len() > 2 {
             // Try URL_SAFE_NO_PAD first, then fallback to STANDARD for backwards compatibility
-            match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[2])
-                .or_else(|_| base64::engine::general_purpose::STANDARD.decode(parts[2])) {
-                Ok(decoded_bytes) => String::from_utf8(decoded_bytes).ok(),
-                Err(_) => None,
-            }
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[2])
+                .or_else(|_| base64::engine::general_purpose::STANDARD.decode(parts[2]))
+                .map_or(None, |decoded_bytes| String::from_utf8(decoded_bytes).ok())
         } else {
             None
         };
@@ -859,7 +857,7 @@ mod tests {
         
         // Create a session manager for encryption/decryption
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let session_manager = SessionManager::new(key, false);
+        let session_manager = SessionManager::new(key, false, 24);
         
         // Create an OAuth state
         let original_state = OAuthState {
@@ -888,7 +886,7 @@ mod tests {
         use crate::session::SessionManager;
         
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let session_manager = SessionManager::new(key, false);
+        let session_manager = SessionManager::new(key, false, 24);
         
         let original_state = OAuthState {
             state: "csrf_token_123".to_string(),

@@ -212,9 +212,9 @@ impl VouchrsSettings {
     /// Returns an error if:
     /// - Settings file cannot be read
     /// - TOML parsing fails
-    fn load_base_settings() -> Result<VouchrsSettings, Box<dyn std::error::Error>> {
+    fn load_base_settings() -> Result<Self, Box<dyn std::error::Error>> {
         // 1. Start with default settings
-        let mut settings = VouchrsSettings::default();
+        let mut settings = Self::default();
 
         // 2. Try to load from Settings.toml in current directory (lower priority)
         let default_config_path = std::path::PathBuf::from("Settings.toml");
@@ -232,7 +232,7 @@ impl VouchrsSettings {
             let secrets_path = std::path::Path::new(&secrets_dir).join("Settings.toml");
             if secrets_path.exists() {
                 let secrets_toml_content = fs::read_to_string(&secrets_path)?;
-                let secrets_settings: VouchrsSettings =
+                let secrets_settings: Self =
                     basic_toml::from_str(&secrets_toml_content)?;
 
                 println!("✓ Overriding settings from {}", secrets_path.display());
@@ -253,7 +253,7 @@ impl VouchrsSettings {
     }
 
     /// Apply environment variable overrides to settings
-    fn apply_env_overrides(settings: &mut VouchrsSettings) {
+    fn apply_env_overrides(settings: &mut Self) {
         Self::apply_application_env_overrides(&mut settings.application);
         Self::apply_proxy_env_overrides(&mut settings.proxy);
         Self::apply_static_files_env_overrides(&mut settings.static_files);

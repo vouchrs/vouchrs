@@ -15,34 +15,31 @@ pub async fn oauth_userinfo(
     use crate::utils::cookie::USER_COOKIE_NAME;
 
     // Get the vouchrs_user cookie directly
-    if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
-        // Attempt to decrypt the cookie value
-        match session_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
-            Ok(user_data) => {
-                info!(
-                    "Userinfo endpoint: returning raw user data for user: {}",
-                    user_data.email
-                );
-
-                // Return the complete user data as raw JSON
-                Ok(HttpResponse::Ok().json(user_data))
-            }
-            Err(e) => {
-                error!("Userinfo endpoint: Error decrypting user cookie: {e}");
-                Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "invalid_cookie",
-                    "error_description": "Failed to decrypt user cookie data",
-                    "details": e.to_string()
-                })))
-            }
-        }
-    } else {
+    req.cookie(USER_COOKIE_NAME).map_or_else(|| {
         debug!("Userinfo endpoint: No vouchrs_user cookie found");
         Ok(HttpResponse::Unauthorized().json(serde_json::json!({
             "error": "no_user_data",
             "error_description": "No user data cookie found. Please authenticate first."
         })))
-    }
+    }, |cookie| match session_manager.decrypt_data::<crate::models::VouchrsUserData>(cookie.value()) {
+        Ok(user_data) => {
+            info!(
+                "Userinfo endpoint: returning raw user data for user: {}",
+                user_data.email
+            );
+
+            // Return the complete user data as raw JSON
+            Ok(HttpResponse::Ok().json(user_data))
+        }
+        Err(e) => {
+            error!("Userinfo endpoint: Error decrypting user cookie: {e}");
+            Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "invalid_cookie",
+                "error_description": "Failed to decrypt user cookie data",
+                "details": e.to_string()
+            })))
+        }
+    })
 }
 
 /// Debug endpoint - returns debug information from session

@@ -1,0 +1,12 @@
+# Cargo configuration for the project
+[build]
+# Always run clippy with pedantic mode and treat warnings as errors
+rustflags = [
+    "-W", "clippy::pedantic",
+    "-W", "clippy::cargo",
+    "-D", "warnings"
+]
+
+[env]
+# Set RUSTFLAGS to ensure warnings are treated as errors in all contexts
+RUSTFLAGS = "-D warnings"

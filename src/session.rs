@@ -20,7 +20,7 @@ impl std::fmt::Display for SessionError {
 
 impl From<anyhow::Error> for SessionError {
     fn from(err: anyhow::Error) -> Self {
-        SessionError(err)
+        Self(err)
     }
 }
 
@@ -41,17 +41,19 @@ impl ResponseError for SessionError {
 pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
+    session_duration_hours: u64,
 }
 
 impl SessionManager {
     /// Create a new session manager with the provided key and cookie settings
     #[must_use]
-    pub fn new(key: &[u8], cookie_secure: bool) -> Self {
+    pub fn new(key: &[u8], cookie_secure: bool, session_duration_hours: u64) -> Self {
         let encryption_key = derive_encryption_key(key);
 
         Self {
             encryption_key,
             cookie_secure,
+            session_duration_hours,
         }
     }
 
@@ -138,12 +140,16 @@ impl SessionManager {
         &self,
         req: &HttpRequest,
     ) -> Result<Option<OAuthState>> {
-        log::info!("Looking for temporary state cookie 'vouchr_oauth_state'");
+        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
+        log::info!("Looking for temporary state cookie '{cookie_name}'");
 
         // Log all cookies in the request for debugging
         crate::utils::cookie::log_cookies(req);
 
-        if let Some(cookie) = req.cookie("vouchr_oauth_state") {
+        req.cookie(cookie_name).map_or_else(|| {
+            log::warn!("No temporary state cookie '{cookie_name}' found in request");
+            Ok(None)
+        }, |cookie| {
             log::info!(
                 "Found temporary state cookie with value length: {}",
                 cookie.value().len()
@@ -155,10 +161,7 @@ impl SessionManager {
                     Ok(None)
                 }
             }
-        } else {
-            log::warn!("No temporary state cookie 'vouchr_oauth_state' found in request");
-            Ok(None)
-        }
+        })
     }
 
     /// Get session from HTTP request cookies
@@ -195,10 +198,8 @@ impl SessionManager {
     /// Create an expired temporary state cookie to clear it
     #[must_use]
     pub fn create_expired_temp_state_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie::create_expired_cookie("vouchr_oauth_state", self.cookie_secure)
+        crate::utils::cookie::create_expired_cookie(crate::utils::cookie::OAUTH_STATE_COOKIE, self.cookie_secure)
     }
-
-    // No longer needed - replaced with generic encrypt_data and decrypt_data methods
 
     /// Decrypt and validate session from cookie value
     /// 
@@ -216,20 +217,6 @@ impl SessionManager {
         }
 
         Ok(session)
-    }
-
-    /// Get OAuth state
-    /// 
-    /// # Errors
-    /// 
-    /// Returns an error if decryption fails
-    pub fn get_oauth_state_from_request(
-        &self,
-        req: &HttpRequest,
-        _received_state: &str,
-    ) -> Result<Option<OAuthState>> {
-        // Only try cookie-based state (works for both Google and Apple if you handle Apple differently)
-        self.get_temporary_state_from_request(req)
     }
 
     /// Create an encrypted user data cookie from `VouchrsUserData`
@@ -265,17 +252,13 @@ impl SessionManager {
     /// 
     /// Returns an error if a critical failure occurs (decryption failures return None)
     pub fn get_user_data_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsUserData>> {
-        if let Some(cookie) = req.cookie(USER_COOKIE_NAME) {
-            match self.decrypt_data::<VouchrsUserData>(cookie.value()) {
+        req.cookie(USER_COOKIE_NAME).map_or_else(|| Ok(None), |cookie| match self.decrypt_data::<VouchrsUserData>(cookie.value()) {
                 Ok(user_data) => Ok(Some(user_data)),
                 Err(e) => {
                     log::warn!("Failed to decrypt user data cookie: {e}");
                     Ok(None)
                 }
-            }
-        } else {
-            Ok(None)
-        }
+            })
     }
 
     /// Create an expired user cookie to clear user data
@@ -283,8 +266,6 @@ impl SessionManager {
     pub fn create_expired_user_cookie(&self) -> Cookie<'static> {
         crate::utils::cookie::create_expired_cookie(USER_COOKIE_NAME, self.cookie_secure)
     }
-
-    // No longer needed - replaced with generic encrypt_data and decrypt_data methods
 
     /// Generic method to create a cookie with encrypted data
     /// 
@@ -344,6 +325,7 @@ impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsSession {
             Some(self),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
+                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(session_manager.session_duration_hours).unwrap_or(24)),
                 ..Default::default()
             },
         )
@@ -358,6 +340,7 @@ impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsUserData {
             Some(self),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
+                max_age: actix_web::cookie::time::Duration::hours(i64::try_from(session_manager.session_duration_hours).unwrap_or(24)),
                 ..Default::default()
             },
         )
@@ -367,6 +350,7 @@ impl crate::utils::cookie::ToCookie<SessionManager> for VouchrsUserData {
 /// Implementation of `ToCookie` for `OAuthState`
 impl crate::utils::cookie::ToCookie<SessionManager> for OAuthState {
     fn to_cookie(&self, session_manager: &SessionManager) -> Result<Cookie<'static>> {
+        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
         let options = CookieOptions {
             same_site: actix_web::cookie::SameSite::Lax,
             max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
@@ -374,11 +358,12 @@ impl crate::utils::cookie::ToCookie<SessionManager> for OAuthState {
         };
 
         let cookie =
-            session_manager.create_cookie("vouchr_oauth_state".to_string(), Some(self), options)?;
+            session_manager.create_cookie(cookie_name.to_string(), Some(self), options)?;
 
         log::info!(
-            "Creating temporary state cookie: secure={}, name=vouchr_oauth_state, encrypted_len={}",
+            "Creating temporary state cookie: secure={}, name={}, encrypted_len={}",
             session_manager.cookie_secure,
+            cookie_name,
             cookie.value().len()
         );
 
@@ -410,7 +395,7 @@ mod tests {
     #[test]
     fn test_token_encryption_decryption() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false);
+        let manager = SessionManager::new(key, false, 24);
         let session = create_test_session();
 
         // Test encryption with generic method
@@ -428,7 +413,7 @@ mod tests {
     #[test]
     fn test_needs_token_refresh() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false);
+        let manager = SessionManager::new(key, false, 24);
         // Session with token expiring in 10 minutes (should NOT need refresh)
         let mut session = create_test_session();
         session.expires_at = Utc::now() + Duration::minutes(10);
@@ -444,7 +429,7 @@ mod tests {
     #[test]
     fn test_cookie_size_reduction() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false);
+        let manager = SessionManager::new(key, false, 24);
         let session = create_test_session();
 
         // Create cookie with token data (current approach)
@@ -465,7 +450,7 @@ mod tests {
     #[test]
     fn test_generic_encryption_decryption() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false);
+        let manager = SessionManager::new(key, false, 24);
         let session = create_test_session();
 
         // Test generic encryption
@@ -483,7 +468,7 @@ mod tests {
     #[test]
     fn test_to_cookie_trait() {
         let key = b"test_key_32_bytes_long_for_testing_purposes";
-        let manager = SessionManager::new(key, false);
+        let manager = SessionManager::new(key, false, 24);
         let session = create_test_session();
 
         // Test ToCookie implementation for VouchrsSession

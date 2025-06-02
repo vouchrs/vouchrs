@@ -92,13 +92,13 @@ fn extract_callback_data(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
 ) -> OAuthCallback {
-    if let Some(form_data) = form {
-        debug!("OAuth callback received via form_post: {form_data:?}");
-        form_data.into_inner()
-    } else {
+    form.map_or_else(|| {
         debug!("OAuth callback received via query: {query:?}");
         query.into_inner()
-    }
+    }, |form_data| {
+        debug!("OAuth callback received via form_post: {form_data:?}");
+        form_data.into_inner()
+    })
 }
 
 /// Validate the callback data and extract the required code and OAuth state
@@ -219,11 +219,11 @@ fn build_and_finalize_session(
             let redirect_to = params.redirect_url.unwrap_or_else(|| "/".to_string());
 
             // Validate the redirect URL to prevent open redirect attacks
-            let validated_redirect = if let Ok(url) = validate_post_auth_redirect(&redirect_to) { url } else {
+            let validated_redirect = validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
                 error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
                 // Fallback to safe default on validation failure
                 "/".to_string()
-            };
+            });
 
             // Create response with multiple cookies
             ResponseBuilder::success_redirect_with_cookies(

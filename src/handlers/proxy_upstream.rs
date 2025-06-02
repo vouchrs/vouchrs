@@ -189,12 +189,9 @@ fn extract_session_from_request(
         .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
 
     // Decrypt and validate session
-    match session_manager.decrypt_and_validate_session(cookie.value()) {
-        Ok(session) => Ok(session),
-        Err(_) => Err(handle_auth_error(
-            "Session is invalid or expired. Please authenticate again.",
-        )),
-    }
+    session_manager.decrypt_and_validate_session(cookie.value()).map_or_else(|_| Err(handle_auth_error(
+        "Session is invalid or expired. Please authenticate again.",
+    )), Ok)
 }
 
 // is_hop_by_hop_header function has been moved to utils::response_builder
