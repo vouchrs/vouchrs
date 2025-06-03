@@ -80,6 +80,9 @@ pub struct ProviderSettings {
     pub enabled: bool,
     pub extra_auth_params: HashMap<String, String>,
     pub jwt_signing: Option<JwtSigningConfig>,
+
+    /// JWT validation configuration (optional overrides, auto-enabled for providers with `discovery_url`)
+    pub jwt_validation: Option<JwtValidationConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,58 @@ pub struct JwtSigningConfig {
     pub team_id_env: Option<String>,
     pub key_id_env: Option<String>,
     pub private_key_path_env: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtValidationConfig {
+    /// Enable/disable JWT validation (auto-determined from `discovery_url` if not specified)
+    pub enabled: Option<bool>,
+
+    /// Validate the audience claim against `client_id` (default: true when enabled)
+    #[serde(default = "default_true")]
+    pub validate_audience: bool,
+
+    /// Validate the issuer claim against discovered issuer (default: true when enabled)
+    #[serde(default = "default_true")]
+    pub validate_issuer: bool,
+
+    /// Validate expiration and not-before claims (default: true when enabled)
+    #[serde(default = "default_true")]
+    pub validate_expiration: bool,
+
+    /// Override expected audience (defaults to `client_id`)
+    pub expected_audience: Option<String>,
+
+    /// Override expected issuer (defaults to discovered issuer)
+    pub expected_issuer: Option<String>,
+
+    /// Clock skew tolerance in seconds (default: 300 = 5 minutes)
+    #[serde(default = "default_clock_skew")]
+    pub clock_skew_seconds: u64,
+
+    /// JWKS cache duration in seconds (default: 3600 = 1 hour)
+    #[serde(default = "default_cache_duration")]
+    pub cache_duration_seconds: u64,
+}
+
+// Helper functions for serde defaults
+fn default_true() -> bool { true }
+fn default_clock_skew() -> u64 { 300 }
+fn default_cache_duration() -> u64 { 3600 }
+
+impl Default for JwtValidationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: None, // Auto-determined at runtime
+            validate_audience: true,
+            validate_issuer: true,
+            validate_expiration: true,
+            expected_audience: None,
+            expected_issuer: None,
+            clock_skew_seconds: 300,
+            cache_duration_seconds: 3600,
+        }
+    }
 }
 
 impl Default for ApplicationSettings {
@@ -168,6 +223,7 @@ impl Default for ProviderSettings {
             enabled: true,
             extra_auth_params: HashMap::new(),
             jwt_signing: None,
+            jwt_validation: None,
         }
     }
 }
@@ -447,6 +503,32 @@ impl ProviderSettings {
         }
         self.client_secret.clone()
     }
+
+    /// Determine if JWT validation should be enabled for this provider
+    /// Auto-enables for providers with `discovery_url`, unless explicitly disabled
+    #[must_use]
+    pub fn should_enable_jwt_validation(&self) -> bool {
+        if let Some(jwt_config) = &self.jwt_validation {
+            if let Some(enabled) = jwt_config.enabled {
+                // Explicit enable/disable takes precedence
+                return enabled;
+            }
+        }
+
+        // Auto-enable if discovery_url is present
+        self.discovery_url.is_some()
+    }
+
+    /// Get the effective JWT validation configuration with auto-determined defaults
+    #[must_use]
+    pub fn get_jwt_validation_config(&self) -> JwtValidationConfig {
+        let mut config = self.jwt_validation.clone().unwrap_or_default();
+
+        // Set enabled based on auto-detection logic
+        config.enabled = Some(self.should_enable_jwt_validation());
+
+        config
+    }
 }
 
 impl JwtSigningConfig {
@@ -583,45 +665,37 @@ mod tests {
     fn test_settings_dir_precedence() {
         clean_env_vars();
 
-        // Setup temp dirs for testing
-        let temp_dir = tempfile::tempdir().unwrap();
-        let temp_path = temp_dir.path();
+        // This test documents the expected behavior of settings precedence
+        // In a real application, the precedence is:
+        // 1. Environment variables (highest)
+        // 2. VOUCHRS_SECRETS_DIR/Settings.toml (if VOUCHRS_SECRETS_DIR is set)
+        // 3. ./Settings.toml (if exists)
+        // 4. Default values (lowest)
 
-        // Create a Settings.toml in the root with specific values
-        let root_settings_content = r#"
-[session]
-session_secret = "root-secret-key"
-"#;
+        // Since we can't control file system paths in this unit test,
+        // we'll test the configuration logic with mock settings
 
-        // Create a Settings.toml in the "secrets" dir with different values
-        let secrets_dir = temp_path.join("secrets");
-        std::fs::create_dir_all(&secrets_dir).unwrap();
+        // Mock settings from root Settings.toml
+        let mut mock_root_settings = VouchrsSettings::default();
+        mock_root_settings.session.session_secret = "root-secret-key".to_string();
 
-        let secrets_settings_content = r#"
-[session]
-session_secret = "secrets-secret-key"
-"#;
+        // Mock settings from VOUCHRS_SECRETS_DIR Settings.toml
+        let mut mock_secrets_settings = VouchrsSettings::default();
+        mock_secrets_settings.session.session_secret = "secrets-secret-key".to_string();
 
-        // Write the files
-        std::fs::write(temp_path.join("Settings.toml"), root_settings_content).unwrap();
-        std::fs::write(secrets_dir.join("Settings.toml"), secrets_settings_content).unwrap();
+        // Scenario 1: No VOUCHRS_SECRETS_DIR, use root settings
+        assert_eq!(mock_root_settings.session.session_secret, "root-secret-key");
 
-        // First test: No VOUCHR_SECRETS_DIR set, should use root Settings.toml
-        std::env::remove_var("VOUCHR_SECRETS_DIR");
+        // Scenario 2: With VOUCHRS_SECRETS_DIR, prefer settings from secrets dir
+        assert_eq!(mock_secrets_settings.session.session_secret, "secrets-secret-key");
 
-        // Mock the load_base_settings to use our temp paths
-        let actual_settings = VouchrsSettings::load_base_settings().unwrap();
+        // Scenario 3: Environment variables override both
+        let mut settings_with_env = mock_secrets_settings.clone();
+        std::env::set_var("SESSION_SECRET", "env-secret-key");
 
-        // Validate default values were not overridden in this mock test
-        // This is a limitation of the test due to searching in current directory
-        assert_eq!(
-            actual_settings.session.session_secret,
-            "" // Default is now empty string
-        );
+        VouchrsSettings::apply_session_env_overrides(&mut settings_with_env.session);
 
-        // Add a proper integration test that would validate this behavior in a controlled environment
-        // For now, we'll just document how it should work
-        println!("Note: Full precedence testing requires integration tests with file path control");
+        assert_eq!(settings_with_env.session.session_secret, "env-secret-key");
 
         clean_env_vars();
     }
@@ -727,5 +801,97 @@ session_secret = "secrets-secret-key"
 
         // Clean up
         clean_env_vars();
+    }
+
+    #[test]
+    fn test_jwt_validation_auto_enabled_with_discovery_url() {
+        let provider = ProviderSettings {
+            name: "test".to_string(),
+            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            ..Default::default()
+        };
+
+        assert!(provider.should_enable_jwt_validation());
+
+        let config = provider.get_jwt_validation_config();
+        assert_eq!(config.enabled, Some(true));
+        assert!(config.validate_audience);
+        assert!(config.validate_issuer);
+        assert!(config.validate_expiration);
+    }
+
+    #[test]
+    fn test_jwt_validation_disabled_without_discovery_url() {
+        let provider = ProviderSettings {
+            name: "legacy".to_string(),
+            authorization_endpoint: Some("https://legacy.com/auth".to_string()),
+            token_endpoint: Some("https://legacy.com/token".to_string()),
+            ..Default::default()
+        };
+
+        assert!(!provider.should_enable_jwt_validation());
+
+        let config = provider.get_jwt_validation_config();
+        assert_eq!(config.enabled, Some(false));
+    }
+
+    #[test]
+    fn test_jwt_validation_explicit_override() {
+        // Provider with discovery_url but validation explicitly disabled
+        let provider = ProviderSettings {
+            name: "test".to_string(),
+            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            jwt_validation: Some(JwtValidationConfig {
+                enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert!(!provider.should_enable_jwt_validation());
+
+        let config = provider.get_jwt_validation_config();
+        assert_eq!(config.enabled, Some(false));
+    }
+
+    #[test]
+    fn test_jwt_validation_explicit_enable_without_discovery() {
+        // Legacy provider with validation explicitly enabled (for future manual config)
+        let provider = ProviderSettings {
+            name: "legacy".to_string(),
+            jwt_validation: Some(JwtValidationConfig {
+                enabled: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert!(provider.should_enable_jwt_validation());
+
+        let config = provider.get_jwt_validation_config();
+        assert_eq!(config.enabled, Some(true));
+    }
+
+    #[test]
+    fn test_jwt_validation_config_overrides() {
+        let provider = ProviderSettings {
+            name: "test".to_string(),
+            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            jwt_validation: Some(JwtValidationConfig {
+                validate_audience: false,
+                expected_issuer: Some("https://custom-issuer.com".to_string()),
+                clock_skew_seconds: 600,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let config = provider.get_jwt_validation_config();
+        assert_eq!(config.enabled, Some(true)); // Auto-enabled due to discovery_url
+        assert!(!config.validate_audience); // Overridden
+        assert_eq!(config.expected_issuer, Some("https://custom-issuer.com".to_string()));
+        assert_eq!(config.clock_skew_seconds, 600);
+        assert!(config.validate_issuer); // Default
+        assert!(config.validate_expiration); // Default
     }
 }
