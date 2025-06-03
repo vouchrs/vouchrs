@@ -13,9 +13,9 @@
 // - iss (issuer) -> provider: OAuth provider (normalized from issuer URL)
 // - name, given_name+family_name -> user_name: User's display name (optional)
 
-use crate::utils::crypto::decode_jwt_payload;
 use crate::models::CompleteSessionData;
 use crate::utils::apple::AppleUserInfo;
+use crate::utils::crypto::decode_jwt_payload;
 use chrono::{DateTime, TimeZone, Utc};
 use log::{debug, info, warn};
 use serde_json::Value;
@@ -52,7 +52,7 @@ impl AuthenticationData {
             apple_user_info: None,
         }
     }
-    
+
     /// Sets the Apple user info
     #[must_use]
     pub fn with_apple_info(mut self, apple_user_info: Option<AppleUserInfo>) -> Self {
@@ -129,16 +129,16 @@ pub struct SessionBuilder;
 
 impl SessionBuilder {
     /// Example method showing how to use the `SessionFinalizationBuilder`
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// # use chrono::{DateTime, Utc};
     /// # use vouchrs::session_builder::SessionBuilder;
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// // This is a conceptual example showing the builder pattern usage
     /// // In practice, you would have actual HttpRequest and SessionManager instances
-    /// 
+    ///
     /// // let response = SessionBuilder::finalize_session_with_builder(
     /// //     req,
     /// //     session_manager,
@@ -148,7 +148,7 @@ impl SessionBuilder {
     /// // .with_id_token(Some(id_token))
     /// // .with_refresh_token(Some(refresh_token))
     /// // .finalize();
-    /// 
+    ///
     /// // The builder pattern allows optional chaining of configuration methods
     /// // before calling finalize() to create the final HTTP response
     /// # Ok(())
@@ -163,7 +163,7 @@ impl SessionBuilder {
     ) -> SessionFinalizationBuilder<'a> {
         SessionFinalizationBuilder::new(req, session_manager, provider, expires_at)
     }
-    
+
     /// Creates a `CompleteSessionData` from OAuth tokens, extracting standard claims from the ID token
     /// and using Apple user info to fill in missing fields if available
     ///
@@ -208,9 +208,7 @@ impl SessionBuilder {
         let claims = decode_jwt_payload(id_token_ref)
             .map_err(|e| format!("Failed to decode ID token: {e}"))?;
 
-        info!(
-            "Building session from ID token claims for provider: {provider}"
-        );
+        info!("Building session from ID token claims for provider: {provider}");
         debug!(
             "ID token claims: {}",
             serde_json::to_string_pretty(&claims).unwrap_or_default()
@@ -314,9 +312,7 @@ impl SessionBuilder {
         if !given_name.is_empty() || !family_name.is_empty() {
             let full_name = format!("{given_name} {family_name}").trim().to_string();
             if !full_name.is_empty() {
-                debug!(
-                    "Extracted name from given_name + family_name: {full_name}"
-                );
+                debug!("Extracted name from given_name + family_name: {full_name}");
                 return Some(full_name);
             }
         }
@@ -330,16 +326,14 @@ impl SessionBuilder {
         claims
             .get(field_name)
             .and_then(serde_json::Value::as_i64)
-            .and_then(|timestamp| if let chrono::LocalResult::Single(dt) = Utc.timestamp_opt(timestamp, 0) {
-                debug!(
-                    "Extracted {field_name} from '{field_name}' claim: {dt}"
-                );
-                Some(dt)
-            } else {
-                warn!(
-                    "Invalid '{field_name}' timestamp in ID token: {timestamp}"
-                );
-                None
+            .and_then(|timestamp| {
+                if let chrono::LocalResult::Single(dt) = Utc.timestamp_opt(timestamp, 0) {
+                    debug!("Extracted {field_name} from '{field_name}' claim: {dt}");
+                    Some(dt)
+                } else {
+                    warn!("Invalid '{field_name}' timestamp in ID token: {timestamp}");
+                    None
+                }
             })
     }
 
@@ -366,23 +360,28 @@ impl SessionBuilder {
     }
 
     /// Extract client information from the request
-    fn extract_client_info(req: &actix_web::HttpRequest) -> (Option<String>, crate::utils::user_agent::UserAgentInfo) {
+    fn extract_client_info(
+        req: &actix_web::HttpRequest,
+    ) -> (Option<String>, crate::utils::user_agent::UserAgentInfo) {
         use crate::utils::user_agent::extract_user_agent_info;
-        
+
         let client_ip = req
             .connection_info()
             .realip_remote_addr()
             .map(std::string::ToString::to_string);
-        
+
         let user_agent_info = extract_user_agent_info(req);
-        
+
         (client_ip, user_agent_info)
     }
-    
+
     /// Create error response for session building failures
-    fn create_error_response(session_manager: &crate::session::SessionManager, error_msg: &str) -> actix_web::HttpResponse {
+    fn create_error_response(
+        session_manager: &crate::session::SessionManager,
+        error_msg: &str,
+    ) -> actix_web::HttpResponse {
         use log::error;
-        
+
         error!("{error_msg}");
         let clear_cookie = session_manager.create_expired_cookie();
         actix_web::HttpResponse::Found()
@@ -392,15 +391,15 @@ impl SessionBuilder {
     }
 
     /// Finalizes a session and creates an HTTP response with session cookies
-    /// 
+    ///
     /// This method encapsulates the complete session finalization process:
     /// 1. Builds the session from OAuth tokens
     /// 2. Creates session and user cookies
     /// 3. Validates redirect URL
     /// 4. Returns `HttpResponse` with all cookies
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `req` - HTTP request for extracting client info
     /// * `session_manager` - Session manager for cookie creation
     /// * `provider` - OAuth provider name
@@ -461,15 +460,19 @@ impl SessionBuilder {
                     }
                 };
 
-                let clear_temp_cookie = create_expired_cookie(OAUTH_STATE_COOKIE, session_manager.cookie_secure());
+                let clear_temp_cookie =
+                    create_expired_cookie(OAUTH_STATE_COOKIE, session_manager.cookie_secure());
                 let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
 
                 // Validate the redirect URL to prevent open redirect attacks
-                let validated_redirect = validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
-                    log::error!("Invalid post-authentication redirect URL '{redirect_to}': rejecting");
-                    // Fallback to safe default on validation failure
-                    "/".to_string()
-                });
+                let validated_redirect =
+                    validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
+                        log::error!(
+                            "Invalid post-authentication redirect URL '{redirect_to}': rejecting"
+                        );
+                        // Fallback to safe default on validation failure
+                        "/".to_string()
+                    });
 
                 // Create response with multiple cookies
                 success_redirect_with_cookies(

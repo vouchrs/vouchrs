@@ -5,7 +5,7 @@ use log::debug;
 use std::fs;
 
 /// Health check endpoint
-/// 
+///
 /// # Errors
 /// Returns an error if health status cannot be determined
 pub async fn health() -> Result<HttpResponse> {
@@ -32,27 +32,30 @@ pub async fn serve_static(
 
     debug!("Attempting to serve static file: {file_path}");
 
-    fs::read(&file_path).map_or_else(|_| {
-        debug!("Static file not found: {file_path}");
-        Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "not_found",
-            "message": "File not found"
-        })))
-    }, |contents| {
-        let content_type = match file_path.split('.').next_back() {
-            Some("html") => "text/html",
-            Some("css") => "text/css",
-            Some("js") => "application/javascript",
-            Some("png") => "image/png",
-            Some("jpg" | "jpeg") => "image/jpeg",
-            Some("gif") => "image/gif",
-            Some("svg") => "image/svg+xml",
-            Some("ico") => "image/x-icon",
-            _ => "text/plain",
-        };
+    fs::read(&file_path).map_or_else(
+        |_| {
+            debug!("Static file not found: {file_path}");
+            Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "not_found",
+                "message": "File not found"
+            })))
+        },
+        |contents| {
+            let content_type = match file_path.split('.').next_back() {
+                Some("html") => "text/html",
+                Some("css") => "text/css",
+                Some("js") => "application/javascript",
+                Some("png") => "image/png",
+                Some("jpg" | "jpeg") => "image/jpeg",
+                Some("gif") => "image/gif",
+                Some("svg") => "image/svg+xml",
+                Some("ico") => "image/x-icon",
+                _ => "text/plain",
+            };
 
-        Ok(HttpResponse::Ok().content_type(content_type).body(contents))
-    })
+            Ok(HttpResponse::Ok().content_type(content_type).body(contents))
+        },
+    )
 }
 
 // Helper function to get sign-in page HTML (reused from original handlers)
@@ -67,7 +70,7 @@ pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
 pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
     let provider_buttons = generate_provider_buttons(settings);
     let brand_name = settings.application.redirect_base_url.clone();
-    
+
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -108,7 +111,7 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
         "#000000", // Black
         "#8e44ad", // Purple
     ];
-    
+
     settings
         .get_enabled_providers()
         .iter()
@@ -117,14 +120,14 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
             let display_name = provider.display_name.as_ref()
                 .unwrap_or(&provider.name)
                 .clone();
-            
+
             // Generate both standard provider class and our color class
             let provider_class = format!("provider-{}", provider.name.to_lowercase());
-            
+
             // Use index % 5 to rotate through our colors
             let color_index = index % colors.len();
             let color = colors[color_index];
-            
+
             // Create a dynamic style attribute with the color
             format!(
                 r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}" style="background-color: {}">

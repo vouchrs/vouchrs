@@ -1,0 +1,332 @@
+name: Main Branch Release
+
+on:
+  # Only trigger on PR merges to main, not direct pushes
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      pre_release:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  detect-version-bump:
+    # Only run if PR was merged (not just closed)
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version_check.outputs.should_release }}
+      version_type: ${{ steps.version_check.outputs.version_type }}
+      new_version: ${{ steps.version_check.outputs.new_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff@2.9.1
+
+      - name: Check for conventional commits and determine version bump
+        id: version_check
+        run: |
+          # Check if this is a manual workflow dispatch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version_type=manual" >> $GITHUB_OUTPUT
+            echo "new_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Last tag: $LAST_TAG"
+
+          # Check for conventional commits since last tag
+          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+
+          if [ -z "$COMMITS" ]; then
+            echo "No commits since last tag"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check for breaking changes or feat commits
+          HAS_BREAKING=$(echo "$COMMITS" | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?!:" || true)
+          HAS_FEAT=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" || true)
+          HAS_FIX=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" || true)
+          HAS_OTHER=$(echo "$COMMITS" | grep -E "^(docs|style|refactor|perf|test|chore)(\(.+\))?:" || true)
+
+          # Extract current version numbers
+          CURRENT_VERSION=${LAST_TAG#v}
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+          # Determine version bump type
+          if [ -n "$HAS_BREAKING" ]; then
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_VERSION="${NEW_MAJOR}.0.0"
+            VERSION_TYPE="major"
+          elif [ -n "$HAS_FEAT" ]; then
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION="${MAJOR}.${NEW_MINOR}.0"
+            VERSION_TYPE="minor"
+          elif [ -n "$HAS_FIX" ] || [ -n "$HAS_OTHER" ]; then
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            VERSION_TYPE="patch"
+          else
+            echo "No conventional commits found that warrant a release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Detected $VERSION_TYPE release: $NEW_VERSION"
+
+  create-release:
+    needs: detect-version-bump
+    if: needs.detect-version-bump.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set version
+        id: set_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            PRE_RELEASE="${{ github.event.inputs.pre_release }}"
+          else
+            VERSION="${{ needs.detect-version-bump.outputs.new_version }}"
+            PRE_RELEASE="false"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "pre_release=${PRE_RELEASE}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "v${{ steps.set_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "❌ Tag v${{ steps.set_version.outputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Install tools
+        run: |
+          # Install git-cliff
+          curl -L https://github.com/orhun/git-cliff/releases/download/v2.9.1/git-cliff-2.9.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv git-cliff-2.9.1/git-cliff /usr/local/bin/
+
+          # Install cargo-edit
+          cargo install cargo-edit
+
+      - name: Update Cargo.toml version
+        run: |
+          cargo set-version "${{ steps.set_version.outputs.version }}"
+          echo "✅ Updated Cargo.toml version to ${{ steps.set_version.outputs.version }}"
+
+      - name: Generate changelog
+        run: |
+          git cliff --tag "v${{ steps.set_version.outputs.version }}" --output CHANGELOG.md
+          echo "✅ Generated changelog for v${{ steps.set_version.outputs.version }}"
+
+      - name: Extract release notes
+        id: release_notes
+        run: |
+          # Extract the section for this release from the changelog
+          version="${{ steps.set_version.outputs.version }}"
+
+          if [ -f CHANGELOG.md ]; then
+            # Find the section for this version and extract it
+            awk -v version="$version" '
+              /^## \[/ {
+                if (found) exit
+                if ($0 ~ "\\[" version "\\]") {
+                  found=1
+                  next
+                }
+              }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md > release_notes.txt
+
+            # If we got content, use it
+            if [ -s release_notes.txt ]; then
+              echo "Generated release notes from changelog"
+            else
+              echo "No release notes found in changelog, generating default"
+              echo "Release v$version" > release_notes.txt
+            fi
+          else
+            echo "No changelog found, generating default release notes"
+            echo "Release v$version" > release_notes.txt
+          fi
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add Cargo.toml CHANGELOG.md Cargo.lock
+          git commit -m "chore(release): prepare for v${{ steps.set_version.outputs.version }}"
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ steps.set_version.outputs.version }}" -m "Release v${{ steps.set_version.outputs.version }}"
+          git push origin "v${{ steps.set_version.outputs.version }}"
+
+      - name: Push changes
+        run: |
+          git push origin ${{ github.ref_name }}
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let releaseNotes = '';
+
+            try {
+              releaseNotes = fs.readFileSync('release_notes.txt', 'utf8').trim();
+            } catch (error) {
+              releaseNotes = `Release v${{ steps.set_version.outputs.version }}`;
+            }
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: 'v${{ steps.set_version.outputs.version }}',
+              name: 'v${{ steps.set_version.outputs.version }}',
+              body: releaseNotes,
+              draft: false,
+              prerelease: ${{ steps.set_version.outputs.pre_release }}
+            });
+
+            console.log(`✅ Created release: ${release.data.html_url}`);
+            return release.data.id;
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version parts
+        id: version_parts
+        run: |
+          VERSION="${{ steps.set_version.outputs.version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+            ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.title=Vouchrs
+            org.opencontainers.image.description=A lightweight, high-performance OIDC reverse proxy built in Rust
+            org.opencontainers.image.url=https://github.com/vouchrs/vouchrs
+            org.opencontainers.image.source=https://github.com/vouchrs/vouchrs
+            org.opencontainers.image.version=${{ steps.version_parts.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.pushed_at }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Update release with Docker info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get the release we just created
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const release = releases.data.find(r => r.tag_name === 'v${{ steps.set_version.outputs.version }}');
+
+            if (release) {
+              const dockerInfo = `
+
+            ## 🐳 Docker Images
+
+            This release is available as a Docker image:
+
+            \`\`\`bash
+            # Pull the latest release
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+
+            # Or use semantic versioning tags
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+
+            # Or use latest
+            docker pull ghcr.io/${{ github.repository }}:latest
+            \`\`\`
+
+            **Supported Platforms:** linux/amd64, linux/arm64
+
+            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
+            `;
+
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                body: release.body + dockerInfo
+              });
+
+              console.log("✅ Updated release with Docker information");
+            }
+
+      - name: Notify successful release
+        run: |
+          echo "🎉 Successfully released v${{ steps.set_version.outputs.version }}"
+          echo "📦 Docker images available at: ghcr.io/${{ github.repository }}"
+          echo "🔗 Release page: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.set_version.outputs.version }}"

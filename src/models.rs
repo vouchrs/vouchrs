@@ -8,7 +8,7 @@ pub struct HealthResponse {
 }
 
 /// User data structure for the `vouchrs_user` cookie
-/// Contains only essential user information (not JWT metadata)
+/// Contains only essential user information
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VouchrsUserData {
     pub email: String,
@@ -24,13 +24,14 @@ pub struct VouchrsUserData {
 }
 
 /// Session structure containing only essential token data for cookies
-/// User data is now stored separately in the `vouchrs_user` cookie
+/// User data is stored separately in the `vouchrs_user` cookie
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VouchrsSession {
     pub id_token: Option<String>,
     pub refresh_token: Option<String>,
     pub provider: String,
     pub expires_at: DateTime<Utc>,
+    pub session_created_at: DateTime<Utc>,
 }
 
 impl VouchrsSession {
@@ -66,6 +67,7 @@ impl CompleteSessionData {
             refresh_token: self.refresh_token.clone(),
             provider: self.provider.clone(),
             expires_at: self.expires_at,
+            session_created_at: self.created_at,
         }
     }
 

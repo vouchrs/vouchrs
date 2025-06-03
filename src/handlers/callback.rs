@@ -1,5 +1,5 @@
 // OAuth callback handler
-use crate::oauth::{OAuthCallback, OAuthConfig, OAuthState, get_state_from_callback};
+use crate::oauth::{get_state_from_callback, OAuthCallback, OAuthConfig, OAuthState};
 use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info, warn};
@@ -10,9 +10,9 @@ use crate::utils::apple::process_apple_callback;
 // SessionFinalizeParams struct removed - parameters passed directly to simplify code
 
 /// OAuth callback handler
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - OAuth state validation fails
 /// - Authorization code exchange fails
@@ -60,7 +60,10 @@ pub async fn oauth_callback(
         }
     };
 
-    info!("=== OAuth Token Exchange Success for {} ===", oauth_state.provider);
+    info!(
+        "=== OAuth Token Exchange Success for {} ===",
+        oauth_state.provider
+    );
     // Expires at, refresh token, and id token are now on VouchrSession or passed separately.
     if oauth_state.provider == "apple" {
         info!("=== Apple User Info Analysis ===");
@@ -68,10 +71,15 @@ pub async fn oauth_callback(
 
         if let Some(user_info) = apple_user_info.as_ref() {
             info!("Apple user info email: {:?}", user_info.email);
-            info!("Apple user info name: \"{} {}\"", 
+            info!(
+                "Apple user info name: \"{} {}\"",
                 user_info.name.first_name.as_deref().unwrap_or(""),
-                user_info.name.last_name.as_deref().unwrap_or(""));
-            info!("Apple user info first_name: {:?}", user_info.name.first_name);
+                user_info.name.last_name.as_deref().unwrap_or("")
+            );
+            info!(
+                "Apple user info first_name: {:?}",
+                user_info.name.first_name
+            );
             info!("Apple user info last_name: {:?}", user_info.name.last_name);
 
             // Log raw JSON serialization for complete debugging
@@ -90,13 +98,10 @@ pub async fn oauth_callback(
 
     // Build and complete the session using the SessionBuilder
     // Create authentication data object
-    let auth_data = AuthenticationData::new(
-        &oauth_state.provider,
-        id_token,
-        refresh_token,
-        expires_at
-    ).with_apple_info(processed_apple_info);
-    
+    let auth_data =
+        AuthenticationData::new(&oauth_state.provider, id_token, refresh_token, expires_at)
+            .with_apple_info(processed_apple_info);
+
     let result = SessionBuilder::finalize_session(
         &req,
         &session_manager,
@@ -112,13 +117,16 @@ fn extract_callback_data(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
 ) -> OAuthCallback {
-    form.map_or_else(|| {
-        debug!("OAuth callback received via query: {query:?}");
-        query.into_inner()
-    }, |form_data| {
-        debug!("OAuth callback received via form_post: {form_data:?}");
-        form_data.into_inner()
-    })
+    form.map_or_else(
+        || {
+            debug!("OAuth callback received via query: {query:?}");
+            query.into_inner()
+        },
+        |form_data| {
+            debug!("OAuth callback received via form_post: {form_data:?}");
+            form_data.into_inner()
+        },
+    )
 }
 
 /// Validate the callback data and extract the required code and OAuth state

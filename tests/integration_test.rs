@@ -1,6 +1,9 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::models::VouchrsUserData;
-use vouchrs::utils::test_helpers::{create_test_session, create_test_settings, create_test_session_manager_from_settings, create_request_with_cookie};
+use vouchrs::utils::test_helpers::{
+    create_request_with_cookie, create_test_session, create_test_session_manager_from_settings,
+    create_test_settings,
+};
 use vouchrs::utils::user_agent::UserAgentInfo;
 
 /// Helper function to create test user data with optional context

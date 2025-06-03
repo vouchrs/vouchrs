@@ -1,8 +1,8 @@
 // HTTP response building utilities
 use actix_web::{cookie::Cookie, HttpResponse};
+use log::{debug, warn};
 use reqwest;
 use url;
-use log::{debug, warn};
 
 // Helper function to check for hop-by-hop headers
 #[must_use]
@@ -60,9 +60,9 @@ pub fn success_redirect_with_cookies(location: &str, cookies: Vec<Cookie>) -> Ht
 }
 
 /// Convert Actix HTTP method to reqwest method
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an `HttpResponse` error if the HTTP method is not supported
 pub fn convert_http_method(
     method: &actix_web::http::Method,
@@ -85,38 +85,36 @@ pub fn convert_http_method(
 /// Build the upstream URL by combining base URL with request path
 /// Simple URL construction for admin-controlled upstream URLs
 /// No redirect protection needed since upstream URLs are controlled by admins
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an `HttpResponse` error if:
 /// - The base URL cannot be parsed
 /// - The path cannot be joined with the base URL
 pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, HttpResponse> {
     debug!("Building upstream URL - base: {base_url}, path: {request_path}");
-    
+
     // Parse base URL
-    let base = url::Url::parse(base_url)
-        .map_err(|e| {
-            warn!("Failed to parse base URL '{base_url}': {e}");
-            HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "bad_request",
-                "message": "Invalid upstream URL configuration"
-            }))
-        })?;
+    let base = url::Url::parse(base_url).map_err(|e| {
+        warn!("Failed to parse base URL '{base_url}': {e}");
+        HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "bad_request",
+            "message": "Invalid upstream URL configuration"
+        }))
+    })?;
 
     // Normalize the request path by removing leading slashes
     let clean_path = request_path.trim_start_matches('/');
-    
+
     // Join the path with the base URL
-    let final_url = base.join(clean_path)
-        .map_err(|e| {
-            warn!("Failed to join URL '{base_url}' + '{clean_path}': {e}");
-            HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "bad_request", 
-                "message": "Invalid request path"
-            }))
-        })?;
-        
+    let final_url = base.join(clean_path).map_err(|e| {
+        warn!("Failed to join URL '{base_url}' + '{clean_path}': {e}");
+        HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "bad_request",
+            "message": "Invalid request path"
+        }))
+    })?;
+
     debug!("Successfully built upstream URL: {final_url}");
     Ok(final_url.to_string())
 }
@@ -129,7 +127,7 @@ mod tests {
     #[test]
     fn test_upstream_url_building() {
         let base_url = "https://api.example.com";
-        
+
         let legitimate_paths = vec![
             "/api/v1/users",
             "/users/123",
@@ -141,11 +139,15 @@ mod tests {
 
         for path in legitimate_paths {
             let result = build_upstream_url(base_url, path);
-            assert!(result.is_ok(), "Legitimate upstream path should work: {path}");
+            assert!(
+                result.is_ok(),
+                "Legitimate upstream path should work: {path}"
+            );
             let url = result.unwrap();
-            assert!(url.starts_with(base_url), "URL should start with base URL: {url}");
+            assert!(
+                url.starts_with(base_url),
+                "URL should start with base URL: {url}"
+            );
         }
     }
 }
-
-
