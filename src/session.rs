@@ -569,8 +569,8 @@ mod tests {
 
     #[test]
     fn test_session_expiration_validation() {
-        let manager = create_test_session_manager();
         use crate::utils::test_request_builder::TestRequestBuilder;
+        let manager = create_test_session_manager();
 
         let req = TestRequestBuilder::browser_request();
 
