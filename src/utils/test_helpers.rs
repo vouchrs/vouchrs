@@ -14,6 +14,7 @@ pub fn create_test_session() -> VouchrsSession {
         refresh_token: Some("test_refresh_token".to_string()),
         provider: "google".to_string(),
         expires_at: Utc::now() + Duration::hours(1),
+        session_created_at: Utc::now(),
     }
 }
 
@@ -22,7 +23,7 @@ pub fn create_test_session() -> VouchrsSession {
 pub fn create_test_session_manager() -> SessionManager {
     // Use the existing secure random key generation from settings
     let test_secret = generate_test_session_secret();
-    SessionManager::new(test_secret.as_bytes(), false, 24, 0)
+    SessionManager::new(test_secret.as_bytes(), false, 24, 1, 0)
 }
 
 /// Generate a secure test session secret using the same method as the main app
@@ -42,6 +43,7 @@ pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> 
         settings.session.session_secret.as_bytes(),
         false,
         settings.session.session_duration_hours,
+        settings.session.session_expiration_hours,
         0
     )
 }
@@ -50,7 +52,7 @@ pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> 
 #[must_use]
 pub fn create_test_session_manager_with_refresh(session_refresh_hours: u64) -> SessionManager {
     let test_secret = generate_test_session_secret();
-    SessionManager::new(test_secret.as_bytes(), false, 24, session_refresh_hours)
+    SessionManager::new(test_secret.as_bytes(), false, 24, 1, session_refresh_hours)
 }
 
 /// Create a test HTTP request with a cookie
@@ -77,6 +79,7 @@ pub fn create_test_settings() -> VouchrsSettings {
         session: SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret-key".to_string(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         },
         ..Default::default()

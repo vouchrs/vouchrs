@@ -38,6 +38,9 @@ pub struct StaticFilesSettings {
 pub struct SessionSettings {
     pub session_duration_hours: u64,
     pub session_secret: String,
+    /// Session validity in hours (how long the actual session remains valid)
+    /// This is separate from cookie lifetime and provides additional security
+    pub session_expiration_hours: u64,
     /// Cookie refresh interval in hours. If 0, cookie refresh is disabled.
     /// When enabled, the session cookie's expiration will be extended by this
     /// amount each time the user makes a request, keeping active users logged in.
@@ -124,6 +127,7 @@ impl Default for SessionSettings {
         Self {
             session_duration_hours: 24,
             session_secret: String::new(), // Will be generated if empty
+            session_expiration_hours: 1, // Default to 1 hour for security
             session_refresh_hours: 0, // Disabled by default
         }
     }
@@ -301,29 +305,35 @@ impl VouchrsSettings {
 
     /// Apply environment overrides for session settings
     pub fn apply_session_env_overrides(session_settings: &mut SessionSettings) {
-        if let Ok(session_duration_str) = std::env::var("SESSION_DURATION_HOURS") {
-            if let Ok(session_duration) = session_duration_str.parse::<u64>() {
-                session_settings.session_duration_hours = session_duration;
-            }
-        }
-
-        if let Ok(session_refresh_str) = std::env::var("SESSION_REFRESH_HOURS") {
-            if let Ok(session_refresh) = session_refresh_str.parse::<u64>() {
-                session_settings.session_refresh_hours = session_refresh;
-            }
-        }
+        // Apply numeric environment variable overrides
+        Self::apply_numeric_env_override("SESSION_DURATION_HOURS", &mut session_settings.session_duration_hours);
+        Self::apply_numeric_env_override("SESSION_EXPIRATION_HOURS", &mut session_settings.session_expiration_hours);
+        Self::apply_numeric_env_override("SESSION_REFRESH_HOURS", &mut session_settings.session_refresh_hours);
         
-        // Check if SESSION_SECRET environment variable is set
-        let env_secret_set = if let Ok(session_secret) = std::env::var("SESSION_SECRET") {
-            if session_secret.is_empty() {
-                false
-            } else {
-                session_settings.session_secret = session_secret;
-                true
+        // Handle session secret with special logic
+        Self::handle_session_secret_override(session_settings);
+    }
+
+    /// Helper function to apply numeric environment variable overrides
+    fn apply_numeric_env_override(env_var: &str, target: &mut u64) {
+        if let Ok(value_str) = std::env::var(env_var) {
+            if let Ok(value) = value_str.parse::<u64>() {
+                *target = value;
             }
-        } else {
-            false
-        };
+        }
+    }
+
+    /// Helper function to handle session secret environment override and generation
+    fn handle_session_secret_override(session_settings: &mut SessionSettings) {
+        let env_secret_set = std::env::var("SESSION_SECRET")
+            .is_ok_and(|secret| {
+                if secret.is_empty() {
+                    false
+                } else {
+                    session_settings.session_secret = secret;
+                    true
+                }
+            });
         
         // Generate random session secret if no environment variable was set and current value is empty
         if !env_secret_set && session_settings.session_secret.is_empty() {
@@ -476,6 +486,8 @@ mod tests {
     fn clean_env_vars() {
         std::env::remove_var("SESSION_SECRET");
         std::env::remove_var("SESSION_DURATION_HOURS");
+        std::env::remove_var("SESSION_EXPIRATION_HOURS");
+        std::env::remove_var("SESSION_REFRESH_HOURS");
         std::env::remove_var("VOUCHRS_SECRETS_DIR");
     }
 
@@ -496,6 +508,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "default-secret".to_string(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         };
 
@@ -520,6 +533,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         };
 
@@ -545,6 +559,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         };
 
@@ -652,6 +667,7 @@ session_secret = "secrets-secret-key"
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(), // Empty, should trigger auto-generation
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         };
 
@@ -666,6 +682,7 @@ session_secret = "secrets-secret-key"
         let mut session_settings2 = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0,
         };
         VouchrsSettings::apply_session_env_overrides(&mut session_settings2);
@@ -685,6 +702,7 @@ session_secret = "secrets-secret-key"
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
+            session_expiration_hours: 1,
             session_refresh_hours: 0, // Default disabled
         };
 

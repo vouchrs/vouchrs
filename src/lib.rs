@@ -11,6 +11,7 @@ pub mod models;
 pub mod oauth;
 pub mod session;
 pub mod session_builder;
+pub mod session_validation;
 pub mod settings;
 pub mod utils;
 

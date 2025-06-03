@@ -27,9 +27,15 @@ upstream_url = "http://localhost:3000"
 assets_folder = "src/static"
 
 [session]
-# Session cookie expiration in hours
+# Session cookie expiration in hours (how long browser keeps the cookie)
 # Environment variable: SESSION_DURATION_HOURS
 session_duration_hours = 168
+
+# Session validity in hours (how long the actual session remains valid)
+# This is separate from cookie lifetime and provides additional security
+# Environment variable: SESSION_EXPIRATION_HOURS
+# Recommended: 1 hour for security, can be extended via token refresh
+session_expiration_hours = 1
 
 # Session refresh interval in hours. If 0, session refresh is disabled.
 # When enabled, the session cookie's expiration will be extended by this

@@ -1,5 +1,6 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
+use crate::session_validation::{calculate_client_context_hash, validate_client_context};
 use crate::utils::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{derive_encryption_key, encrypt_data, decrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
@@ -41,6 +42,7 @@ pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
     session_duration_hours: u64,
+    session_expiration_hours: u64,
     session_refresh_hours: u64,
 }
 
@@ -52,6 +54,7 @@ impl SessionManager {
         key: &[u8], 
         cookie_secure: bool, 
         session_duration_hours: u64,
+        session_expiration_hours: u64,
         session_refresh_hours: u64,
     ) -> Self {
         let encryption_key = derive_encryption_key(key);
@@ -60,6 +63,7 @@ impl SessionManager {
             encryption_key,
             cookie_secure,
             session_duration_hours,
+            session_expiration_hours,
             session_refresh_hours,
         }
     }
@@ -321,6 +325,81 @@ impl SessionManager {
             })
     }
 
+    /// Validate client context against stored user data for session hijacking prevention
+    /// 
+    /// # Arguments
+    /// * `user_data` - The stored user data containing original client context
+    /// * `req` - The current HTTP request to validate against
+    /// 
+    /// Returns true if the client context matches (regardless of session expiration)
+    #[must_use]
+    pub fn validate_client_context_only(&self, user_data: &VouchrsUserData, req: &HttpRequest) -> bool {
+        validate_client_context(user_data, req)
+    }
+
+    /// Check if session has expired based on session start time
+    /// 
+    /// # Arguments
+    /// * `user_data` - The stored user data containing session start timestamp
+    /// 
+    /// Returns true if the session has expired
+    #[must_use]
+    pub fn is_session_expired(&self, user_data: &VouchrsUserData) -> bool {
+        if let Some(session_start_timestamp) = user_data.session_start {
+            let Some(session_start) = chrono::DateTime::from_timestamp(session_start_timestamp, 0) else {
+                log::warn!("Invalid session start timestamp: {session_start_timestamp}");
+                return true; // Treat invalid timestamps as expired
+            };
+            
+            let session_age = Utc::now().signed_duration_since(session_start);
+            let max_session_age = chrono::Duration::hours(i64::try_from(self.session_expiration_hours).unwrap_or(1));
+            
+            session_age > max_session_age
+        } else {
+            false // No session start time means session doesn't expire
+        }
+    }
+
+    /// Validate session for security (client context + expiration awareness)
+    /// 
+    /// # Arguments
+    /// * `user_data` - The stored user data containing original client context
+    /// * `req` - The current HTTP request to validate against
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if client context validation fails (session hijacking)
+    /// 
+    /// Returns a result indicating the session status:
+    /// - Ok(true) = Valid and not expired
+    /// - Ok(false) = Valid but expired (can be refreshed)
+    /// - Err(_) = Invalid due to hijacking
+    pub fn validate_session_security(&self, user_data: &VouchrsUserData, req: &HttpRequest) -> Result<bool, &'static str> {
+        // First validate client context for hijacking prevention
+        if !self.validate_client_context_only(user_data, req) {
+            return Err("Client context validation failed");
+        }
+        
+        // Then check expiration status (but don't fail on expiration)
+        let is_expired = self.is_session_expired(user_data);
+        if is_expired {
+            log::info!("Session is expired but client context is valid - allowing for potential refresh");
+        }
+        
+        Ok(!is_expired)
+    }
+
+    /// Calculate client context hash for session hijacking prevention
+    #[must_use]
+    pub fn calculate_client_context_hash(
+        &self,
+        client_ip: Option<&str>,
+        user_agent: Option<&str>,
+        platform: Option<&str>,
+    ) -> String {
+        calculate_client_context_hash(client_ip, user_agent, platform)
+    }
+
     /// Generic method to create a cookie with encrypted data
     /// 
     /// # Errors
@@ -430,4 +509,137 @@ mod tests {
         let disabled_refreshed = manager_no_refresh.create_refreshed_session_cookie(&session).unwrap();
         assert_eq!(disabled_refreshed.max_age(), disabled_normal.max_age());
     }
-}
+
+    #[test]
+    fn test_client_context_hashing() {
+        let manager = create_test_session_manager();
+        
+        // Test hashing with different values
+        let hash1 = manager.calculate_client_context_hash(
+            Some("192.168.1.1"),
+            Some("Mozilla/5.0"),
+            Some("Windows")
+        );
+        let hash2 = manager.calculate_client_context_hash(
+            Some("192.168.1.1"),
+            Some("Mozilla/5.0"),
+            Some("Windows")
+        );
+        
+        // Same values should produce same hash
+        assert_eq!(hash1, hash2);
+        assert!(!hash1.is_empty());
+        assert_eq!(hash1.len(), 64); // SHA256 produces 64-character hex strings
+        
+        // Different values should produce different hashes
+        let hash3 = manager.calculate_client_context_hash(
+            Some("192.168.1.2"), // Different IP
+            Some("Mozilla/5.0"),
+            Some("Windows")
+        );
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_session_expiration_validation() {
+        let manager = create_test_session_manager();
+        use crate::utils::test_request_builder::TestRequestBuilder;
+        
+        let req = TestRequestBuilder::browser_request();
+        
+        // Create user data with recent session start (should be valid)
+        let recent_user_data = VouchrsUserData {
+            email: "test@example.com".to_string(),
+            name: Some("Test User".to_string()),
+            provider: "google".to_string(),
+            provider_id: "123456789".to_string(),
+            client_ip: None, // Test request has no IP
+            user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),
+            platform: Some("Windows".to_string()),
+            lang: Some("en-US".to_string()),
+            mobile: 0,
+            session_start: Some(Utc::now().timestamp()), // Recent session
+        };
+        
+        // Should be valid and not expired
+        assert!(manager.validate_session_security(&recent_user_data, &req).unwrap());
+        assert!(!manager.is_session_expired(&recent_user_data));
+        
+        // Create user data with old session start (should be expired but still valid for refresh)
+        let expired_user_data = VouchrsUserData {
+            email: "test@example.com".to_string(),
+            name: Some("Test User".to_string()),
+            provider: "google".to_string(),
+            provider_id: "123456789".to_string(),
+            client_ip: None, // Test request has no IP
+            user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),
+            platform: Some("Windows".to_string()),
+            lang: Some("en-US".to_string()),
+            mobile: 0,
+            session_start: Some((Utc::now() - chrono::Duration::hours(2)).timestamp()), // 2 hours ago (expired)
+        };
+        
+        // Should be expired but client context is still valid (can be refreshed)
+        assert!(!manager.validate_session_security(&expired_user_data, &req).unwrap());
+        assert!(manager.is_session_expired(&expired_user_data));
+        assert!(manager.validate_client_context_only(&expired_user_data, &req));
+    }
+
+    #[test]
+    fn test_session_hijacking_prevention() {
+        use crate::utils::test_request_builder::TestRequestBuilder;
+        
+        let manager = create_test_session_manager();
+        
+        // Test different request types to simulate hijacking attempts
+        let browser_req = TestRequestBuilder::browser_request();
+        let mobile_req = TestRequestBuilder::mobile_browser_request();
+        let api_req = TestRequestBuilder::api_request();
+        
+        // Valid user data for browser request
+        let browser_user_data = VouchrsUserData {
+            email: "test@example.com".to_string(),
+            name: Some("Test User".to_string()),
+            provider: "google".to_string(),
+            provider_id: "123456789".to_string(),
+            client_ip: None, // Test requests have no IP
+            user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),
+            platform: Some("Windows".to_string()),
+            lang: Some("en-US".to_string()),
+            mobile: 0,
+            session_start: Some(Utc::now().timestamp()),
+        };
+        
+        // Valid user data for mobile request
+        let mobile_user_data = VouchrsUserData {
+            email: "test@example.com".to_string(),
+            name: Some("Test User".to_string()),
+            provider: "google".to_string(),
+            provider_id: "123456789".to_string(),
+            client_ip: None,
+            user_agent: Some("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15".to_string()),
+            platform: Some("iOS".to_string()),
+            lang: Some("en-US".to_string()),
+            mobile: 1,
+            session_start: Some(Utc::now().timestamp()),
+        };
+        
+        // Valid sessions should pass client context validation
+        assert!(manager.validate_client_context_only(&browser_user_data, &browser_req));
+        assert!(manager.validate_client_context_only(&mobile_user_data, &mobile_req));
+        
+        // Cross-platform hijacking attempts should fail client context validation
+        assert!(!manager.validate_client_context_only(&browser_user_data, &mobile_req)); // Browser session on mobile
+        assert!(!manager.validate_client_context_only(&mobile_user_data, &browser_req)); // Mobile session on browser
+        assert!(!manager.validate_client_context_only(&browser_user_data, &api_req)); // Browser session on API client
+        
+        // Different IP addresses should fail client context validation (simulate IP-based hijacking)
+        let different_ip_data = VouchrsUserData {
+            client_ip: Some("10.0.0.1".to_string()), // Different IP
+            ..browser_user_data.clone()
+        };
+        // Note: This would fail if the test request had an IP, but since test requests have None for IP,
+        // this test demonstrates the concept even though both have different values
+        assert!(!manager.validate_client_context_only(&different_ip_data, &browser_req));
+    }
+    }
