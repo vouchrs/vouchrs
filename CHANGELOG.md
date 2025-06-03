@@ -2,12 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.1] - 2025-06-03
+## [0.2.0] - 2025-06-03
+
+### 🚀 Features
+
+- **devcontainer**: Add actionlint and GitHub Actions extension
 
 ### 🐛 Bug Fixes
 
 - Handle case where no tags exist in main-release workflow
 - Resolve YAML syntax error in create-release.yml workflow
+- **ci**: Resolve variable interpolation in create-release workflow
+- **ci**: Resolve workflow syntax and naming issues
 
 ### 📚 Documentation
 
