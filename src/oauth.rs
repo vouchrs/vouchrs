@@ -4,14 +4,16 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 
 // Third-party imports
 use actix_web::HttpResponse;
 use chrono::Utc;
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 
 // Local imports
 use crate::models::VouchrsSession;
@@ -206,6 +208,7 @@ pub struct OAuthConfig {
     pub providers: HashMap<String, RuntimeProvider>,
     pub redirect_base_url: String,
     http_client: reqwest::Client,
+    jwt_validator: Arc<RwLock<Option<crate::jwt_validation::JwtValidator>>>,
 }
 
 impl Default for OAuthConfig {
@@ -238,6 +241,7 @@ impl OAuthConfig {
             providers: HashMap::new(),
             redirect_base_url,
             http_client,
+            jwt_validator: Arc::new(RwLock::new(None)), // Will be initialized when needed
         }
     }
 
@@ -303,6 +307,24 @@ impl OAuthConfig {
         info!("🎯 Configured OAuth providers: {provider_names:?}");
 
         Ok(())
+    }
+
+    /// Get or initialize JWT validator
+    async fn get_jwt_validator(&self) -> crate::jwt_validation::JwtValidator {
+        let mut jwt_validator_guard = self.jwt_validator.write().await;
+        if jwt_validator_guard.is_none() {
+            *jwt_validator_guard = Some(crate::jwt_validation::JwtValidator::new());
+            info!("🔐 Initialized JWT validator for ID token validation");
+        }
+        jwt_validator_guard.as_ref().unwrap().clone()
+    }
+
+    /// Check if any provider has JWT validation enabled
+    #[must_use]
+    pub fn has_jwt_validation_enabled(&self) -> bool {
+        self.providers.iter().any(|(_, provider)| {
+            provider.settings.should_enable_jwt_validation()
+        })
     }
 
     /// Check if a provider's client is configured
@@ -395,18 +417,19 @@ impl OAuthConfig {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or("Provider not configured")?;
+            .ok_or("Provider not configured")?
+            .clone(); // Clone to avoid borrowing issues
 
         // Prepare token exchange parameters
-        let params = self.prepare_token_exchange_params(provider, code, runtime_provider)?;
+        let params = self.prepare_token_exchange_params(provider, code, &runtime_provider)?;
 
         // Execute token exchange request
         let response_text = self
-            .execute_token_exchange(provider, runtime_provider, &params)
+            .execute_token_exchange(provider, &runtime_provider, &params)
             .await?;
 
-        // Parse and process the token response
-        Self::process_token_response(provider, &response_text)
+        // Parse and process the token response, including JWT validation
+        self.process_token_response(provider, &response_text, &runtime_provider).await
     }
 
     /// Prepare parameters for token exchange request
@@ -491,7 +514,12 @@ impl OAuthConfig {
     }
 
     /// Process the token response and extract relevant information
-    fn process_token_response(provider: &str, response_text: &str) -> TokenExchangeResult {
+    async fn process_token_response(
+        &self,
+        provider: &str,
+        response_text: &str,
+        runtime_provider: &RuntimeProvider,
+    ) -> TokenExchangeResult {
         // Log the raw token response for debugging
         if provider == "apple" {
             info!("=== Raw Apple Token Response ===");
@@ -515,6 +543,20 @@ impl OAuthConfig {
             },
         );
 
+        // Perform JWT validation if enabled and ID token is present
+        if let Some(ref id_token) = token_response.id_token {
+            if runtime_provider.settings.should_enable_jwt_validation() {
+                info!("🔐 Performing JWT validation for provider '{provider}'");
+                if let Err(e) = self.validate_jwt_token(provider, id_token, runtime_provider).await {
+                    warn!("❌ JWT validation failed for provider '{provider}': {e}");
+                    // Continue for now - in the future this could be configurable
+                    // return Err(format!("JWT validation failed: {}", e));
+                }
+            } else {
+                debug!("⏭️  JWT validation disabled for provider '{provider}'");
+            }
+        }
+
         // Log detailed information about what we extracted
         let refresh_status = token_response
             .refresh_token
@@ -525,7 +567,7 @@ impl OAuthConfig {
             .expires_in
             .map(|v| i64::try_from(v).unwrap_or(3600));
 
-        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}", 
+        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}",
             provider, refresh_status, id_status, token_response.token_type, expires_in);
 
         Ok((
@@ -559,6 +601,36 @@ impl OAuthConfig {
         self.providers
             .get(provider)
             .and_then(|p| p.settings.display_name.as_deref())
+    }    /// Validate JWT ID token using JWKS discovery and cryptographic verification
+    async fn validate_jwt_token(
+        &self,
+        provider: &str,
+        id_token: &str,
+        runtime_provider: &RuntimeProvider,
+    ) -> Result<(), crate::jwt_validation::JwtValidationError> {
+        let jwt_config = runtime_provider.settings.get_jwt_validation_config();
+
+        // Get the JWT validator
+        let validator = self.get_jwt_validator().await;
+
+        // If discovery URL is available, fetch discovery document for issuer/jwks_uri
+        let discovery_doc = if let Some(ref discovery_url) = runtime_provider.settings.discovery_url {
+            match validator.fetch_discovery_document(discovery_url).await {
+                Ok(doc) => {
+                    debug!("✅ Discovery document fetched for provider '{provider}'");
+                    Some(doc)
+                }
+                Err(e) => {
+                    warn!("⚠️  Failed to fetch discovery document for '{provider}': {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Perform JWT validation using the validator
+        validator.validate_id_token(id_token, provider, &jwt_config, discovery_doc.as_ref()).await
     }
 }
 
