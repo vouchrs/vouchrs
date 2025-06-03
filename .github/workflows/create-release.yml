@@ -118,34 +118,35 @@ jobs:
         env:
           VERSION: ${{ github.event.inputs.version }}
           PRE_RELEASE: ${{ github.event.inputs.pre_release }}
+          RELEASE_BRANCH: ${{ env.RELEASE_BRANCH }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
             const prBody = `This PR was automatically created by the create-release workflow.
 
-### Changes:
-- Updates the version in Cargo.toml to ${process.env.VERSION}
-- Updates the CHANGELOG.md file based on conventional commits
+            ### Changes:
+            - Updates the version in Cargo.toml to ${process.env.VERSION}
+            - Updates the CHANGELOG.md file based on conventional commits
 
-### What happens when this PR is merged:
-- The main-release workflow will run automatically on merge
-- It will create the tag v${process.env.VERSION}
-- It will create a GitHub release with the changelog
-- It will build and push Docker images with appropriate tags
-- Pre-release status: ${process.env.PRE_RELEASE === 'true' ? 'Yes' : 'No'}
+            ### What happens when this PR is merged:
+            - The main-release workflow will run automatically on merge
+            - It will create the tag v${process.env.VERSION}
+            - It will create a GitHub release with the changelog
+            - It will build and push Docker images with appropriate tags
+            - Pre-release status: ${process.env.PRE_RELEASE === 'true' ? 'Yes' : 'No'}
 
-### 🚨 Important:
-- Do not push directly to main, all changes must go through a PR
-- This PR prepares the repository for a new release
-- Review the changelog and version number before merging`;
+            ### 🚨 Important:
+            - Do not push directly to main, all changes must go through a PR
+            - This PR prepares the repository for a new release
+            - Review the changelog and version number before merging`;
 
             const result = await github.rest.pulls.create({
               owner,
               repo,
-              title: 'chore(release): prepare for v${{ github.event.inputs.version }}',
+              title: `chore(release): prepare for v${process.env.VERSION}`,
               body: prBody,
-              head: '${{ env.RELEASE_BRANCH }}',
+              head: process.env.RELEASE_BRANCH,
               base: 'main'  // Always create PRs to main branch
             });
 
