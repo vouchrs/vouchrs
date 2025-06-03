@@ -18,6 +18,9 @@ use sha2::{Sha256, Digest};
 
 use crate::settings::{JwtValidationConfig, ProviderSettings};
 
+// Import HTTP functions from oauth module
+use crate::oauth::{fetch_discovery_document, fetch_jwks};
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -232,14 +235,6 @@ impl JwksCache {
 // JWT Validator
 // ============================================================================
 
-/// HTTP client for making JWKS and discovery document requests
-static HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .expect("Failed to create HTTP client")
-});
-
 pub struct JwtValidator {
     cache: Arc<RwLock<JwksCache>>,
 }
@@ -319,17 +314,11 @@ impl JwtValidator {
     ) -> Result<OidcDiscoveryDocument, JwtValidationError> {
         debug!("📄 Fetching OIDC discovery document from {discovery_url}");
 
-        let response = HTTP_CLIENT
-            .get(discovery_url)
-            .send()
+        let discovery_doc_value = fetch_discovery_document(discovery_url)
             .await
-            .map_err(|e| JwtValidationError::JwksFetchFailed(
-                format!("Failed to fetch discovery document: {e}")
-            ))?;
+            .map_err(JwtValidationError::JwksFetchFailed)?;
 
-        let discovery_doc: OidcDiscoveryDocument = response
-            .json()
-            .await
+        let discovery_doc: OidcDiscoveryDocument = serde_json::from_value(discovery_doc_value)
             .map_err(|e| JwtValidationError::JwksFetchFailed(
                 format!("Failed to parse discovery document: {e}")
             ))?;
@@ -361,9 +350,7 @@ impl JwtValidator {
         // Drop the write lock before making HTTP request
         drop(cache);
 
-        let response = HTTP_CLIENT
-            .get(jwks_uri)
-            .send()
+        let jwks_value = fetch_jwks(jwks_uri)
             .await
             .map_err(|e| {
                 // Record failure in cache
@@ -376,18 +363,13 @@ impl JwtValidator {
                     }
                 });
 
-                JwtValidationError::JwksFetchFailed(
-                    format!("Failed to fetch JWKS: {e}")
-                )
+                JwtValidationError::JwksFetchFailed(e)
             })?;
 
-        let jwks: JsonWebKeySet = response
-            .json()
-            .await
+        let jwks: JsonWebKeySet = serde_json::from_value(jwks_value)
             .map_err(|e| JwtValidationError::JwksFetchFailed(
                 format!("Failed to parse JWKS: {e}")
             ))?;
-
         // Re-acquire write lock to store keys
         let mut cache = self.cache.write().await;
         cache.store_keys(provider, jwks.keys);
@@ -627,66 +609,108 @@ impl JwtValidator {
         discovery_doc: Option<&OidcDiscoveryDocument>,
     ) -> Result<(), JwtValidationError> {
         let now = chrono::Utc::now().timestamp();
+        let clock_skew = i64::try_from(config.clock_skew_seconds).unwrap_or(300);
 
-        // Validate expiration
+        // Early return pattern - validate each claim type separately
         if config.validate_expiration {
-            if let Some(exp) = claims.exp {
-                if now > exp + i64::try_from(config.clock_skew_seconds).unwrap_or(300) {
-                    return Err(JwtValidationError::TokenExpired);
-                }
-            }
+            Self::validate_expiration_claims(claims, now, clock_skew)?;
         }
 
-        // Validate not before
-        if config.validate_expiration {
-            if let Some(nbf) = claims.nbf {
-                if now < nbf - i64::try_from(config.clock_skew_seconds).unwrap_or(300) {
-                    return Err(JwtValidationError::TokenNotYetValid);
-                }
-            }
-        }
-
-        // Validate issuer
         if config.validate_issuer {
-            if let Some(discovery_doc) = discovery_doc {
-                if let Some(token_issuer) = &claims.iss {
-                    let expected_issuer = config.expected_issuer.as_ref()
-                        .unwrap_or(&discovery_doc.issuer);
-                    if token_issuer != expected_issuer {
-                        return Err(JwtValidationError::ClaimValidationFailed {
-                            claim: "iss".to_string(),
-                            expected: expected_issuer.clone(),
-                            actual: token_issuer.clone(),
-                        });
-                    }
-                }
+            Self::validate_issuer_claim(claims, config, discovery_doc)?;
+        }
+
+        if config.validate_audience {
+            Self::validate_audience_claim(claims, config)?;
+        }
+
+        Ok(())
+    }
+
+    /// Validate expiration and not-before claims
+    fn validate_expiration_claims(
+        claims: &JwtClaims,
+        now: i64,
+        clock_skew: i64,
+    ) -> Result<(), JwtValidationError> {
+        // Validate expiration time
+        if let Some(exp) = claims.exp {
+            if now > exp + clock_skew {
+                return Err(JwtValidationError::TokenExpired);
             }
         }
 
-        // Validate audience if configured
-        if config.validate_audience {
-            if let Some(expected_audience) = &config.expected_audience {
-                let token_audiences = match &claims.aud {
-                    Some(serde_json::Value::String(aud)) => vec![aud.clone()],
-                    Some(serde_json::Value::Array(auds)) => {
-                        auds.iter()
-                            .filter_map(|v| v.as_str().map(ToString::to_string))
-                            .collect()
-                    },
-                    _ => vec![],
-                };
-
-                if !token_audiences.iter().any(|aud| aud == expected_audience) {
-                    return Err(JwtValidationError::ClaimValidationFailed {
-                        claim: "aud".to_string(),
-                        expected: expected_audience.clone(),
-                        actual: format!("{token_audiences:?}"),
-                    });
-                }
+        // Validate not-before time
+        if let Some(nbf) = claims.nbf {
+            if now < nbf - clock_skew {
+                return Err(JwtValidationError::TokenNotYetValid);
             }
         }
 
         Ok(())
+    }
+
+    /// Validate issuer claim
+    fn validate_issuer_claim(
+        claims: &JwtClaims,
+        config: &JwtValidationConfig,
+        discovery_doc: Option<&OidcDiscoveryDocument>,
+    ) -> Result<(), JwtValidationError> {
+        let Some(discovery_doc) = discovery_doc else {
+            return Ok(()); // No discovery doc available for validation
+        };
+
+        let Some(token_issuer) = &claims.iss else {
+            return Ok(()); // No issuer claim to validate
+        };
+
+        let expected_issuer = config.expected_issuer.as_ref()
+            .unwrap_or(&discovery_doc.issuer);
+
+        if token_issuer != expected_issuer {
+            return Err(JwtValidationError::ClaimValidationFailed {
+                claim: "iss".to_string(),
+                expected: expected_issuer.clone(),
+                actual: token_issuer.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate audience claim
+    fn validate_audience_claim(
+        claims: &JwtClaims,
+        config: &JwtValidationConfig,
+    ) -> Result<(), JwtValidationError> {
+        let Some(expected_audience) = &config.expected_audience else {
+            return Ok(()); // No expected audience configured
+        };
+
+        let token_audiences = Self::extract_audiences_from_claims(claims);
+
+        if !token_audiences.iter().any(|aud| aud == expected_audience) {
+            return Err(JwtValidationError::ClaimValidationFailed {
+                claim: "aud".to_string(),
+                expected: expected_audience.clone(),
+                actual: format!("{token_audiences:?}"),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Extract audience values from JWT claims
+    fn extract_audiences_from_claims(claims: &JwtClaims) -> Vec<String> {
+        match &claims.aud {
+            Some(serde_json::Value::String(aud)) => vec![aud.clone()],
+            Some(serde_json::Value::Array(auds)) => {
+                auds.iter()
+                    .filter_map(|v| v.as_str().map(ToString::to_string))
+                    .collect()
+            },
+            _ => vec![],
+        }
     }
 }
 
@@ -972,5 +996,245 @@ mod tests {
         let result = validator.verify_signature("header.payload.signature", "HS256", &dummy_key);
         assert!(result.is_err());
         matches!(result.unwrap_err(), JwtValidationError::UnsupportedAlgorithm(_));
+    }
+
+    #[test]
+    fn test_validate_expiration_claims_helper() {
+        let now = chrono::Utc::now().timestamp();
+        let clock_skew = 300;
+
+        // Test expired token
+        let expired_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: Some(now - 1000), // Expired 1000 seconds ago
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_expiration_claims(&expired_claims, now, clock_skew);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), JwtValidationError::TokenExpired));
+
+        // Test not yet valid token
+        let future_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: Some(now + 3600),
+            nbf: Some(now + 1000), // Not valid for another 1000 seconds
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_expiration_claims(&future_claims, now, clock_skew);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), JwtValidationError::TokenNotYetValid));
+
+        // Test valid token
+        let valid_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: Some(now + 3600),
+            nbf: Some(now - 100),
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_expiration_claims(&valid_claims, now, clock_skew);
+        assert!(result.is_ok());
+
+        // Test token with no expiration claims (should pass)
+        let no_exp_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_expiration_claims(&no_exp_claims, now, clock_skew);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_issuer_claim_helper() {
+        let config = JwtValidationConfig {
+            enabled: Some(true),
+            validate_audience: false,
+            validate_issuer: true,
+            validate_expiration: false,
+            expected_audience: None,
+            expected_issuer: Some("https://expected.com".to_string()),
+            clock_skew_seconds: 300,
+            cache_duration_seconds: 3600,
+        };
+
+        let discovery_doc = OidcDiscoveryDocument {
+            issuer: "https://discovery.com".to_string(),
+            authorization_endpoint: "https://discovery.com/auth".to_string(),
+            token_endpoint: "https://discovery.com/token".to_string(),
+            jwks_uri: "https://discovery.com/jwks".to_string(),
+            userinfo_endpoint: None,
+            end_session_endpoint: None,
+            id_token_signing_alg_values_supported: vec![],
+        };
+
+        // Test valid issuer (uses expected_issuer from config)
+        let valid_claims = JwtClaims {
+            iss: Some("https://expected.com".to_string()),
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_issuer_claim(&valid_claims, &config, Some(&discovery_doc));
+        assert!(result.is_ok());
+
+        // Test invalid issuer
+        let invalid_claims = JwtClaims {
+            iss: Some("https://malicious.com".to_string()),
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_issuer_claim(&invalid_claims, &config, Some(&discovery_doc));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), JwtValidationError::ClaimValidationFailed { .. }));
+
+        // Test no discovery document (should pass)
+        let result = JwtValidator::validate_issuer_claim(&valid_claims, &config, None);
+        assert!(result.is_ok());
+
+        // Test no issuer in claims (should pass)
+        let no_issuer_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_issuer_claim(&no_issuer_claims, &config, Some(&discovery_doc));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_audience_claim_helper() {
+        let config = JwtValidationConfig {
+            enabled: Some(true),
+            validate_audience: true,
+            validate_issuer: false,
+            validate_expiration: false,
+            expected_audience: Some("expected-client".to_string()),
+            expected_issuer: None,
+            clock_skew_seconds: 300,
+            cache_duration_seconds: 3600,
+        };
+
+        // Test single matching audience
+        let single_aud_claims = JwtClaims {
+            iss: None,
+            aud: Some(serde_json::Value::String("expected-client".to_string())),
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_audience_claim(&single_aud_claims, &config);
+        assert!(result.is_ok());
+
+        // Test multiple audiences with match
+        let multiple_aud_claims = JwtClaims {
+            iss: None,
+            aud: Some(serde_json::Value::Array(vec![
+                serde_json::Value::String("other-client".to_string()),
+                serde_json::Value::String("expected-client".to_string()),
+            ])),
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_audience_claim(&multiple_aud_claims, &config);
+        assert!(result.is_ok());
+
+        // Test no matching audience
+        let no_match_claims = JwtClaims {
+            iss: None,
+            aud: Some(serde_json::Value::String("different-client".to_string())),
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let result = JwtValidator::validate_audience_claim(&no_match_claims, &config);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), JwtValidationError::ClaimValidationFailed { .. }));
+
+        // Test no expected audience configured (should pass)
+        let config_no_aud = JwtValidationConfig {
+            expected_audience: None,
+            ..config
+        };
+
+        let result = JwtValidator::validate_audience_claim(&no_match_claims, &config_no_aud);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extract_audiences_from_claims() {
+        // Test single string audience
+        let single_claims = JwtClaims {
+            iss: None,
+            aud: Some(serde_json::Value::String("client1".to_string())),
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let audiences = JwtValidator::extract_audiences_from_claims(&single_claims);
+        assert_eq!(audiences, vec!["client1"]);
+
+        // Test multiple audiences
+        let multiple_claims = JwtClaims {
+            iss: None,
+            aud: Some(serde_json::Value::Array(vec![
+                serde_json::Value::String("client1".to_string()),
+                serde_json::Value::String("client2".to_string()),
+                serde_json::Value::Number(serde_json::Number::from(123)), // Non-string should be filtered
+            ])),
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let audiences = JwtValidator::extract_audiences_from_claims(&multiple_claims);
+        assert_eq!(audiences, vec!["client1", "client2"]);
+
+        // Test no audience
+        let no_aud_claims = JwtClaims {
+            iss: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            sub: None,
+        };
+
+        let audiences = JwtValidator::extract_audiences_from_claims(&no_aud_claims);
+        assert!(audiences.is_empty());
     }
 }
