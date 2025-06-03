@@ -23,6 +23,18 @@ use crate::utils::crypto::decrypt_data;
 #[cfg(test)]
 use crate::utils::crypto::encrypt_data;
 
+// Static HTTP client for making OAuth and JWT validation requests
+// Optimized with connection pooling for better performance
+static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
+        .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
+        .timeout(Duration::from_secs(30)) // 30 second request timeout
+        .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
+        .build()
+        .expect("Failed to create HTTP client")
+});
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -207,7 +219,6 @@ type TokenExchangeResult = Result<
 pub struct OAuthConfig {
     pub providers: HashMap<String, RuntimeProvider>,
     pub redirect_base_url: String,
-    http_client: reqwest::Client,
     jwt_validator: Arc<RwLock<Option<crate::jwt_validation::JwtValidator>>>,
 }
 
@@ -228,19 +239,10 @@ impl OAuthConfig {
         let redirect_base_url =
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
-        // Create an optimized HTTP client with connection pooling
-        let http_client = reqwest::Client::builder()
-            .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
-            .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
-            .timeout(Duration::from_secs(30)) // 30 second request timeout
-            .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
-            .build()
-            .expect("Failed to create HTTP client");
-
         Self {
             providers: HashMap::new(),
             redirect_base_url,
-            http_client,
+
             jwt_validator: Arc::new(RwLock::new(None)), // Will be initialized when needed
         }
     }
@@ -488,13 +490,12 @@ impl OAuthConfig {
     ) -> Result<String, String> {
         info!("🔄 Exchanging authorization code for tokens with {provider}");
 
-        let response = self
-            .http_client
+        let response = CLIENT
             .post(&runtime_provider.token_url)
             .form(params)
             .send()
             .await
-            .map_err(|e| format!("Failed to exchange code for token: {e}"))?;
+            .map_err(|e| format!("Failed to send token exchange request: {e}"))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -638,9 +639,6 @@ impl OAuthConfig {
 // Token Management Functions
 // ============================================================================
 
-// Static HTTP client for making token refresh requests
-static CLIENT: std::sync::LazyLock<reqwest::Client> =
-    std::sync::LazyLock::new(reqwest::Client::new);
 
 /// Check if tokens need refresh and refresh them if necessary
 ///
@@ -863,6 +861,72 @@ pub fn get_state_from_callback(
             }
         }
     }
+}
+
+/// Fetch an OIDC discovery document from the given URL
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request fails
+/// - The response cannot be parsed as JSON
+/// - The discovery document is missing required fields
+pub async fn fetch_discovery_document(discovery_url: &str) -> Result<serde_json::Value, String> {
+    debug!("📄 Fetching OIDC discovery document from {discovery_url}");
+
+    let response = CLIENT
+        .get(discovery_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch discovery document: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Discovery document request failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let discovery_doc: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse discovery document: {e}"))?;
+
+    debug!("✅ Discovery document fetched successfully");
+    Ok(discovery_doc)
+}
+
+/// Fetch JWKS (JSON Web Key Set) from the given URI
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request fails
+/// - The response cannot be parsed as JSON
+/// - The JWKS document is malformed
+pub async fn fetch_jwks(jwks_uri: &str) -> Result<serde_json::Value, String> {
+    debug!("🔑 Fetching JWKS from {jwks_uri}");
+
+    let response = CLIENT
+        .get(jwks_uri)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch JWKS: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "JWKS request failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let jwks: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse JWKS: {e}"))?;
+
+    debug!("✅ JWKS fetched successfully");
+    Ok(jwks)
 }
 
 // ============================================================================
