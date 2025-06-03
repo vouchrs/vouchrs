@@ -13,11 +13,11 @@ categories = ["authentication", "web-programming"]
 
 # Optimize for smaller binaries
 [profile.release]
-opt-level = "z"          # Optimize for size instead of speed
-lto = true               # Enable Link Time Optimization
-codegen-units = 1        # Better optimization with single codegen unit
-panic = "abort"          # Don't include stack unwinding code
-strip = true             # Strip symbols from binary
+opt-level = "z"   # Optimize for size instead of speed
+lto = true        # Enable Link Time Optimization
+codegen-units = 1 # Better optimization with single codegen unit
+panic = "abort"   # Don't include stack unwinding code
+strip = true      # Strip symbols from binary
 
 [features]
 default = []
@@ -34,9 +34,16 @@ multiple_crate_versions = "allow"
 
 [dependencies]
 # Core web framework
-actix-web = { version = "4.4", default-features = false, features = ["macros", "compress-gzip", "cookies"] }
+actix-web = { version = "4.4", default-features = false, features = [
+    "macros",
+    "compress-gzip",
+    "cookies",
+] }
 actix-cors = { version = "0.7", default-features = false }
-tokio = { version = "1.0", default-features = false, features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.0", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+] }
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["derive"] }
@@ -45,27 +52,46 @@ basic-toml = { version = "0.1", default-features = false }
 
 
 # HTTP client
-reqwest = { version = "0.12.19", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12.19", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 url = { version = "2.4", default-features = false }
 
 # Utilities
 base64 = { version = "0.22", default-features = false }
-chrono = { version = "0.4", default-features = false, features = ["serde", "std","clock" ] }
+chrono = { version = "0.4", default-features = false, features = [
+    "serde",
+    "std",
+    "clock",
+] }
 anyhow = { version = "1.0", default-features = false }
 log = { version = "0.4", default-features = false }
 env_logger = { version = "0.11", default-features = false }
-regex = { version = "1.10", default-features = false, features = ["unicode-case", "unicode-perl"] }
+regex = { version = "1.10", default-features = false, features = [
+    "unicode-case",
+    "unicode-perl",
+] }
 once_cell = { version = "1.19", default-features = false }
 
 # Crypto (keep these for security)
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
-p256 = { version = "0.14.0-pre.4", default-features = false, features = ["ecdsa", "pem", "pkcs8"] }
+aes-gcm = { version = "0.10", default-features = false, features = [
+    "aes",
+    "alloc",
+] }
+p256 = { version = "0.14.0-pre.4", default-features = false, features = [
+    "ecdsa",
+    "pem",
+    "pkcs8",
+] }
 hmac = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
-rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
+rand = { version = "0.9", default-features = false, features = [
+    "std",
+    "std_rng",
+] }
 urlencoding = "2.1.3"
 
 [dev-dependencies]
 serial_test = "3.2.0"
 tempfile = "3.20.0"
-
