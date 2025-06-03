@@ -7,7 +7,6 @@
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
 	},
-	
 	// Use 'mounts' to make the cargo cache persistent in a Docker Volume.
 	// "mounts": [
 	// 	{
@@ -16,16 +15,12 @@
 	// 		"type": "volume"
 	// 	}
 	// ],
-
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
-
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
@@ -36,7 +31,10 @@
 			],
 			"settings": {
 				"rust-analyzer.check.command": "clippy",
-				"rust-analyzer.rustfmt.extraArgs": ["--edition", "2021"],
+				"rust-analyzer.rustfmt.extraArgs": [
+					"--edition",
+					"2021"
+				],
 				"editor.formatOnSave": true,
 				"editor.formatOnPaste": true,
 				"[rust]": {
@@ -46,12 +44,13 @@
 				"files.trimTrailingWhitespace": true,
 				"files.insertFinalNewline": true,
 				"files.trimFinalNewlines": true,
-				"editor.rulers": [100],
+				"editor.rulers": [
+					100
+				],
 				"editor.renderWhitespace": "boundary"
 			}
 		}
 	}
-
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"
 }
