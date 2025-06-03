@@ -212,13 +212,14 @@ jobs:
           git add Cargo.toml CHANGELOG.md Cargo.lock
           git commit -m "chore(release): prepare for v${{ steps.set_version.outputs.version }}"
 
+      - name: Push changes to main
+        run: |
+          git push origin HEAD:main
+
       - name: Create and push tag
         run: |
           git tag -a "v${{ steps.set_version.outputs.version }}" -m "Release v${{ steps.set_version.outputs.version }}"
           git push origin "v${{ steps.set_version.outputs.version }}"
-
-      # We don't need to push changes as we're already on main branch after PR merge
-      # The PR process handles pushing changes to main
 
       - name: Create GitHub Release
         id: create_release
