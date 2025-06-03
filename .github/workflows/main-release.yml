@@ -57,11 +57,17 @@ jobs:
           fi
 
           # Get the last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Last tag: $LAST_TAG"
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "Last tag: ${LAST_TAG:-none}"
 
-          # Check for conventional commits since last tag
-          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          # Check for commits since last tag or all commits if no tags exist
+          if [ -z "$LAST_TAG" ]; then
+            echo "No tags found, using all commits"
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            # Check for conventional commits since last tag
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          fi
 
           if [ -z "$COMMITS" ]; then
             echo "No commits since last tag"
@@ -76,10 +82,17 @@ jobs:
           HAS_OTHER=$(echo "$COMMITS" | grep -E "^(docs|style|refactor|perf|test|chore)(\(.+\))?:" || true)
 
           # Extract current version numbers
-          CURRENT_VERSION=${LAST_TAG#v}
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          if [ -z "$LAST_TAG" ]; then
+            # If no tags exist, start with 0.1.0
+            MAJOR=0
+            MINOR=1
+            PATCH=0
+          else
+            CURRENT_VERSION=${LAST_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3 | cut -d- -f1) # Handle potential pre-release suffixes
+          fi
 
           # Determine version bump type
           if [ -n "$HAS_BREAKING" ]; then
@@ -142,14 +155,13 @@ jobs:
             exit 1
           fi
 
-      - name: Install tools
-        run: |
-          # Install git-cliff
-          curl -L https://github.com/orhun/git-cliff/releases/download/v2.9.1/git-cliff-2.9.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv git-cliff-2.9.1/git-cliff /usr/local/bin/
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff@2.9.1
 
-          # Install cargo-edit
-          cargo install cargo-edit
+      - name: Install cargo-edit
+        run: cargo install cargo-edit
 
       - name: Update Cargo.toml version
         run: |
@@ -229,7 +241,7 @@ jobs:
               name: 'v${{ steps.set_version.outputs.version }}',
               body: releaseNotes,
               draft: false,
-              prerelease: ${{ steps.set_version.outputs.pre_release }}
+              prerelease: ${{ steps.set_version.outputs.pre_release == 'true' }}
             });
 
             console.log(`✅ Created release: ${release.data.html_url}`);
