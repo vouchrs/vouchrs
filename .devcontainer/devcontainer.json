@@ -20,14 +20,15 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "rustc --version",
+	"postCreateCommand": "bash -c 'curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash && sudo mv actionlint /usr/local/bin/ && rustc --version'",
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
 			"extensions": [
 				"rust-lang.rust-analyzer",
 				"vadimcn.vscode-lldb",
-				"tamasfe.even-better-toml"
+				"tamasfe.even-better-toml",
+				"github.vscode-github-actions"
 			],
 			"settings": {
 				"rust-analyzer.check.command": "clippy",
