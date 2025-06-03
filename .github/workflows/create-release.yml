@@ -111,7 +111,7 @@ jobs:
 
       - name: Push release branch
         run: |
-          git push origin ${{ env.RELEASE_BRANCH }}
+          git push origin $RELEASE_BRANCH
 
       - name: Create pull request
         uses: actions/github-script@v7
@@ -126,15 +126,15 @@ jobs:
             const prBody = `This PR was automatically created by the create-release workflow.
 
             ### Changes:
-            - Updates the version in Cargo.toml to ${process.env.VERSION}
+            - Updates the version in Cargo.toml to \${process.env.VERSION}
             - Updates the CHANGELOG.md file based on conventional commits
 
             ### What happens when this PR is merged:
             - The main-release workflow will run automatically on merge
-            - It will create the tag v${process.env.VERSION}
+            - It will create the tag v\${process.env.VERSION}
             - It will create a GitHub release with the changelog
             - It will build and push Docker images with appropriate tags
-            - Pre-release status: ${process.env.PRE_RELEASE === 'true' ? 'Yes' : 'No'}
+            - Pre-release status: \${process.env.PRE_RELEASE === 'true' ? 'Yes' : 'No'}
 
             ### 🚨 Important:
             - Do not push directly to main, all changes must go through a PR

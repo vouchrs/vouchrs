@@ -118,7 +118,7 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Detected $VERSION_TYPE release: $NEW_VERSION"
 
-  create-release:
+  build-and-release:
     needs: detect-version-bump
     if: needs.detect-version-bump.outputs.should_release == 'true'
     runs-on: ubuntu-latest
