@@ -38,6 +38,10 @@ pub struct StaticFilesSettings {
 pub struct SessionSettings {
     pub session_duration_hours: u64,
     pub session_secret: String,
+    /// Cookie refresh interval in hours. If 0, cookie refresh is disabled.
+    /// When enabled, the session cookie's expiration will be extended by this
+    /// amount each time the user makes a request, keeping active users logged in.
+    pub session_refresh_hours: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +124,7 @@ impl Default for SessionSettings {
         Self {
             session_duration_hours: 24,
             session_secret: String::new(), // Will be generated if empty
+            session_refresh_hours: 0, // Disabled by default
         }
     }
 }
@@ -299,6 +304,12 @@ impl VouchrsSettings {
         if let Ok(session_duration_str) = std::env::var("SESSION_DURATION_HOURS") {
             if let Ok(session_duration) = session_duration_str.parse::<u64>() {
                 session_settings.session_duration_hours = session_duration;
+            }
+        }
+
+        if let Ok(session_refresh_str) = std::env::var("SESSION_REFRESH_HOURS") {
+            if let Ok(session_refresh) = session_refresh_str.parse::<u64>() {
+                session_settings.session_refresh_hours = session_refresh;
             }
         }
         
@@ -485,6 +496,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "default-secret".to_string(),
+            session_refresh_hours: 0,
         };
 
         // Set environment variable
@@ -508,6 +520,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
+            session_refresh_hours: 0,
         };
 
         // Set environment variable
@@ -532,6 +545,7 @@ mod tests {
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret".to_string(),
+            session_refresh_hours: 0,
         };
 
         // Apply environment overrides
@@ -638,6 +652,7 @@ session_secret = "secrets-secret-key"
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(), // Empty, should trigger auto-generation
+            session_refresh_hours: 0,
         };
 
         // Apply environment overrides (which includes auto-generation)
@@ -651,12 +666,39 @@ session_secret = "secrets-secret-key"
         let mut session_settings2 = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(),
+            session_refresh_hours: 0,
         };
         VouchrsSettings::apply_session_env_overrides(&mut session_settings2);
         
         // Should be different each time
         assert_ne!(session_settings.session_secret, session_settings2.session_secret);
         
+        clean_env_vars();
+    }
+
+    #[test]
+    #[serial]
+    fn test_session_refresh_env_override() {
+        // Make sure the environment is clean
+        clean_env_vars();
+
+        let mut session_settings = SessionSettings {
+            session_duration_hours: 24,
+            session_secret: "test-secret".to_string(),
+            session_refresh_hours: 0, // Default disabled
+        };
+
+        // Set environment variable
+        std::env::set_var("SESSION_REFRESH_HOURS", "2"); // 2 hours
+
+        // Apply environment overrides
+        VouchrsSettings::apply_session_env_overrides(&mut session_settings);
+
+        assert_eq!(session_settings.session_refresh_hours, 2);
+        assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
+        assert_eq!(session_settings.session_duration_hours, 24); // Should remain unchanged
+
+        // Clean up
         clean_env_vars();
     }
 }

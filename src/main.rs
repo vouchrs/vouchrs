@@ -55,6 +55,7 @@ async fn start_server(
         settings.session.session_secret.as_bytes(),
         settings.cookies.secure,
         settings.session.session_duration_hours,
+        settings.session.session_refresh_hours,
     );
 
     // Configure CORS for SPAs

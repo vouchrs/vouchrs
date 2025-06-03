@@ -1,4 +1,5 @@
 use actix_web::{web, HttpRequest, HttpResponse, Result as ActixResult};
+use log;
 use reqwest::Client;
 use std::collections::HashMap;
 
@@ -59,8 +60,85 @@ pub async fn proxy_upstream(
             Err(response) => return Ok(response),
         };
 
-    // Forward upstream response back to client
-    forward_upstream_response(upstream_response, &req, &settings).await
+    // Forward upstream response back to client with potential cookie refresh
+    forward_upstream_response_with_session_refresh(upstream_response, &req, &settings, &session_manager, &session).await
+}
+
+/// Forward upstream response back to client with session refresh functionality
+/// 
+/// # Errors
+/// 
+/// Returns an error if reading the upstream response body fails
+async fn forward_upstream_response_with_session_refresh(
+    upstream_response: reqwest::Response,
+    req: &HttpRequest,
+    settings: &VouchrsSettings,
+    session_manager: &SessionManager,
+    session: &VouchrsSession,
+) -> ActixResult<HttpResponse> {
+    let status_code = upstream_response.status();
+
+    // Check if this is a 401 Unauthorized response
+    if status_code == reqwest::StatusCode::UNAUTHORIZED {
+        // Determine if this is a browser request 
+        if is_browser_request(req) {
+            // Redirect browser requests to sign-in page
+            let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
+            return Ok(HttpResponse::Found()
+                .insert_header(("Location", sign_in_url.clone()))
+                .json(serde_json::json!({
+                    "error": "authentication_required",
+                    "message": "Authentication required. Redirecting to sign-in page.",
+                    "redirect_url": sign_in_url
+                })));
+        }
+        // For non-browser requests, return 401 with JSON error
+        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "unauthorized",
+            "message": "Authentication required. Please obtain a valid session cookie or bearer token."
+        })));
+    }
+
+    // For all other status codes, forward the response as-is
+    let actix_status = actix_web::http::StatusCode::from_u16(status_code.as_u16())
+        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+
+    let mut response_builder = HttpResponse::build(actix_status);
+
+    // Forward relevant headers (excluding hop-by-hop headers)
+    for (name, value) in upstream_response.headers() {
+        let name_str = name.as_str().to_lowercase();
+        if !is_hop_by_hop_header(&name_str) {
+            if let Ok(value_str) = value.to_str() {
+                response_builder.insert_header((name.as_str(), value_str));
+            }
+        }
+    }
+
+    // Check if session cookie refresh is enabled and should be refreshed
+    if session_manager.is_cookie_refresh_enabled() {
+        log::debug!("Session refresh is enabled, checking if session should be refreshed");
+        match session_manager.create_refreshed_session_cookie(session) {
+            Ok(refreshed_cookie) => {
+                log::info!(
+                    "Setting refreshed session cookie for active user on provider: {}",
+                    session.provider
+                );
+                response_builder.cookie(refreshed_cookie);
+            }
+            Err(e) => {
+                log::warn!("Failed to create refreshed session cookie: {}", e);
+                // Continue without refresh rather than failing the request
+            }
+        }
+    }
+
+    // Get response body
+    let response_body = upstream_response.bytes().await.map_err(|err| {
+        actix_web::error::ErrorBadGateway(format!("Failed to read upstream response: {err}"))
+    })?;
+
+    Ok(response_builder.body(response_body))
 }
 
 /// Execute the upstream request with proper headers and body
@@ -108,63 +186,6 @@ async fn execute_upstream_request(
 }
 
 // Functions have been moved to ResponseBuilder
-
-/// Forward upstream response back to client, handling 401/403 redirects for browsers
-/// 
-/// # Errors
-/// 
-/// Returns an error if reading the upstream response body fails
-async fn forward_upstream_response(
-    upstream_response: reqwest::Response,
-    req: &HttpRequest,
-    settings: &VouchrsSettings,
-) -> ActixResult<HttpResponse> {
-    let status_code = upstream_response.status();
-
-    // Check if this is a 401 Unauthorized response
-    if status_code == reqwest::StatusCode::UNAUTHORIZED {
-        // Determine if this is a browser request 
-        if is_browser_request(req) {
-            // Redirect browser requests to sign-in page
-            let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-            return Ok(HttpResponse::Found()
-                .insert_header(("Location", sign_in_url.clone()))
-                .json(serde_json::json!({
-                    "error": "authentication_required",
-                    "message": "Authentication required. Redirecting to sign-in page.",
-                    "redirect_url": sign_in_url
-                })));
-        }
-        // For non-browser requests, return 401 with JSON error
-        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "unauthorized",
-            "message": "Authentication required. Please obtain a valid session cookie or bearer token."
-        })));
-    }
-
-    // For all other status codes, forward the response as-is
-    let actix_status = actix_web::http::StatusCode::from_u16(status_code.as_u16())
-        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
-
-    let mut response_builder = HttpResponse::build(actix_status);
-
-    // Forward relevant headers (excluding hop-by-hop headers)
-    for (name, value) in upstream_response.headers() {
-        let name_str = name.as_str().to_lowercase();
-        if !is_hop_by_hop_header(&name_str) {
-            if let Ok(value_str) = value.to_str() {
-                response_builder.insert_header((name.as_str(), value_str));
-            }
-        }
-    }
-
-    // Get response body
-    let response_body = upstream_response.bytes().await.map_err(|err| {
-        actix_web::error::ErrorBadGateway(format!("Failed to read upstream response: {err}"))
-    })?;
-
-    Ok(response_builder.body(response_body))
-}
 
 /// Extract and validate session from encrypted cookie
 /// 

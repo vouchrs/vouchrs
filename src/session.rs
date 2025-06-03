@@ -41,18 +41,26 @@ pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
     session_duration_hours: u64,
+    session_refresh_hours: u64,
 }
 
 impl SessionManager {
-    /// Create a new session manager with the provided key and cookie settings
+
+    /// Create a new session manager with cookie refresh configuration
     #[must_use]
-    pub fn new(key: &[u8], cookie_secure: bool, session_duration_hours: u64) -> Self {
+    pub fn new(
+        key: &[u8], 
+        cookie_secure: bool, 
+        session_duration_hours: u64,
+        session_refresh_hours: u64,
+    ) -> Self {
         let encryption_key = derive_encryption_key(key);
 
         Self {
             encryption_key,
             cookie_secure,
             session_duration_hours,
+            session_refresh_hours,
         }
     }
 
@@ -118,7 +126,35 @@ impl SessionManager {
         self.cookie_secure
     }
 
+    /// Check if cookie refresh is enabled
+    #[must_use]
+    pub fn is_cookie_refresh_enabled(&self) -> bool {
+        self.session_refresh_hours > 0
+    }
 
+    /// Create a refreshed session cookie with extended expiration
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encryption fails
+    pub fn create_refreshed_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
+        if !self.is_cookie_refresh_enabled() {
+            return self.create_session_cookie(session);
+        }
+
+        // Create cookie with refresh interval (already in hours)
+        let refresh_duration = i64::try_from(self.session_refresh_hours).unwrap_or(1);
+
+        self.create_cookie(
+            COOKIE_NAME.to_string(),
+            Some(session),
+            CookieOptions {
+                same_site: actix_web::cookie::SameSite::Lax,
+                max_age: actix_web::cookie::time::Duration::hours(refresh_duration),
+                ..Default::default()
+            },
+        )
+    }
 
     /// Create an expired cookie to clear the session
     #[must_use]

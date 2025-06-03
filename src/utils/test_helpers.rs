@@ -22,7 +22,7 @@ pub fn create_test_session() -> VouchrsSession {
 pub fn create_test_session_manager() -> SessionManager {
     // Use the existing secure random key generation from settings
     let test_secret = generate_test_session_secret();
-    SessionManager::new(test_secret.as_bytes(), false, 24)
+    SessionManager::new(test_secret.as_bytes(), false, 24, 0)
 }
 
 /// Generate a secure test session secret using the same method as the main app
@@ -42,6 +42,7 @@ pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> 
         settings.session.session_secret.as_bytes(),
         false,
         settings.session.session_duration_hours,
+        0
     )
 }
 
@@ -69,6 +70,7 @@ pub fn create_test_settings() -> VouchrsSettings {
         session: SessionSettings {
             session_duration_hours: 24,
             session_secret: "test-secret-key".to_string(),
+            session_refresh_hours: 0,
         },
         ..Default::default()
     }

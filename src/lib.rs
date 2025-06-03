@@ -1,4 +1,3 @@
-
 #![warn(clippy::pedantic)]
 #![warn(clippy::cargo)]
 #![deny(warnings)]
@@ -15,7 +14,7 @@ pub mod session_builder;
 pub mod settings;
 pub mod utils;
 
-// Re-export commonly used items
+/// Re-export commonly used items
 pub use handlers::{
     health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out,
     oauth_userinfo,
