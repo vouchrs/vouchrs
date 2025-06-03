@@ -30,7 +30,7 @@ pub const ENCRYPTION_KEY_SIZE: usize = 32;
 #[must_use]
 pub fn generate_csrf_token() -> String {
     let mut nonce = [0u8; 24]; // 192 bits of entropy
-    rand::thread_rng().fill_bytes(&mut nonce);
+    rand::rng().fill_bytes(&mut nonce);
     general_purpose::URL_SAFE_NO_PAD.encode(nonce)
 }
 
@@ -48,7 +48,7 @@ pub fn generate_csrf_token() -> String {
 #[must_use]
 pub fn generate_nonce(length: usize) -> String {
     let mut nonce = vec![0u8; length];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    rand::rng().fill_bytes(&mut nonce);
     general_purpose::URL_SAFE_NO_PAD.encode(nonce)
 }
 
@@ -106,7 +106,7 @@ pub fn encrypt_data<T: Serialize>(data: &T, key: &[u8]) -> Result<String> {
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; NONCE_SIZE];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     // Encrypt the data
@@ -411,20 +411,19 @@ mod tests {
         b"test_secret_key_for_hmac_testing_32b".to_vec()
     }
     
-    // Generate a test P-256 (NIST curve) private key for ES256 testing
-    // This avoids hardcoding a private key in the source code
+    // Generate a new test P-256 private key for ES256 testing
+    // This dynamically creates a new key each time for testing purposes
     fn generate_test_es256_key() -> String {
-        // Only import these crates inside the test module
-        use p256::pkcs8::{EncodePrivateKey, LineEnding};
-        use p256::ecdsa::{SigningKey};
-        use rand::thread_rng;
+        use p256::SecretKey;
+        use p256::pkcs8::EncodePrivateKey;
         
-        // Generate a new random key each time using thread_rng from rand crate
-        let signing_key = SigningKey::random(&mut thread_rng());
+        // Generate a new random P-256 secret key
+        let secret_key = SecretKey::random(&mut rand::rng());
         
-        // Convert to PKCS#8 PEM format
-        signing_key.to_pkcs8_pem(LineEnding::LF)
-            .expect("Failed to generate test ES256 key")
+        // Encode as PKCS#8 PEM format and extract the string from Zeroizing wrapper
+        secret_key
+            .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
+            .expect("Failed to encode private key as PKCS#8 PEM")
             .to_string()
     }
 
@@ -741,5 +740,48 @@ mod tests {
         let decoded_payload: serde_json::Value = serde_json::from_slice(&payload_bytes).unwrap();
         assert_eq!(decoded_payload["sub"], "test-user");
         assert_eq!(decoded_payload["large_field"], large_string);
+    }
+
+    #[test]
+    fn test_generate_test_es256_key_produces_different_keys() {
+        // Generate multiple keys and verify they are all different
+        let key1 = generate_test_es256_key();
+        let key2 = generate_test_es256_key();
+        let key3 = generate_test_es256_key();
+        
+        // All keys should be valid PKCS#8 PEM format
+        assert!(key1.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key1.trim_end().ends_with("-----END PRIVATE KEY-----"));
+        assert!(key2.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key2.trim_end().ends_with("-----END PRIVATE KEY-----"));
+        assert!(key3.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key3.trim_end().ends_with("-----END PRIVATE KEY-----"));
+        
+        // Each key should be different (randomness test)
+        assert_ne!(key1, key2, "First and second keys should be different");
+        assert_ne!(key2, key3, "Second and third keys should be different");
+        assert_ne!(key1, key3, "First and third keys should be different");
+        
+        // Each key should be able to create valid JWTs
+        let header = create_jwt_header(&JwtAlgorithm::ES256, Some("test-key"));
+        let payload = json!({"sub": "test-user", "iss": "test-issuer"});
+        
+        let jwt1 = create_jwt(&header, &payload, JwtAlgorithm::ES256, key1.as_bytes()).unwrap();
+        let jwt2 = create_jwt(&header, &payload, JwtAlgorithm::ES256, key2.as_bytes()).unwrap();
+        let jwt3 = create_jwt(&header, &payload, JwtAlgorithm::ES256, key3.as_bytes()).unwrap();
+        
+        // All JWTs should be valid (3 parts)
+        assert_eq!(jwt1.split('.').count(), 3);
+        assert_eq!(jwt2.split('.').count(), 3);
+        assert_eq!(jwt3.split('.').count(), 3);
+        
+        // JWTs created with different keys should have different signatures
+        let sig1 = jwt1.split('.').nth(2).unwrap();
+        let sig2 = jwt2.split('.').nth(2).unwrap();
+        let sig3 = jwt3.split('.').nth(2).unwrap();
+        
+        assert_ne!(sig1, sig2, "Signatures with different keys should be different");
+        assert_ne!(sig2, sig3, "Signatures with different keys should be different");
+        assert_ne!(sig1, sig3, "Signatures with different keys should be different");
     }
 }

@@ -349,7 +349,7 @@ impl VouchrsSettings {
     fn generate_random_session_secret() -> String {
         use rand::RngCore;
         let mut secret = [0u8; 32]; // 256 bits for AES-256
-        rand::thread_rng().fill_bytes(&mut secret);
+        rand::rng().fill_bytes(&mut secret);
         general_purpose::STANDARD.encode(secret)
     }
     

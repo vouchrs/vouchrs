@@ -32,7 +32,7 @@ fn generate_test_session_secret() -> String {
     use base64::{engine::general_purpose, Engine as _};
     
     let mut secret = [0u8; 32]; // 256 bits for AES-256
-    rand::thread_rng().fill_bytes(&mut secret);
+    rand::rng().fill_bytes(&mut secret);
     general_purpose::STANDARD.encode(secret)
 }
 
