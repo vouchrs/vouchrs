@@ -402,4 +402,32 @@ mod tests {
         assert_eq!(session.provider, decrypted.provider);
         assert_eq!(session.id_token, decrypted.id_token);
     }
+
+    #[test]
+    fn test_cookie_refresh() {
+        let session = create_test_session();
+
+        // Test with refresh enabled (2 hours)
+        let manager_with_refresh = crate::utils::test_helpers::create_test_session_manager_with_refresh(2);
+        assert!(manager_with_refresh.is_cookie_refresh_enabled());
+
+        // Create normal and refreshed cookies
+        let normal_cookie = manager_with_refresh.create_session_cookie(&session).unwrap();
+        let refreshed_cookie = manager_with_refresh.create_refreshed_session_cookie(&session).unwrap();
+        
+        // Both should have correct name and valid content
+        assert_eq!(normal_cookie.name(), COOKIE_NAME);
+        assert_eq!(refreshed_cookie.name(), COOKIE_NAME);
+        assert!(!normal_cookie.value().is_empty());
+        assert!(!refreshed_cookie.value().is_empty());
+
+        // Test with refresh disabled (default)
+        let manager_no_refresh = create_test_session_manager(); // Uses 0 refresh hours
+        assert!(!manager_no_refresh.is_cookie_refresh_enabled());
+        
+        // Refreshed cookie should behave same as normal when disabled
+        let disabled_normal = manager_no_refresh.create_session_cookie(&session).unwrap();
+        let disabled_refreshed = manager_no_refresh.create_refreshed_session_cookie(&session).unwrap();
+        assert_eq!(disabled_refreshed.max_age(), disabled_normal.max_age());
+    }
 }

@@ -46,6 +46,13 @@ pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> 
     )
 }
 
+/// Create a test `SessionManager` with custom refresh hours
+#[must_use]
+pub fn create_test_session_manager_with_refresh(session_refresh_hours: u64) -> SessionManager {
+    let test_secret = generate_test_session_secret();
+    SessionManager::new(test_secret.as_bytes(), false, 24, session_refresh_hours)
+}
+
 /// Create a test HTTP request with a cookie
 #[must_use]
 pub fn create_request_with_cookie(cookie: Cookie) -> HttpRequest {

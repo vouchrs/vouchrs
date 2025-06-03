@@ -61,7 +61,7 @@ pub async fn proxy_upstream(
         };
 
     // Forward upstream response back to client with potential cookie refresh
-    forward_upstream_response_with_session_refresh(upstream_response, &req, &settings, &session_manager, &session).await
+    forward_upstream_response(upstream_response, &req, &settings, &session_manager, &session).await
 }
 
 /// Forward upstream response back to client with session refresh functionality
@@ -69,7 +69,7 @@ pub async fn proxy_upstream(
 /// # Errors
 /// 
 /// Returns an error if reading the upstream response body fails
-async fn forward_upstream_response_with_session_refresh(
+async fn forward_upstream_response(
     upstream_response: reqwest::Response,
     req: &HttpRequest,
     settings: &VouchrsSettings,
@@ -127,7 +127,7 @@ async fn forward_upstream_response_with_session_refresh(
                 response_builder.cookie(refreshed_cookie);
             }
             Err(e) => {
-                log::warn!("Failed to create refreshed session cookie: {}", e);
+                log::warn!("Failed to create refreshed session cookie: {e}");
                 // Continue without refresh rather than failing the request
             }
         }
