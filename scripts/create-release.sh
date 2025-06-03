@@ -121,7 +121,7 @@ echo "✅ Committed version bump and changelog"
 # Create a release branch
 echo "🌿 Creating release branch..."
 RELEASE_BRANCH="release/v$new_version"
-git checkout -b $RELEASE_BRANCH
+git checkout -b "$RELEASE_BRANCH"
 echo "✅ Created branch $RELEASE_BRANCH"
 
 # Ask about pushing
