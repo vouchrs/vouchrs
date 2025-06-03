@@ -155,7 +155,7 @@ jobs:
               issue_number: result.data.number,
               body: '## PR Workflow for Releases\n\n1. Review the changes in this PR\n2. Approve and merge the PR\n3. The main-release workflow will automatically run to create the release tag and publish Docker images\n4. No manual workflow runs are needed anymore!'
             });
-            console.log(`Pull request created: ${result.data.html_url}`);
+            // Removed duplicate log statement to reduce redundancy
 
       # Release creation moved to main-release workflow
       # We'll only create the PR here, and the main-release workflow will handle:
