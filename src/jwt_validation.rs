@@ -232,15 +232,21 @@ impl JwksCache {
 // JWT Validator
 // ============================================================================
 
+/// HTTP client for making JWKS and discovery document requests
+static HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to create HTTP client")
+});
+
 pub struct JwtValidator {
-    http_client: reqwest::Client,
     cache: Arc<RwLock<JwksCache>>,
 }
 
 impl Clone for JwtValidator {
     fn clone(&self) -> Self {
         Self {
-            http_client: self.http_client.clone(),
             cache: Arc::clone(&self.cache),
         }
     }
@@ -248,31 +254,17 @@ impl Clone for JwtValidator {
 
 impl JwtValidator {
     /// Create a new JWT validator with default settings
-    ///
-    /// # Panics
-    /// Panics if the HTTP client cannot be built (should not happen under normal circumstances)
     #[must_use]
     pub fn new() -> Self {
         Self {
-            http_client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("Failed to create HTTP client"),
             cache: Arc::new(RwLock::new(JwksCache::new())),
         }
     }
 
     /// Create a validator with custom cache settings
-    ///
-    /// # Panics
-    /// Panics if the HTTP client cannot be built (should not happen under normal circumstances)
     #[must_use]
     pub fn with_cache_duration(cache_duration: Duration) -> Self {
         Self {
-            http_client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("Failed to create HTTP client"),
             cache: Arc::new(RwLock::new(
                 JwksCache::new().with_cache_duration(cache_duration)
             )),
@@ -327,7 +319,7 @@ impl JwtValidator {
     ) -> Result<OidcDiscoveryDocument, JwtValidationError> {
         debug!("📄 Fetching OIDC discovery document from {discovery_url}");
 
-        let response = self.http_client
+        let response = HTTP_CLIENT
             .get(discovery_url)
             .send()
             .await
@@ -369,7 +361,7 @@ impl JwtValidator {
         // Drop the write lock before making HTTP request
         drop(cache);
 
-        let response = self.http_client
+        let response = HTTP_CLIENT
             .get(jwks_uri)
             .send()
             .await
@@ -735,7 +727,6 @@ pub fn extract_key_id_from_jwt(token: &str) -> Result<Option<String>, JwtValidat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::SystemTime;
 
     #[test]
     fn test_jwks_cache_operations() {
@@ -815,7 +806,7 @@ mod tests {
         let _validator = JwtValidator::new();
 
         // Test valid JWT claims
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = chrono::Utc::now().timestamp(); // Use chrono's timestamp which is already i64
         let claims = format!(r#"{{"iss":"https://example.com","aud":"test-client","exp":{},"iat":{},"sub":"test-user"}}"#,
                            now + 3600, now);
         let claims_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.as_bytes());
