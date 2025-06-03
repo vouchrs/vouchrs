@@ -21,7 +21,6 @@ use crate::utils::crypto::decrypt_data;
 #[cfg(test)]
 use crate::utils::crypto::encrypt_data;
 
-
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -150,9 +149,9 @@ impl RuntimeProvider {
     }
 
     /// Resolve authorization and token endpoints from discovery URL
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if:
     /// - Network request to discovery URL fails
     /// - Response cannot be parsed as JSON
@@ -217,9 +216,9 @@ impl Default for OAuthConfig {
 
 impl OAuthConfig {
     /// Create a new OAuth configuration
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the HTTP client cannot be created due to invalid configuration.
     #[must_use]
     pub fn new() -> Self {
@@ -228,10 +227,10 @@ impl OAuthConfig {
 
         // Create an optimized HTTP client with connection pooling
         let http_client = reqwest::Client::builder()
-            .pool_max_idle_per_host(10)           // Keep up to 10 idle connections per host
-            .pool_idle_timeout(Duration::from_secs(90))  // Keep connections alive for 90 seconds
-            .timeout(Duration::from_secs(30))     // 30 second request timeout
-            .connect_timeout(Duration::from_secs(10))    // 10 second connection timeout
+            .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
+            .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
+            .timeout(Duration::from_secs(30)) // 30 second request timeout
+            .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
             .build()
             .expect("Failed to create HTTP client");
 
@@ -259,7 +258,10 @@ impl OAuthConfig {
 
         for provider_settings in &settings.providers {
             if !provider_settings.enabled {
-                info!("⏭️  Provider {} is disabled, skipping", provider_settings.name);
+                info!(
+                    "⏭️  Provider {} is disabled, skipping",
+                    provider_settings.name
+                );
                 continue;
             }
 
@@ -337,7 +339,12 @@ impl OAuthConfig {
         redirect_uri.push_str("/oauth2/callback");
 
         // Pre-allocate scopes string with estimated capacity
-        let total_scope_len: usize = runtime_provider.settings.scopes.iter().map(std::string::String::len).sum();
+        let total_scope_len: usize = runtime_provider
+            .settings
+            .scopes
+            .iter()
+            .map(std::string::String::len)
+            .sum();
         let scope_separators = runtime_provider.settings.scopes.len().saturating_sub(1);
         let mut scopes = String::with_capacity(total_scope_len + scope_separators);
         for (i, scope) in runtime_provider.settings.scopes.iter().enumerate() {
@@ -372,9 +379,9 @@ impl OAuthConfig {
     /// Exchange OAuth authorization code for OAuth tokens
     /// This manually handles the token exchange to properly capture ID tokens
     /// Returns (`id_token`, `refresh_token`, `expires_at`, `Option<AppleUserInfo>`) for Apple user info fallback
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if:
     /// - Provider is not configured
     /// - Client credentials are missing
@@ -394,7 +401,9 @@ impl OAuthConfig {
         let params = self.prepare_token_exchange_params(provider, code, runtime_provider)?;
 
         // Execute token exchange request
-        let response_text = self.execute_token_exchange(provider, runtime_provider, &params).await?;
+        let response_text = self
+            .execute_token_exchange(provider, runtime_provider, &params)
+            .await?;
 
         // Parse and process the token response
         Self::process_token_response(provider, &response_text)
@@ -411,9 +420,9 @@ impl OAuthConfig {
         let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
         redirect_uri.push_str(&self.redirect_base_url);
         redirect_uri.push_str("/oauth2/callback");
-        
+
         let mut params = HashMap::new();
-        
+
         // Basic OAuth parameters
         params.insert("grant_type".to_string(), "authorization_code".to_string());
         params.insert("code".to_string(), code.to_string());
@@ -437,7 +446,8 @@ impl OAuthConfig {
                 .settings
                 .get_client_id()
                 .ok_or("Client ID not configured for provider")?;
-            let client_secret = crate::utils::apple::generate_jwt_client_secret(jwt_config, &client_id)?;
+            let client_secret =
+                crate::utils::apple::generate_jwt_client_secret(jwt_config, &client_id)?;
             params.insert("client_secret".to_string(), client_secret);
         } else {
             return Err("No client secret or JWT signing configuration for provider".to_string());
@@ -454,7 +464,7 @@ impl OAuthConfig {
         params: &HashMap<String, String>,
     ) -> Result<String, String> {
         info!("🔄 Exchanging authorization code for tokens with {provider}");
-        
+
         let response = self
             .http_client
             .post(&runtime_provider.token_url)
@@ -481,10 +491,7 @@ impl OAuthConfig {
     }
 
     /// Process the token response and extract relevant information
-    fn process_token_response(
-        provider: &str,
-        response_text: &str,
-    ) -> TokenExchangeResult {
+    fn process_token_response(provider: &str, response_text: &str) -> TokenExchangeResult {
         // Log the raw token response for debugging
         if provider == "apple" {
             info!("=== Raw Apple Token Response ===");
@@ -498,18 +505,26 @@ impl OAuthConfig {
             .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
         // Calculate token expiration
-        let expires_at = token_response.expires_in.map_or_else(|| {
-            // Default to 1 hour if no expiration provided
-            Utc::now() + chrono::Duration::hours(1)
-        }, |expires_in| {
-            Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600))
-        });
+        let expires_at = token_response.expires_in.map_or_else(
+            || {
+                // Default to 1 hour if no expiration provided
+                Utc::now() + chrono::Duration::hours(1)
+            },
+            |expires_in| {
+                Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600))
+            },
+        );
 
         // Log detailed information about what we extracted
-        let refresh_status = token_response.refresh_token.as_ref().map_or("No", |_| "Yes");
+        let refresh_status = token_response
+            .refresh_token
+            .as_ref()
+            .map_or("No", |_| "Yes");
         let id_status = token_response.id_token.as_ref().map_or("No", |_| "Yes");
-        let expires_in = token_response.expires_in.map(|v| i64::try_from(v).unwrap_or(3600));
-        
+        let expires_in = token_response
+            .expires_in
+            .map(|v| i64::try_from(v).unwrap_or(3600));
+
         info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}", 
             provider, refresh_status, id_status, token_response.token_type, expires_in);
 
@@ -532,7 +547,10 @@ impl OAuthConfig {
     /// Get list of enabled provider names
     #[must_use]
     pub fn get_enabled_providers(&self) -> Vec<&str> {
-        self.providers.keys().map(std::string::String::as_str).collect()
+        self.providers
+            .keys()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     /// Get provider display name
@@ -544,8 +562,6 @@ impl OAuthConfig {
     }
 }
 
-
-
 // ============================================================================
 // Token Management Functions
 // ============================================================================
@@ -555,9 +571,9 @@ static CLIENT: std::sync::LazyLock<reqwest::Client> =
     std::sync::LazyLock::new(reqwest::Client::new);
 
 /// Check if tokens need refresh and refresh them if necessary
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an `HttpResponse` error if:
 /// - Tokens are expired and no refresh token is available
 /// - Token refresh fails
@@ -597,9 +613,9 @@ pub async fn check_and_refresh_tokens(
 }
 
 /// Refresh OAuth tokens using the refresh token
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Provider is not configured
 /// - Client credentials are missing or cannot be generated
@@ -684,7 +700,8 @@ pub async fn refresh_tokens(
 
     let new_id_token = token_response["id_token"].as_str().map(ToString::to_string);
 
-    let new_expires_at = chrono::Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600));
+    let new_expires_at =
+        chrono::Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600));
 
     Ok((new_id_token, new_refresh_token, new_expires_at))
 }
@@ -699,9 +716,9 @@ pub async fn refresh_tokens(
 
 /// Parse OAuth state from received state parameter and retrieve stored state from cookie
 /// This eliminates provider-specific branching logic by using the stored OAuth state
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - The received state does not match the stored CSRF token
 /// - No stored state is found and encrypted state decryption fails
@@ -711,7 +728,10 @@ pub fn get_state_from_callback(
     session_manager: &crate::session::SessionManager,
     req: &actix_web::HttpRequest,
 ) -> Result<crate::oauth::OAuthState, String> {
-    debug!("Received OAuth state parameter: length = {} characters", received_state.len());
+    debug!(
+        "Received OAuth state parameter: length = {} characters",
+        received_state.len()
+    );
 
     // First, try to get the stored OAuth state from temporary cookie
     match session_manager.get_temporary_state_from_request(req) {
@@ -733,7 +753,10 @@ pub fn get_state_from_callback(
         Ok(None) => {
             // 🔒 SECURITY: Try to decrypt the received state parameter
             // This prevents tampering with provider name or redirect URL
-            match decrypt_data::<crate::oauth::OAuthState>(received_state, session_manager.encryption_key()) {
+            match decrypt_data::<crate::oauth::OAuthState>(
+                received_state,
+                session_manager.encryption_key(),
+            ) {
                 Ok(decrypted_state) => {
                     debug!(
                         "Successfully decrypted OAuth state for provider: {}",
@@ -750,7 +773,10 @@ pub fn get_state_from_callback(
         Err(e) => {
             debug!("Failed to retrieve stored OAuth state: {e}");
             // Try decrypting the state parameter directly
-            match decrypt_data::<crate::oauth::OAuthState>(received_state, session_manager.encryption_key()) {
+            match decrypt_data::<crate::oauth::OAuthState>(
+                received_state,
+                session_manager.encryption_key(),
+            ) {
                 Ok(decrypted_state) => {
                     debug!(
                         "Successfully decrypted OAuth state for provider: {}",
@@ -767,8 +793,6 @@ pub fn get_state_from_callback(
     }
 }
 
-
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -777,32 +801,32 @@ pub fn get_state_from_callback(
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn test_encrypted_state_security_fix() {
         use crate::utils::test_helpers::create_test_session_manager;
-        
+
         // Create a session manager for encryption/decryption
         let session_manager = create_test_session_manager();
-        
+
         // Create an OAuth state
         let original_state = OAuthState {
             state: "csrf_token_123".to_string(),
             provider: "google".to_string(),
             redirect_url: Some("/dashboard".to_string()),
         };
-        
+
         // Encrypt the state (this is what we now do in auth.rs)
-        let encrypted_state = encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
-        
+        let encrypted_state =
+            encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
+
         // Verify that the encrypted state doesn't contain plain text provider info
         assert!(!encrypted_state.contains("google"));
         assert!(!encrypted_state.contains("dashboard"));
         assert!(!encrypted_state.contains("csrf_token_123"));
-        
+
         // Verify that we can decrypt it back correctly
-        let decrypted_state: OAuthState = decrypt_data(&encrypted_state, session_manager.encryption_key()).unwrap();
+        let decrypted_state: OAuthState =
+            decrypt_data(&encrypted_state, session_manager.encryption_key()).unwrap();
         assert_eq!(decrypted_state.state, original_state.state);
         assert_eq!(decrypted_state.provider, original_state.provider);
         assert_eq!(decrypted_state.redirect_url, original_state.redirect_url);
@@ -811,28 +835,27 @@ mod tests {
     #[test]
     fn test_tampered_encrypted_state_fails() {
         use crate::utils::test_helpers::create_test_session_manager;
-        
+
         let session_manager = create_test_session_manager();
-        
+
         let original_state = OAuthState {
             state: "csrf_token_123".to_string(),
             provider: "google".to_string(),
             redirect_url: Some("/dashboard".to_string()),
         };
-        
-        let encrypted_state = encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
-        
+
+        let encrypted_state =
+            encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
+
         // Tamper with the encrypted state by changing one character
         let mut chars: Vec<char> = encrypted_state.chars().collect();
         if let Some(last_char) = chars.last_mut() {
             *last_char = if *last_char == 'A' { 'B' } else { 'A' };
         }
         let tampered_state: String = chars.into_iter().collect();
-        
+
         // Attempting to decrypt tampered state should fail
         let result = decrypt_data::<OAuthState>(&tampered_state, session_manager.encryption_key());
         assert!(result.is_err());
     }
-
-
 }

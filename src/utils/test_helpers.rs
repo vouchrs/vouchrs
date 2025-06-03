@@ -1,10 +1,10 @@
 // Test utilities shared across modules
 use crate::models::VouchrsSession;
-use crate::settings::{ApplicationSettings, SessionSettings, ProxySettings, VouchrsSettings};
 use crate::session::SessionManager;
-use chrono::{Duration, Utc};
-use actix_web::{test, HttpRequest};
+use crate::settings::{ApplicationSettings, ProxySettings, SessionSettings, VouchrsSettings};
 use actix_web::cookie::Cookie;
+use actix_web::{test, HttpRequest};
+use chrono::{Duration, Utc};
 
 /// Create a test session for use in unit tests
 #[must_use]
@@ -28,9 +28,9 @@ pub fn create_test_session_manager() -> SessionManager {
 
 /// Generate a secure test session secret using the same method as the main app
 fn generate_test_session_secret() -> String {
-    use rand::RngCore;
     use base64::{engine::general_purpose, Engine as _};
-    
+    use rand::RngCore;
+
     let mut secret = [0u8; 32]; // 256 bits for AES-256
     rand::rng().fill_bytes(&mut secret);
     general_purpose::STANDARD.encode(secret)
@@ -44,7 +44,7 @@ pub fn create_test_session_manager_from_settings(settings: &VouchrsSettings) -> 
         false,
         settings.session.session_duration_hours,
         settings.session.session_expiration_hours,
-        0
+        0,
     )
 }
 

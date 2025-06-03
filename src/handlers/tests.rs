@@ -1,4 +1,4 @@
-// Tests for handlers 
+// Tests for handlers
 use crate::session_builder::SessionBuilder;
 use crate::utils::apple::{AppleUserInfo, AppleUserName};
 use chrono::Utc;

@@ -29,9 +29,9 @@ impl Default for CookieOptions {
 }
 
 /// Helper function to extract cookie value from `HttpRequest`
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if the specified cookie is not found in the request
 pub fn extract_cookie_value(req: &HttpRequest, cookie_name: &str) -> Result<String> {
     req.cookie(cookie_name)

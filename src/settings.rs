@@ -1,7 +1,7 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use base64::{Engine as _, engine::general_purpose};
 
 // Additional imports for environment and logging setup
 
@@ -127,8 +127,8 @@ impl Default for SessionSettings {
         Self {
             session_duration_hours: 24,
             session_secret: String::new(), // Will be generated if empty
-            session_expiration_hours: 1, // Default to 1 hour for security
-            session_refresh_hours: 0, // Disabled by default
+            session_expiration_hours: 1,   // Default to 1 hour for security
+            session_refresh_hours: 0,      // Disabled by default
         }
     }
 }
@@ -174,9 +174,9 @@ impl Default for ProviderSettings {
 
 impl VouchrsSettings {
     /// Load settings from configuration files and environment variables
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if:
     /// - Environment initialization fails
     /// - Settings file cannot be read or parsed
@@ -195,13 +195,13 @@ impl VouchrsSettings {
     }
 
     /// Initialize environment variables and logging
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Initialize environment and logging
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if logger initialization fails
     fn initialize_environment() -> Result<(), Box<dyn std::error::Error>> {
         Self::load_env_file();
@@ -215,9 +215,9 @@ impl VouchrsSettings {
     /// 2. Settings.toml in `VOUCHRS_SECRETS_DIR` (if specified and exists)
     /// 3. Settings.toml in current directory (if exists)
     /// 4. Default settings
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if:
     /// - Settings file cannot be read
     /// - TOML parsing fails
@@ -241,8 +241,7 @@ impl VouchrsSettings {
             let secrets_path = std::path::Path::new(&secrets_dir).join("Settings.toml");
             if secrets_path.exists() {
                 let secrets_toml_content = fs::read_to_string(&secrets_path)?;
-                let secrets_settings: Self =
-                    basic_toml::from_str(&secrets_toml_content)?;
+                let secrets_settings: Self = basic_toml::from_str(&secrets_toml_content)?;
 
                 println!("✓ Overriding settings from {}", secrets_path.display());
 
@@ -306,10 +305,19 @@ impl VouchrsSettings {
     /// Apply environment overrides for session settings
     pub fn apply_session_env_overrides(session_settings: &mut SessionSettings) {
         // Apply numeric environment variable overrides
-        Self::apply_numeric_env_override("SESSION_DURATION_HOURS", &mut session_settings.session_duration_hours);
-        Self::apply_numeric_env_override("SESSION_EXPIRATION_HOURS", &mut session_settings.session_expiration_hours);
-        Self::apply_numeric_env_override("SESSION_REFRESH_HOURS", &mut session_settings.session_refresh_hours);
-        
+        Self::apply_numeric_env_override(
+            "SESSION_DURATION_HOURS",
+            &mut session_settings.session_duration_hours,
+        );
+        Self::apply_numeric_env_override(
+            "SESSION_EXPIRATION_HOURS",
+            &mut session_settings.session_expiration_hours,
+        );
+        Self::apply_numeric_env_override(
+            "SESSION_REFRESH_HOURS",
+            &mut session_settings.session_refresh_hours,
+        );
+
         // Handle session secret with special logic
         Self::handle_session_secret_override(session_settings);
     }
@@ -325,25 +333,24 @@ impl VouchrsSettings {
 
     /// Helper function to handle session secret environment override and generation
     fn handle_session_secret_override(session_settings: &mut SessionSettings) {
-        let env_secret_set = std::env::var("SESSION_SECRET")
-            .is_ok_and(|secret| {
-                if secret.is_empty() {
-                    false
-                } else {
-                    session_settings.session_secret = secret;
-                    true
-                }
-            });
-        
+        let env_secret_set = std::env::var("SESSION_SECRET").is_ok_and(|secret| {
+            if secret.is_empty() {
+                false
+            } else {
+                session_settings.session_secret = secret;
+                true
+            }
+        });
+
         // Generate random session secret if no environment variable was set and current value is empty
         if !env_secret_set && session_settings.session_secret.is_empty() {
             session_settings.session_secret = Self::generate_random_session_secret();
             Self::warn_about_generated_secret(&session_settings.session_secret);
         }
     }
-    
+
     /// Generate a cryptographically secure random session secret
-    /// 
+    ///
     /// Uses the same secure random source as our crypto utilities
     /// Generates 32 bytes (256 bits) of entropy for AES-256 compatibility
     fn generate_random_session_secret() -> String {
@@ -352,7 +359,7 @@ impl VouchrsSettings {
         rand::rng().fill_bytes(&mut secret);
         general_purpose::STANDARD.encode(secret)
     }
-    
+
     /// Display warnings about using a generated session secret
     fn warn_about_generated_secret(secret: &str) {
         eprintln!("⚠️  WARNING: Using auto-generated session secret");
@@ -567,7 +574,7 @@ mod tests {
         VouchrsSettings::apply_session_env_overrides(&mut session_settings);
 
         assert_eq!(session_settings.session_secret, "test-secret"); // Should remain unchanged
-        
+
         clean_env_vars();
     }
 
@@ -575,7 +582,7 @@ mod tests {
     #[serial]
     fn test_settings_dir_precedence() {
         clean_env_vars();
-        
+
         // Setup temp dirs for testing
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path();
@@ -609,13 +616,13 @@ session_secret = "secrets-secret-key"
         // This is a limitation of the test due to searching in current directory
         assert_eq!(
             actual_settings.session.session_secret,
-            ""  // Default is now empty string
+            "" // Default is now empty string
         );
 
         // Add a proper integration test that would validate this behavior in a controlled environment
         // For now, we'll just document how it should work
         println!("Note: Full precedence testing requires integration tests with file path control");
-        
+
         clean_env_vars();
     }
 
@@ -623,7 +630,7 @@ session_secret = "secrets-secret-key"
     #[serial]
     fn test_vouchrs_secrets_dir_precedence() {
         clean_env_vars();
-        
+
         // This is a conceptual test illustrating the expected behavior
         // of the settings precedence. A full integration test would require
         // more control over the file system.
@@ -631,7 +638,6 @@ session_secret = "secrets-secret-key"
         // Mock settings from root Settings.toml
         let mut mock_root_settings = VouchrsSettings::default();
         mock_root_settings.session.session_secret = "root-secret-key".to_string();
-
 
         // Mock settings from VOUCHRS_SECRETS_DIR Settings.toml
         let mut mock_secrets_settings = VouchrsSettings::default();
@@ -663,7 +669,7 @@ session_secret = "secrets-secret-key"
     fn test_session_secret_auto_generation() {
         // Make sure the environment is clean
         clean_env_vars();
-        
+
         let mut session_settings = SessionSettings {
             session_duration_hours: 24,
             session_secret: String::new(), // Empty, should trigger auto-generation
@@ -677,7 +683,7 @@ session_secret = "secrets-secret-key"
         // Should have generated a non-empty secret
         assert!(!session_settings.session_secret.is_empty());
         assert!(session_settings.session_secret.len() > 40); // Base64 encoded 32 bytes should be ~44 chars
-        
+
         // Generate another one to ensure they're different
         let mut session_settings2 = SessionSettings {
             session_duration_hours: 24,
@@ -686,10 +692,13 @@ session_secret = "secrets-secret-key"
             session_refresh_hours: 0,
         };
         VouchrsSettings::apply_session_env_overrides(&mut session_settings2);
-        
+
         // Should be different each time
-        assert_ne!(session_settings.session_secret, session_settings2.session_secret);
-        
+        assert_ne!(
+            session_settings.session_secret,
+            session_settings2.session_secret
+        );
+
         clean_env_vars();
     }
 

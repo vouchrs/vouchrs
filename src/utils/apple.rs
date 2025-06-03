@@ -30,14 +30,14 @@ pub struct AppleUserInfo {
 }
 
 /// Process Apple user information from a JSON value
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `source` - The JSON value containing Apple user information
 /// * `fallback_info` - Optional fallback information to use if parsing fails
-/// 
+///
 /// # Returns
-/// 
+///
 /// Returns `Some(AppleUserInfo)` if parsing succeeds or fallback is available, `None` otherwise
 #[must_use]
 pub fn process_apple_user_info(
@@ -83,9 +83,9 @@ pub fn process_apple_callback(
 /// Generate Apple client secret JWT
 /// This function creates a properly signed JWT that can be used as a client secret
 /// with Apple's OAuth endpoints.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Team ID is not configured
 /// - Key ID is not configured
@@ -131,14 +131,17 @@ pub fn generate_jwt_client_secret(
     });
 
     // Use the generic JWT creation function
-    let jwt = create_jwt(&header, &payload, JwtAlgorithm::ES256, private_key_pem.as_bytes())
-        .map_err(|e| format!("Failed to create Apple JWT: {e}"))?;
+    let jwt = create_jwt(
+        &header,
+        &payload,
+        JwtAlgorithm::ES256,
+        private_key_pem.as_bytes(),
+    )
+    .map_err(|e| format!("Failed to create Apple JWT: {e}"))?;
 
     log::debug!("Generated Apple client secret JWT");
     Ok(jwt)
 }
-
-
 
 #[cfg(test)]
 mod tests {

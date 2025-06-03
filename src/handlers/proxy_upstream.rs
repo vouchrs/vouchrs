@@ -8,8 +8,8 @@ use crate::{
     oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::response_builder::{is_hop_by_hop_header, build_upstream_url, convert_http_method},
     utils::cookie::filter_vouchrs_cookies,
+    utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
     utils::user_agent::is_browser_request,
 };
 
@@ -18,9 +18,9 @@ static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::ne
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
 /// Proxy requests with authentication
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Authentication fails (missing or invalid session)
 /// - Request building fails
@@ -48,11 +48,10 @@ pub async fn proxy_upstream(
         };
 
     // Build and execute upstream request
-    let upstream_url =
-        match build_upstream_url(&settings.proxy.upstream_url, req.path()) {
-            Ok(url) => url,
-            Err(response) => return Ok(response),
-        };
+    let upstream_url = match build_upstream_url(&settings.proxy.upstream_url, req.path()) {
+        Ok(url) => url,
+        Err(response) => return Ok(response),
+    };
 
     let upstream_response =
         match execute_upstream_request(&req, &query_params, &body, &upstream_url).await {
@@ -61,13 +60,20 @@ pub async fn proxy_upstream(
         };
 
     // Forward upstream response back to client with potential cookie refresh
-    forward_upstream_response(upstream_response, &req, &settings, &session_manager, &session).await
+    forward_upstream_response(
+        upstream_response,
+        &req,
+        &settings,
+        &session_manager,
+        &session,
+    )
+    .await
 }
 
 /// Forward upstream response back to client with session refresh functionality
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if reading the upstream response body fails
 async fn forward_upstream_response(
     upstream_response: reqwest::Response,
@@ -80,7 +86,7 @@ async fn forward_upstream_response(
 
     // Check if this is a 401 Unauthorized response
     if status_code == reqwest::StatusCode::UNAUTHORIZED {
-        // Determine if this is a browser request 
+        // Determine if this is a browser request
         if is_browser_request(req) {
             // Redirect browser requests to sign-in page
             let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
@@ -142,9 +148,9 @@ async fn forward_upstream_response(
 }
 
 /// Execute the upstream request with proper headers and body
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an `HttpResponse` error if:
 /// - HTTP method conversion fails
 /// - Upstream request fails
@@ -160,7 +166,7 @@ async fn execute_upstream_request(
         .request(reqwest_method, upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
-    // Forward headers 
+    // Forward headers
     request_builder = forward_request_headers(req, request_builder);
 
     // Forward query parameters
@@ -188,9 +194,9 @@ async fn execute_upstream_request(
 // Functions have been moved to ResponseBuilder
 
 /// Extract and validate session from encrypted cookie with session hijacking prevention
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an `HttpResponse` error if:
 /// - No session cookie is found
 /// - Session is invalid or expired
@@ -222,15 +228,19 @@ fn extract_session_from_request(
         .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
 
     // Decrypt and validate session
-    let session = session_manager.decrypt_and_validate_session(cookie.value()).map_err(|_| {
-        handle_auth_error("Session is invalid or expired. Please authenticate again.")
-    })?;
+    let session = session_manager
+        .decrypt_and_validate_session(cookie.value())
+        .map_err(|_| {
+            handle_auth_error("Session is invalid or expired. Please authenticate again.")
+        })?;
 
     // Extract user data for client context validation
     match session_manager.get_user_data_from_request(req) {
         Ok(Some(user_data)) => {
             // Validate session security (client context + expiration awareness)
-            if let Ok(is_valid_and_not_expired) = session_manager.validate_session_security(&user_data, req) {
+            if let Ok(is_valid_and_not_expired) =
+                session_manager.validate_session_security(&user_data, req)
+            {
                 if is_valid_and_not_expired {
                     // Session is valid and not expired
                     Ok(session)
@@ -241,36 +251,45 @@ fn extract_session_from_request(
                 }
             } else {
                 // Client context validation failed - session hijacking detected
-                log::warn!("Session hijacking detected: client context validation failed for user: {}", user_data.email);
-                Err(handle_auth_error("Session security validation failed. Please authenticate again."))
+                log::warn!(
+                    "Session hijacking detected: client context validation failed for user: {}",
+                    user_data.email
+                );
+                Err(handle_auth_error(
+                    "Session security validation failed. Please authenticate again.",
+                ))
             }
         }
         Ok(None) => {
             log::warn!("No user data found for session validation");
-            Err(handle_auth_error("User data not found. Please authenticate again."))
+            Err(handle_auth_error(
+                "User data not found. Please authenticate again.",
+            ))
         }
         Err(e) => {
             log::error!("Failed to extract user data for session validation: {e}");
-            Err(handle_auth_error("Session validation failed. Please authenticate again."))
+            Err(handle_auth_error(
+                "Session validation failed. Please authenticate again.",
+            ))
         }
     }
 }
 
 /// Forward request headers to upstream, filtering out restricted headers
-/// 
+///
 /// This function handles:
 /// - Skipping authorization headers (handled separately by auth)
 /// - Skipping hop-by-hop headers (not meant for upstream)
 /// - Filtering `vouchrs_session` from cookies
 /// - Converting header values to strings safely
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `req` - The incoming HTTP request
 /// * `request_builder` - The reqwest `RequestBuilder` to add headers to
-/// 
+///
 /// # Returns
-/// 
+///
 /// The updated `RequestBuilder` with forwarded headers
 fn forward_request_headers(
     req: &HttpRequest,
@@ -318,8 +337,6 @@ mod tests {
         assert!(!is_hop_by_hop_header("authorization"));
     }
 
-
-
     #[tokio::test]
     async fn test_401_redirect_for_browser_requests() {
         // Test browser request (Accept: text/html)
@@ -346,8 +363,6 @@ mod tests {
             "http://localhost:8080/oauth2/sign_in"
         );
     }
-
-
 
     #[test]
     fn test_sign_in_url_generation() {
@@ -428,7 +443,7 @@ mod tests {
             let cookie_str = cookie_header
                 .to_str()
                 .expect("Failed to convert cookie header to string");
-            
+
             assert!(
                 !cookie_str.contains("vouchrs_session="),
                 "Cookie header should not contain vouchrs_session"

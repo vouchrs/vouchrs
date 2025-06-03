@@ -4,7 +4,7 @@ use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
 /// `OAuth2` userinfo endpoint - returns user data from encrypted user cookie
-/// 
+///
 /// # Errors
 /// Returns an error if session extraction fails or user data is invalid
 pub async fn oauth_userinfo(
@@ -15,35 +15,41 @@ pub async fn oauth_userinfo(
     use crate::utils::cookie::USER_COOKIE_NAME;
 
     // Get the vouchrs_user cookie directly
-    req.cookie(USER_COOKIE_NAME).map_or_else(|| {
-        debug!("Userinfo endpoint: No vouchrs_user cookie found");
-        Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "no_user_data",
-            "error_description": "No user data cookie found. Please authenticate first."
-        })))
-    }, |cookie| match crate::utils::crypto::decrypt_data::<crate::models::VouchrsUserData>(cookie.value(), session_manager.encryption_key()) {
-        Ok(user_data) => {
-            info!(
-                "Userinfo endpoint: returning raw user data for user: {}",
-                user_data.email
-            );
-
-            // Return the complete user data as raw JSON
-            Ok(HttpResponse::Ok().json(user_data))
-        }
-        Err(e) => {
-            error!("Userinfo endpoint: Error decrypting user cookie: {e}");
+    req.cookie(USER_COOKIE_NAME).map_or_else(
+        || {
+            debug!("Userinfo endpoint: No vouchrs_user cookie found");
             Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "invalid_cookie",
-                "error_description": "Failed to decrypt user cookie data",
-                "details": e.to_string()
+                "error": "no_user_data",
+                "error_description": "No user data cookie found. Please authenticate first."
             })))
-        }
-    })
+        },
+        |cookie| match crate::utils::crypto::decrypt_data::<crate::models::VouchrsUserData>(
+            cookie.value(),
+            session_manager.encryption_key(),
+        ) {
+            Ok(user_data) => {
+                info!(
+                    "Userinfo endpoint: returning raw user data for user: {}",
+                    user_data.email
+                );
+
+                // Return the complete user data as raw JSON
+                Ok(HttpResponse::Ok().json(user_data))
+            }
+            Err(e) => {
+                error!("Userinfo endpoint: Error decrypting user cookie: {e}");
+                Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "invalid_cookie",
+                    "error_description": "Failed to decrypt user cookie data",
+                    "details": e.to_string()
+                })))
+            }
+        },
+    )
 }
 
 /// Debug endpoint - returns debug information from session
-/// 
+///
 /// # Errors
 /// Returns an error if session extraction fails or debug data is invalid
 pub async fn oauth_debug(

@@ -3,13 +3,12 @@
 #![deny(warnings)]
 #![allow(clippy::multiple_crate_versions)]
 
-
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
     handlers::{
-        health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out,
-        oauth_userinfo, serve_static, proxy_upstream
+        health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
+        proxy_upstream, serve_static,
     },
     oauth::OAuthConfig,
     session::SessionManager,
@@ -28,25 +27,20 @@ async fn main() -> std::io::Result<()> {
     oauth_config
         .initialize_from_settings(&settings)
         .await
-        .map_err(|e| {
-            std::io::Error::other(format!("Failed to initialize OAuth providers: {e}"))
-        })?;
+        .map_err(|e| std::io::Error::other(format!("Failed to initialize OAuth providers: {e}")))?;
 
     println!("✓ Using stateless sessions with encrypted cookies");
     start_server(oauth_config, settings).await
 }
 
 /// Start the server with stateless sessions
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if:
 /// - Server binding fails
 /// - Server fails to start
-async fn start_server(
-    oauth_config: OAuthConfig,
-    settings: VouchrsSettings,
-) -> std::io::Result<()> {
+async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> std::io::Result<()> {
     let bind_address = settings.get_bind_address();
     print_startup_info(&bind_address, "Stateless", &settings);
 
@@ -90,7 +84,7 @@ async fn start_server(
 
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
-        // OAuth2 endpoints 
+        // OAuth2 endpoints
         .route("/oauth2/sign_in", web::get().to(oauth_sign_in))
         .route("/oauth2/sign_out", web::get().to(oauth_sign_out))
         .route("/oauth2/sign_out", web::post().to(oauth_sign_out))
@@ -114,9 +108,7 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
 }
 
 fn print_startup_info(bind_address: &str, session_backend: &str, settings: &VouchrsSettings) {
-    println!(
-        "Starting Vouchrs OIDC Reverse Proxy on http://{bind_address}"
-    );
+    println!("Starting Vouchrs OIDC Reverse Proxy on http://{bind_address}");
     println!("Session Backend: {session_backend}");
     println!();
     println!("OAuth2 endpoints:");
