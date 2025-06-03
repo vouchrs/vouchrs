@@ -388,8 +388,10 @@ impl OAuthConfig {
             .append_pair("state", state);
 
         // Add provider-specific extra parameters
-        for (key, value) in &runtime_provider.settings.extra_auth_params {
-            url.query_pairs_mut().append_pair(key, value);
+        if let Some(ref extra_params) = runtime_provider.settings.extra_auth_params {
+            for (key, value) in extra_params {
+                url.query_pairs_mut().append_pair(key, value);
+            }
         }
 
         info!(

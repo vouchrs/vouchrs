@@ -78,7 +78,7 @@ pub struct ProviderSettings {
     pub client_secret_env: Option<String>,
 
     pub enabled: bool,
-    pub extra_auth_params: HashMap<String, String>,
+    pub extra_auth_params: Option<HashMap<String, String>>,
     pub jwt_signing: Option<JwtSigningConfig>,
 
     /// JWT validation configuration (optional overrides, auto-enabled for providers with `discovery_url`)
@@ -221,7 +221,7 @@ impl Default for ProviderSettings {
             client_id_env: None,
             client_secret_env: None,
             enabled: true,
-            extra_auth_params: HashMap::new(),
+            extra_auth_params: Some(HashMap::new()),
             jwt_signing: None,
             jwt_validation: None,
         }
