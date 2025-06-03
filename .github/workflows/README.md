@@ -9,13 +9,14 @@ This document provides comprehensive CI/CD documentation including GitHub Action
 Vouchrs employs an enterprise-grade CI/CD pipeline featuring:
 
 - **🔄 Development workflow** with instant Docker builds on `dev` branch
-- **🚀 Automatic releases** from conventional commits on `main` branch
+- **🚀 Automatic releases** from conventional commits via PRs to `main` branch
 - **📝 Semantic versioning** with automatic `Cargo.toml` updates
 - **📋 Changelog generation** from conventional commits only
 - **🐳 Multi-platform Docker images** published to GitHub Container Registry (GHCR)
 - **🛡️ Security attestations** and vulnerability scanning
 - **🤖 Dependency management** with Dependabot automation
 - **🏷️ Intelligent tagging strategy** for all environments
+- **🔒 PR-only workflow** for main branch (no direct pushes allowed)
 
 ## 📁 Configuration Files & Structure
 
@@ -23,9 +24,9 @@ Vouchrs employs an enterprise-grade CI/CD pipeline featuring:
 
 | File | Purpose | Triggers |
 |------|---------|----------|
-| **`ci.yml`** | Continuous Integration & Dev Builds | Push to `dev`, PRs to `main` |
-| **`main-release.yml`** | Automatic production releases | PR merges to `main`, manual dispatch |
-| **`create-release.yml`** | Manual release override | Manual dispatch only |
+| **`ci.yml`** | Continuous Integration & Dev Builds | Push to `dev`, PRs to any branch |
+| **`main-release.yml`** | Automatic production releases | PR merges to `main` only |
+| **`create-release.yml`** | Create release PR | Manual dispatch only |
 | **`changelog.yml`** | Changelog updates | Release published, manual dispatch |
 | **`dependabot.yml`** | Dependabot auto-merge | Dependabot PRs |
 
@@ -35,7 +36,6 @@ Vouchrs employs an enterprise-grade CI/CD pipeline featuring:
 |------|---------|----------|
 | **`.github/dependabot.yml`** | Dependabot configuration | Repository root |
 | **`cliff.toml`** | Git-cliff changelog configuration | Repository root |
-| **`scripts/create-release.sh`** | Local release creation | Scripts directory |
 | **`docs/CONVENTIONAL_COMMITS.md`** | Commit format guide | Documentation |
 
 ## 🚀 Core Features
@@ -84,20 +84,31 @@ docker pull ghcr.io/vouchrs/vouchrs:1            # Major version series
 docker pull ghcr.io/vouchrs/vouchrs:1.0.0-beta.1 # Beta release
 ```
 
-### 🚀 Manual Workflow Triggers
+### 🚀 Release Workflow (PR-Based)
 
-#### CI Workflow
+#### Standard Release Process
+1. Make changes using [conventional commits](../docs/CONVENTIONAL_COMMITS.md)
+2. Push changes to the `dev` branch (CI builds Docker images automatically)
+3. When ready for release, trigger the Create Release workflow:
+   - Go to **Actions** tab in GitHub
+   - Select **"Create Release"**
+   - Click **"Run workflow"**
+   - Enter version (e.g., `1.0.0`)
+   - Mark as pre-release if needed
+4. A PR will be automatically created with:
+   - Updated Cargo.toml version
+   - Generated changelog from conventional commits
+5. Review and merge the PR
+6. The main-release workflow will automatically:
+   - Create the version tag
+   - Create the GitHub release
+   - Build and push Docker images
+
+#### Manual CI Workflow
 1. Go to **Actions** tab in GitHub
 2. Select **"CI/CD"**
 3. Click **"Run workflow"**
 4. Select the branch to build
-
-#### Manual Release Workflow
-1. Go to **Actions** tab in GitHub
-2. Select **"Create Release"**
-3. Click **"Run workflow"**
-4. Enter version (e.g., `1.0.0`)
-5. Mark as pre-release if needed
 
 ### 📋 Conventional Commit Examples
 
@@ -293,6 +304,72 @@ git cliff
 # Interactive local release creation
 ./scripts/create-release.sh
 ```
+
+## 🔷 PR-Based Release Workflow
+
+To ensure code quality and maintain a clean release history, all changes to the `main` branch must go through pull requests. This is especially important for releases.
+
+### 🚀 The Release Process
+
+1. **Development Phase**
+   - All feature development happens on the `dev` branch or feature branches
+   - Use [conventional commits](../docs/CONVENTIONAL_COMMITS.md) for all changes
+   - CI pipeline runs tests and builds Docker images for `dev` branch
+
+2. **Release Preparation**
+   - When ready to release, run the `create-release.yml` workflow manually
+   - This creates a PR from a new branch (`release/vX.Y.Z`) to `main`
+   - The PR updates version in Cargo.toml and generates changelog
+   - Review the PR and request any necessary changes
+
+3. **Release Finalization**
+   - Once approved, merge the PR to `main`
+   - The `main-release.yml` workflow automatically:
+     - Creates a git tag for the release
+     - Creates a GitHub release with changelog
+     - Builds and pushes Docker images
+     - No manual intervention is needed
+
+4. **Post-Release**
+   - The release is now complete
+   - Docker images are available with appropriate tags
+   - The GitHub release contains the changelog
+
+### ⚙️ Workflow Diagram
+
+```
+dev branch   ---> create-release workflow ---> release PR ---> main branch
+                      (manual trigger)           |             |
+                                                |             |
+                                           review & merge     |
+                                                              |
+                                                      main-release workflow
+                                                   (automatic on PR merge)
+                                                              |
+                                                    Release Creation
+                                                    - Git tag
+                                                    - GitHub release
+                                                    - Docker images
+```
+
+### 🛠️ Troubleshooting
+
+If a release fails during the `main-release.yml` workflow:
+
+1. Check if the git tag was created:
+   ```bash
+   git fetch --tags
+   git tag -l "vX.Y.Z"
+   ```
+
+2. If the tag exists but the release failed, you can manually run the `main-release.yml` workflow
+   - Go to **Actions** tab in GitHub
+   - Select **"Main Branch Release"**
+   - Click **"Run workflow"**
+   - Enter the same version number that was in the PR
+
+3. If the tag doesn't exist, check the workflow logs to identify the issue
+   - Common issues include permission problems or invalid version format
 
 ## 🏷️ Tagging Strategy
 

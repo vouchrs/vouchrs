@@ -118,28 +118,31 @@ git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "chore(release): prepare for v$new_version"
 echo "✅ Committed version bump and changelog"
 
-# Create and push tag
-echo "🏷️  Creating tag..."
-git tag -a "v$new_version" -m "Release v$new_version"
-echo "✅ Created tag v$new_version"
+# Create a release branch
+echo "🌿 Creating release branch..."
+RELEASE_BRANCH="release/v$new_version"
+git checkout -b $RELEASE_BRANCH
+echo "✅ Created branch $RELEASE_BRANCH"
 
 # Ask about pushing
 echo ""
-read -p "Push changes and tag to origin? (Y/n): " push_confirm
+read -p "Push branch to origin and create a PR? (Y/n): " push_confirm
 
 if [ "$push_confirm" != "n" ] && [ "$push_confirm" != "N" ]; then
     echo "⬆️  Pushing to origin..."
-    git push origin $(git branch --show-current)
-    git push origin "v$new_version"
-    echo "✅ Pushed changes and tag"
+    git push origin $RELEASE_BRANCH
+    echo "✅ Pushed release branch"
 
     echo ""
-    echo "🎉 Release v$new_version created successfully!"
+    echo "🎉 Release branch for v$new_version created successfully!"
     echo ""
     echo "Next steps:"
-    echo "1. Go to GitHub → Releases → Create release from tag v$new_version"
-    echo "2. Or use the 'Automated Release' GitHub Action workflow"
-    echo "3. The Docker build will trigger automatically on release publication"
+    echo "1. Go to GitHub and create a PR from $RELEASE_BRANCH to main"
+    echo "2. OR use the 'Create Release' GitHub Action workflow instead (recommended)"
+    echo "3. After the PR is merged, main-release workflow will automatically:"
+    echo "   - Create the version tag"
+    echo "   - Create the GitHub release with changelog"
+    echo "   - Build and push Docker images"
 else
     echo "ℹ️  Changes committed locally but not pushed."
     echo "   Push manually with: git push origin $(git branch --show-current) && git push origin v$new_version"
