@@ -165,6 +165,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      attestations: write
     uses: ./.github/workflows/docker-build.yml
     with:
       version: ${{ needs.release.outputs.version }}
