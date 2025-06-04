@@ -60,7 +60,7 @@ jobs:
 
       - name: Build and Push Docker Image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile
@@ -80,8 +80,15 @@ jobs:
             org.opencontainers.image.created=${{ github.event.repository.pushed_at || github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=vouchrs-docker
+            type=gha,scope=vouchrs-docker-dev
+            type=gha,scope=vouchrs-docker-release
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache-release
+          cache-to: |
+            type=gha,mode=max,scope=vouchrs-docker-release
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache-release,mode=max
 
       - name: Generate artifact attestation
         if: inputs.dry_run == false
