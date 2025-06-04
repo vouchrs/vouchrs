@@ -2,7 +2,8 @@
 use actix_web::{http::header, HttpResponse};
 
 /// Global instance of pre-serialized common responses
-pub static RESPONSES: std::sync::LazyLock<CommonResponses> = std::sync::LazyLock::new(CommonResponses::new);
+pub static RESPONSES: std::sync::LazyLock<CommonResponses> =
+    std::sync::LazyLock::new(CommonResponses::new);
 
 /// Container for pre-serialized common HTTP response bodies
 /// These JSON strings are computed once at startup and reused for better performance
