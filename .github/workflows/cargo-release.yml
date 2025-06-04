@@ -103,9 +103,6 @@ jobs:
             # Push the version bump commit before running cargo-release
             git push origin main
 
-            # Clean up any untracked files before running cargo-release
-            git clean -fd
-
             # Run cargo-release (it will create the tag)
             cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm
           else
