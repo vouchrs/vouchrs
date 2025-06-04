@@ -85,7 +85,8 @@ jobs:
             EXECUTE_FLAG=""
           else
             EXECUTE_FLAG="--execute"
-          fi          # Check if current version already has a tag
+          fi
+          # Check if current version already has a tag
           CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
           if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
             echo "⚠️  Tag v$CURRENT_VERSION already exists, using git-cliff for next version"
@@ -99,6 +100,9 @@ jobs:
             git add Cargo.toml Cargo.lock
             git commit -m "chore: bump version to $NEXT_VERSION"
 
+            # Push the version bump commit before running cargo-release
+            git push origin main
+            
             # Run cargo-release (it will create the tag)
             cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm
           else
