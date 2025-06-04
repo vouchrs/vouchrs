@@ -166,9 +166,6 @@ jobs:
           type=gha,scope=vouchrs-docker
           type=gha,scope=vouchrs-docker-dev
           type=gha,scope=vouchrs-docker-release
-          type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
-          type=registry,ref=ghcr.io/${{ github.repository }}:cache-release
-          type=registry,ref=ghcr.io/${{ github.repository }}:dev
         cache-to: |
           type=gha,mode=max,scope=vouchrs-docker
           type=inline
