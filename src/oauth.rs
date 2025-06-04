@@ -386,9 +386,13 @@ impl OAuthConfig {
         // Use pre-encoded scopes from cached value
         let encoded_scopes = &runtime_provider.encoded_scopes;
 
+        // Determine if auth URL already has query parameters
+        let has_query_params = runtime_provider.auth_url.contains('?');
+        let first_separator = if has_query_params { "&" } else { "?" };
+
         // Calculate total capacity needed to avoid reallocations
         let base_capacity = runtime_provider.auth_url.len()
-            + "?client_id=".len()
+            + first_separator.len() + "client_id=".len()
             + encoded_client_id.len()
             + "&response_type=code".len()
             + "&redirect_uri=".len()
@@ -415,7 +419,8 @@ impl OAuthConfig {
 
         // Build URL efficiently with single pass - no intermediate allocations
         url.push_str(&runtime_provider.auth_url);
-        url.push_str("?client_id=");
+        url.push_str(first_separator);
+        url.push_str("client_id=");
         url.push_str(encoded_client_id);
         url.push_str("&response_type=code");
         url.push_str("&redirect_uri=");
