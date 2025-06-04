@@ -42,9 +42,13 @@ pub async fn proxy_upstream(
     };
 
     // Check and refresh tokens if necessary
-    let _tokens =
+    let (updated_session, tokens_were_refreshed) =
         match check_and_refresh_tokens(session.clone(), &oauth_config, &session.provider).await {
-            Ok(tokens) => tokens,
+            Ok(updated_session) => {
+                // Check if tokens were actually refreshed by comparing expires_at
+                let tokens_refreshed = updated_session.expires_at != session.expires_at;
+                (updated_session, tokens_refreshed)
+            }
             Err(response) => return Ok(response),
         };
 
@@ -66,7 +70,8 @@ pub async fn proxy_upstream(
         &req,
         &settings,
         &session_manager,
-        &session,
+        &updated_session,
+        tokens_were_refreshed,
     )
     .await
 }
@@ -82,6 +87,7 @@ async fn forward_upstream_response(
     settings: &VouchrsSettings,
     session_manager: &SessionManager,
     session: &VouchrsSession,
+    tokens_were_refreshed: bool,
 ) -> ActixResult<HttpResponse> {
     let status_code = upstream_response.status();
 
@@ -119,19 +125,25 @@ async fn forward_upstream_response(
         }
     }
 
-    // Check if session cookie refresh is enabled and should be refreshed
-    if session_manager.is_cookie_refresh_enabled() {
-        log::debug!("Session refresh is enabled, checking if session should be refreshed");
-        match session_manager.create_refreshed_session_cookie(session) {
-            Ok(refreshed_cookie) => {
+    // Check if session cookie should be updated due to token refresh or regular refresh
+    if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
+        let reason = if tokens_were_refreshed {
+            "tokens were refreshed"
+        } else {
+            "regular session refresh is enabled"
+        };
+        log::debug!("Updating session cookie because {reason}");
+
+        match session_manager.create_session_cookie(session) {
+            Ok(updated_cookie) => {
                 log::info!(
-                    "Setting refreshed session cookie for active user on provider: {}",
+                    "Setting updated session cookie for user on provider: {} (reason: {reason})",
                     session.provider
                 );
-                response_builder.cookie(refreshed_cookie);
+                response_builder.cookie(updated_cookie);
             }
             Err(e) => {
-                log::warn!("Failed to create refreshed session cookie: {e}");
+                log::warn!("Failed to create updated session cookie: {e}");
                 // Continue without refresh rather than failing the request
             }
         }

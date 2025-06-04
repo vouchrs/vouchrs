@@ -100,7 +100,7 @@ impl SessionManager {
     /// Returns an error if:
     /// - Session cookie is not found
     /// - Decryption fails
-    /// - Session has expired
+    /// - Session has expired AND no refresh token is available
     pub fn extract_session(&self, req: &HttpRequest) -> Result<VouchrsSession> {
         let cookie_value = req
             .cookie(COOKIE_NAME)
@@ -112,7 +112,12 @@ impl SessionManager {
 
         // Check if tokens are expired
         if session.expires_at <= Utc::now() {
-            return Err(anyhow!("Session expired"));
+            // If session is expired but has a refresh token, allow it through for token refresh
+            if session.refresh_token.is_some() {
+                log::info!("Session is expired but has refresh token - allowing for token refresh");
+                return Ok(session);
+            }
+            return Err(anyhow!("Session expired and no refresh token available"));
         }
 
         Ok(session)
@@ -236,13 +241,19 @@ impl SessionManager {
     ///
     /// # Errors
     ///
-    /// Returns an error if decryption fails (expired sessions return None)
+    /// Returns an error if decryption fails (expired sessions with refresh tokens are returned)
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
         if let Some(cookie) = req.cookie(COOKIE_NAME) {
             match decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key) {
                 Ok(session) => {
                     // Check if session has expired
                     if session.expires_at <= Utc::now() {
+                        // If session is expired but has a refresh token, return it for token refresh
+                        if session.refresh_token.is_some() {
+                            log::info!("Session is expired but has refresh token - returning for token refresh");
+                            return Ok(Some(session));
+                        }
+                        // No refresh token available, session is truly expired
                         return Ok(None);
                     }
 
@@ -269,13 +280,18 @@ impl SessionManager {
     ///
     /// Returns an error if:
     /// - Decryption fails
-    /// - Session has expired
+    /// - Session has expired AND no refresh token is available
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
         let session: VouchrsSession = decrypt_data(cookie_value, &self.encryption_key)?;
 
         // Check if session has expired
         if session.expires_at <= Utc::now() {
-            return Err(anyhow!("Session expired"));
+            // If session is expired but has a refresh token, allow it through for token refresh
+            if session.refresh_token.is_some() {
+                log::info!("Session is expired but has refresh token - allowing for token refresh");
+                return Ok(session);
+            }
+            return Err(anyhow!("Session expired and no refresh token available"));
         }
 
         Ok(session)
@@ -682,5 +698,45 @@ mod tests {
         // Note: This would fail if the test request had an IP, but since test requests have None for IP,
         // this test demonstrates the concept even though both have different values
         assert!(!manager.validate_client_context_only(&different_ip_data, &browser_req));
+    }
+
+    #[test]
+    fn test_expired_session_with_refresh_token() {
+        let manager = create_test_session_manager();
+
+        // Create an expired session with a refresh token
+        let mut expired_session = create_test_session();
+        expired_session.expires_at = Utc::now() - chrono::Duration::hours(1); // Expired 1 hour ago
+        expired_session.refresh_token = Some("valid_refresh_token".to_string());
+
+        // Test extract_session - should succeed because refresh token is present
+        let cookie_value =
+            crate::utils::crypto::encrypt_data(&expired_session, manager.encryption_key()).unwrap();
+        let result = manager.decrypt_and_validate_session(&cookie_value);
+        assert!(
+            result.is_ok(),
+            "Session with refresh token should be allowed through even if expired"
+        );
+
+        // Create an expired session without a refresh token
+        let mut expired_session_no_refresh = create_test_session();
+        expired_session_no_refresh.expires_at = Utc::now() - chrono::Duration::hours(1); // Expired 1 hour ago
+        expired_session_no_refresh.refresh_token = None;
+
+        // Test extract_session - should fail because no refresh token
+        let cookie_value_no_refresh = crate::utils::crypto::encrypt_data(
+            &expired_session_no_refresh,
+            manager.encryption_key(),
+        )
+        .unwrap();
+        let result_no_refresh = manager.decrypt_and_validate_session(&cookie_value_no_refresh);
+        assert!(
+            result_no_refresh.is_err(),
+            "Session without refresh token should fail when expired"
+        );
+        assert!(result_no_refresh
+            .unwrap_err()
+            .to_string()
+            .contains("no refresh token available"));
     }
 }
