@@ -34,7 +34,10 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies with the appropriate target for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"
-RUN TARGET=$(cat /target.txt) && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    TARGET=$(cat /target.txt) && \
     case "$TARGET" in \
     "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
@@ -47,15 +50,15 @@ COPY src ./src
 COPY Settings.toml ./
 
 # Build the application with static linking for the target platform
-RUN TARGET=$(cat /target.txt) && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    TARGET=$(cat /target.txt) && \
     case "$TARGET" in \
     "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
     esac && \
-    cargo build --release --target $TARGET --locked
-
-# Copy the binary to a predictable location for the runtime stage
-RUN TARGET=$(cat /target.txt) && \
+    cargo build --release --target $TARGET --locked && \
     cp /app/target/$TARGET/release/vouchrs /app/vouchrs
 
 # Runtime stage - distroless static (smallest possible)
@@ -67,7 +70,7 @@ WORKDIR /app
 # Copy the statically linked binary from builder stage
 COPY --from=builder /app/vouchrs /app/vouchrs
 
-# Copy default configuration 
+# Copy default configuration
 COPY --from=builder /app/Settings.toml /app/Settings.toml
 
 # Use non-root user
