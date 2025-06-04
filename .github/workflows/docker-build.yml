@@ -65,21 +65,7 @@ jobs:
           echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
           echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
 
-      - name: Generate cache key
-        id: cache_key
-        run: |
-          # Create a cache key based on Cargo files for better cache invalidation
-          CARGO_HASH=$(sha256sum Cargo.toml Cargo.lock | sha256sum | cut -d' ' -f1)
-          echo "cargo-hash=${CARGO_HASH}" >> $GITHUB_OUTPUT
-          echo "cache-key=rust-deps-${CARGO_HASH}" >> $GITHUB_OUTPUT
 
-      - name: Pre-warm registry cache
-        if: inputs.dry_run == false
-        run: |
-          # Pull existing cache images to warm up the local cache
-          docker pull ghcr.io/${{ github.repository }}:cache || true
-          docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}-cache || true
-          docker pull ghcr.io/${{ github.repository }}:buildcache-${{ steps.cache_key.outputs.cargo-hash }} || true
 
       - name: Build and Push Docker Image
         id: build
@@ -103,16 +89,9 @@ jobs:
             org.opencontainers.image.created=${{ github.event.repository.pushed_at || github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
-          # Multi-layered caching strategy for maximum efficiency
-          cache-from: |
-            type=gha
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache
-            type=registry,ref=ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}-cache
-            type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-${{ steps.cache_key.outputs.cargo-hash }}
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache,mode=max
-            type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-${{ steps.cache_key.outputs.cargo-hash }},mode=max
+          # Use GitHub Actions cache for efficiency and sharing with CI workflow
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           # Enable build-time variables for optimization
           build-args: |
             BUILDKIT_INLINE_CACHE=1
@@ -131,7 +110,7 @@ jobs:
           echo "📦 Version: ${{ steps.version_parts.outputs.version }}"
           echo "🏷️ Tags: ${{ steps.version_parts.outputs.major }}, ${{ steps.version_parts.outputs.minor }}, latest"
           echo "🏛️ Platforms: linux/amd64, linux/arm64"
-          echo "🔧 Cache key: ${{ steps.cache_key.outputs.cache-key }}"
+          echo "⚡ Cache: GitHub Actions cache (shared with CI)"
           echo "📝 Digest: ${{ steps.build.outputs.digest }}"
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             echo "🔍 Mode: Dry run (not pushed to registry)"
@@ -145,4 +124,4 @@ jobs:
           echo "🎉 Successfully built and pushed Docker images for v${{ steps.version_parts.outputs.version }}"
           echo "📦 Docker images available at: ghcr.io/${{ github.repository }}"
           echo "🔒 Built with artifact attestation for supply chain security"
-          echo "⚡ Optimized caching enabled for faster subsequent builds"
+          echo "⚡ Using shared GitHub Actions cache for faster builds"
