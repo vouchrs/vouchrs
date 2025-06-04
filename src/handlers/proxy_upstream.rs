@@ -193,8 +193,8 @@ async fn execute_upstream_request(
 
     // Execute the request
     request_builder.send().await.map_err(|_err| {
-        // Return a simple error response
-        RESPONSES.server_error()
+        // Return a bad gateway error response for upstream connection failures
+        RESPONSES.bad_gateway()
     })
 }
 

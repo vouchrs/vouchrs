@@ -13,6 +13,7 @@ pub struct CommonResponses {
     pub unauthorized_json: String,
     pub missing_parameters_json: String,
     pub server_error_json: String,
+    pub bad_gateway_json: String,
     pub rate_limited_json: String,
     pub invalid_request_json: String,
     pub oauth_config_error_json: String,
@@ -30,6 +31,7 @@ impl CommonResponses {
             unauthorized_json: Self::create_unauthorized_json(),
             missing_parameters_json: Self::create_missing_parameters_json(),
             server_error_json: Self::create_server_error_json(),
+            bad_gateway_json: Self::create_bad_gateway_json(),
             rate_limited_json: Self::create_rate_limited_json(),
             invalid_request_json: Self::create_invalid_request_json(),
             oauth_config_error_json: Self::create_oauth_config_error_json(),
@@ -76,6 +78,14 @@ impl CommonResponses {
         HttpResponse::InternalServerError()
             .insert_header((header::CONTENT_TYPE, "application/json"))
             .body(self.server_error_json.clone())
+    }
+
+    /// Create bad gateway response
+    #[must_use]
+    pub fn bad_gateway(&self) -> HttpResponse {
+        HttpResponse::BadGateway()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .body(self.bad_gateway_json.clone())
     }
 
     /// Create rate limited response
@@ -163,6 +173,15 @@ impl CommonResponses {
         serde_json::to_string(&json).expect("Failed to serialize server_error JSON")
     }
 
+    /// Create bad gateway JSON string
+    fn create_bad_gateway_json() -> String {
+        let json = serde_json::json!({
+            "error": "bad_gateway",
+            "error_description": "Failed to connect to upstream server"
+        });
+        serde_json::to_string(&json).expect("Failed to serialize bad_gateway JSON")
+    }
+
     /// Create rate limited JSON string
     fn create_rate_limited_json() -> String {
         let json = serde_json::json!({
@@ -230,6 +249,7 @@ mod tests {
         assert!(!responses.unauthorized_json.is_empty());
         assert!(!responses.missing_parameters_json.is_empty());
         assert!(!responses.server_error_json.is_empty());
+        assert!(!responses.bad_gateway_json.is_empty());
         assert!(!responses.rate_limited_json.is_empty());
         assert!(!responses.invalid_request_json.is_empty());
         assert!(!responses.oauth_config_error_json.is_empty());
@@ -256,6 +276,7 @@ mod tests {
             responses.server_error().status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
+        assert_eq!(responses.bad_gateway().status(), StatusCode::BAD_GATEWAY);
         assert_eq!(
             responses.rate_limited().status(),
             StatusCode::TOO_MANY_REQUESTS
