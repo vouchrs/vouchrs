@@ -324,9 +324,9 @@ impl OAuthConfig {
     /// Check if any provider has JWT validation enabled
     #[must_use]
     pub fn has_jwt_validation_enabled(&self) -> bool {
-        self.providers.iter().any(|(_, provider)| {
-            provider.settings.should_enable_jwt_validation()
-        })
+        self.providers
+            .iter()
+            .any(|(_, provider)| provider.settings.should_enable_jwt_validation())
     }
 
     /// Check if a provider's client is configured
@@ -433,7 +433,8 @@ impl OAuthConfig {
             .await?;
 
         // Parse and process the token response, including JWT validation
-        self.process_token_response(provider, &response_text, &runtime_provider).await
+        self.process_token_response(provider, &response_text, &runtime_provider)
+            .await
     }
 
     /// Prepare parameters for token exchange request
@@ -550,7 +551,10 @@ impl OAuthConfig {
         if let Some(ref id_token) = token_response.id_token {
             if runtime_provider.settings.should_enable_jwt_validation() {
                 info!("🔐 Performing JWT validation for provider '{provider}'");
-                if let Err(e) = self.validate_jwt_token(provider, id_token, runtime_provider).await {
+                if let Err(e) = self
+                    .validate_jwt_token(provider, id_token, runtime_provider)
+                    .await
+                {
                     warn!("❌ JWT validation failed for provider '{provider}': {e}");
                     // Continue for now - in the future this could be configurable
                     // return Err(format!("JWT validation failed: {}", e));
@@ -604,7 +608,8 @@ impl OAuthConfig {
         self.providers
             .get(provider)
             .and_then(|p| p.settings.display_name.as_deref())
-    }    /// Validate JWT ID token using JWKS discovery and cryptographic verification
+    }
+    /// Validate JWT ID token using JWKS discovery and cryptographic verification
     async fn validate_jwt_token(
         &self,
         provider: &str,
@@ -617,7 +622,8 @@ impl OAuthConfig {
         let validator = self.get_jwt_validator().await;
 
         // If discovery URL is available, fetch discovery document for issuer/jwks_uri
-        let discovery_doc = if let Some(ref discovery_url) = runtime_provider.settings.discovery_url {
+        let discovery_doc = if let Some(ref discovery_url) = runtime_provider.settings.discovery_url
+        {
             match validator.fetch_discovery_document(discovery_url).await {
                 Ok(doc) => {
                     debug!("✅ Discovery document fetched for provider '{provider}'");
@@ -633,14 +639,15 @@ impl OAuthConfig {
         };
 
         // Perform JWT validation using the validator
-        validator.validate_id_token(id_token, provider, &jwt_config, discovery_doc.as_ref()).await
+        validator
+            .validate_id_token(id_token, provider, &jwt_config, discovery_doc.as_ref())
+            .await
     }
 }
 
 // ============================================================================
 // Token Management Functions
 // ============================================================================
-
 
 /// Check if tokens need refresh and refresh them if necessary
 ///

@@ -131,9 +131,15 @@ pub struct JwtValidationConfig {
 }
 
 // Helper functions for serde defaults
-fn default_true() -> bool { true }
-fn default_clock_skew() -> u64 { 300 }
-fn default_cache_duration() -> u64 { 3600 }
+fn default_true() -> bool {
+    true
+}
+fn default_clock_skew() -> u64 {
+    300
+}
+fn default_cache_duration() -> u64 {
+    3600
+}
 
 impl Default for JwtValidationConfig {
     fn default() -> Self {
@@ -687,7 +693,10 @@ mod tests {
         assert_eq!(mock_root_settings.session.session_secret, "root-secret-key");
 
         // Scenario 2: With VOUCHRS_SECRETS_DIR, prefer settings from secrets dir
-        assert_eq!(mock_secrets_settings.session.session_secret, "secrets-secret-key");
+        assert_eq!(
+            mock_secrets_settings.session.session_secret,
+            "secrets-secret-key"
+        );
 
         // Scenario 3: Environment variables override both
         let mut settings_with_env = mock_secrets_settings.clone();
@@ -807,7 +816,9 @@ mod tests {
     fn test_jwt_validation_auto_enabled_with_discovery_url() {
         let provider = ProviderSettings {
             name: "test".to_string(),
-            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            discovery_url: Some(
+                "https://provider.com/.well-known/openid-configuration".to_string(),
+            ),
             ..Default::default()
         };
 
@@ -840,7 +851,9 @@ mod tests {
         // Provider with discovery_url but validation explicitly disabled
         let provider = ProviderSettings {
             name: "test".to_string(),
-            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            discovery_url: Some(
+                "https://provider.com/.well-known/openid-configuration".to_string(),
+            ),
             jwt_validation: Some(JwtValidationConfig {
                 enabled: Some(false),
                 ..Default::default()
@@ -876,7 +889,9 @@ mod tests {
     fn test_jwt_validation_config_overrides() {
         let provider = ProviderSettings {
             name: "test".to_string(),
-            discovery_url: Some("https://provider.com/.well-known/openid-configuration".to_string()),
+            discovery_url: Some(
+                "https://provider.com/.well-known/openid-configuration".to_string(),
+            ),
             jwt_validation: Some(JwtValidationConfig {
                 validate_audience: false,
                 expected_issuer: Some("https://custom-issuer.com".to_string()),
@@ -889,7 +904,10 @@ mod tests {
         let config = provider.get_jwt_validation_config();
         assert_eq!(config.enabled, Some(true)); // Auto-enabled due to discovery_url
         assert!(!config.validate_audience); // Overridden
-        assert_eq!(config.expected_issuer, Some("https://custom-issuer.com".to_string()));
+        assert_eq!(
+            config.expected_issuer,
+            Some("https://custom-issuer.com".to_string())
+        );
         assert_eq!(config.clock_skew_seconds, 600);
         assert!(config.validate_issuer); // Default
         assert!(config.validate_expiration); // Default

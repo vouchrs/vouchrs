@@ -12,9 +12,12 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 // Cryptographic imports
-use rsa::{RsaPublicKey, pkcs1v15::VerifyingKey};
-use p256::{ecdsa::{VerifyingKey as EcdsaVerifyingKey, Signature as EcdsaSignature}, EncodedPoint};
-use sha2::{Sha256, Digest};
+use p256::{
+    ecdsa::{Signature as EcdsaSignature, VerifyingKey as EcdsaVerifyingKey},
+    EncodedPoint,
+};
+use rsa::{pkcs1v15::VerifyingKey, RsaPublicKey};
+use sha2::{Digest, Sha256};
 
 use crate::settings::{JwtValidationConfig, ProviderSettings};
 
@@ -29,7 +32,11 @@ use crate::oauth::{fetch_discovery_document, fetch_jwks};
 pub enum JwtValidationError {
     KeyNotFound(String),
     SignatureInvalid,
-    ClaimValidationFailed { claim: String, expected: String, actual: String },
+    ClaimValidationFailed {
+        claim: String,
+        expected: String,
+        actual: String,
+    },
     JwksFetchFailed(String),
     UnsupportedAlgorithm(String),
     TokenExpired,
@@ -44,9 +51,16 @@ impl std::fmt::Display for JwtValidationError {
         match self {
             Self::KeyNotFound(kid) => write!(f, "Key not found: {kid}"),
             Self::SignatureInvalid => write!(f, "JWT signature verification failed"),
-            Self::ClaimValidationFailed { claim, expected, actual } => {
-                write!(f, "Claim '{claim}' validation failed: expected '{expected}', got '{actual}'")
-            },
+            Self::ClaimValidationFailed {
+                claim,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "Claim '{claim}' validation failed: expected '{expected}', got '{actual}'"
+                )
+            }
             Self::JwksFetchFailed(msg) => write!(f, "Failed to fetch JWKS: {msg}"),
             Self::UnsupportedAlgorithm(alg) => write!(f, "Unsupported algorithm: {alg}"),
             Self::TokenExpired => write!(f, "Token has expired"),
@@ -73,12 +87,12 @@ pub struct JwtHeader {
 
 #[derive(Debug, Deserialize)]
 pub struct JwtClaims {
-    pub iss: Option<String>,  // Issuer
+    pub iss: Option<String>,            // Issuer
     pub aud: Option<serde_json::Value>, // Audience (can be string or array)
-    pub exp: Option<i64>,     // Expiration time
-    pub nbf: Option<i64>,     // Not before
-    pub iat: Option<i64>,     // Issued at
-    pub sub: Option<String>,  // Subject
+    pub exp: Option<i64>,               // Expiration time
+    pub nbf: Option<i64>,               // Not before
+    pub iat: Option<i64>,               // Issued at
+    pub sub: Option<String>,            // Subject
 }
 
 // ============================================================================
@@ -110,15 +124,15 @@ pub struct JsonWebKeySet {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct JsonWebKey {
-    pub kty: String,     // Key type (RSA, EC, etc.)
+    pub kty: String,         // Key type (RSA, EC, etc.)
     pub kid: Option<String>, // Key ID
     pub alg: Option<String>, // Algorithm (RS256, ES256, etc.)
     #[serde(rename = "use")]
     pub key_use: Option<String>, // "sig" for signing
 
     // RSA keys
-    pub n: Option<String>,   // Modulus
-    pub e: Option<String>,   // Exponent
+    pub n: Option<String>, // Modulus
+    pub e: Option<String>, // Exponent
 
     // EC keys
     pub crv: Option<String>, // Curve
@@ -210,16 +224,24 @@ impl JwksCache {
                 provider_keys.insert(kid.clone(), key);
             } else {
                 // Generate a fallback key ID based on key properties
-                let fallback_kid = format!("{}_{}",
+                let fallback_kid = format!(
+                    "{}_{}",
                     key.kty,
-                    key.n.as_deref().unwrap_or("unknown")
-                        .chars().take(8).collect::<String>()
+                    key.n
+                        .as_deref()
+                        .unwrap_or("unknown")
+                        .chars()
+                        .take(8)
+                        .collect::<String>()
                 );
                 provider_keys.insert(fallback_kid, key);
             }
         }
 
-        debug!("💾 Cached {} keys for provider '{provider}'", provider_keys.len());
+        debug!(
+            "💾 Cached {} keys for provider '{provider}'",
+            provider_keys.len()
+        );
         self.keys.insert(provider.to_string(), provider_keys);
         self.last_updated.insert(provider.to_string(), Utc::now());
         self.failed_fetches.remove(provider);
@@ -261,7 +283,7 @@ impl JwtValidator {
     pub fn with_cache_duration(cache_duration: Duration) -> Self {
         Self {
             cache: Arc::new(RwLock::new(
-                JwksCache::new().with_cache_duration(cache_duration)
+                JwksCache::new().with_cache_duration(cache_duration),
             )),
         }
     }
@@ -274,13 +296,14 @@ impl JwtValidator {
         settings: &ProviderSettings,
         config: JwtValidationConfig,
     ) -> Result<Self, JwtValidationError> {
-        let validator = Self::with_cache_duration(
-            Duration::from_secs(config.cache_duration_seconds)
-        );
+        let validator =
+            Self::with_cache_duration(Duration::from_secs(config.cache_duration_seconds));
 
         // Pre-populate cache if discovery URL is available
         if let Some(discovery_url) = &settings.discovery_url {
-            validator.discover_and_cache_keys(&settings.name, discovery_url).await?;
+            validator
+                .discover_and_cache_keys(&settings.name, discovery_url)
+                .await?;
         }
 
         Ok(validator)
@@ -301,7 +324,8 @@ impl JwtValidator {
         let discovery_doc = self.fetch_discovery_document(discovery_url).await?;
 
         // Fetch and cache JWKS
-        self.fetch_and_cache_jwks(provider, &discovery_doc.jwks_uri).await
+        self.fetch_and_cache_jwks(provider, &discovery_doc.jwks_uri)
+            .await
     }
 
     /// Fetch OIDC discovery document
@@ -319,11 +343,16 @@ impl JwtValidator {
             .map_err(JwtValidationError::JwksFetchFailed)?;
 
         let discovery_doc: OidcDiscoveryDocument = serde_json::from_value(discovery_doc_value)
-            .map_err(|e| JwtValidationError::JwksFetchFailed(
-                format!("Failed to parse discovery document: {e}")
-            ))?;
+            .map_err(|e| {
+                JwtValidationError::JwksFetchFailed(format!(
+                    "Failed to parse discovery document: {e}"
+                ))
+            })?;
 
-        debug!("✅ Discovery document fetched, JWKS URI: {}", discovery_doc.jwks_uri);
+        debug!(
+            "✅ Discovery document fetched, JWKS URI: {}",
+            discovery_doc.jwks_uri
+        );
         Ok(discovery_doc)
     }
 
@@ -341,7 +370,7 @@ impl JwtValidator {
         // Check if we should skip due to recent failure
         if !cache.should_retry_fetch(provider) {
             return Err(JwtValidationError::JwksFetchFailed(
-                "Skipping fetch due to recent failure and backoff".to_string()
+                "Skipping fetch due to recent failure and backoff".to_string(),
             ));
         }
 
@@ -350,26 +379,23 @@ impl JwtValidator {
         // Drop the write lock before making HTTP request
         drop(cache);
 
-        let jwks_value = fetch_jwks(jwks_uri)
-            .await
-            .map_err(|e| {
-                // Record failure in cache
-                tokio::spawn({
-                    let cache = Arc::clone(&self.cache);
-                    let provider = provider.to_string();
-                    async move {
-                        let mut cache = cache.write().await;
-                        cache.record_fetch_failure(provider);
-                    }
-                });
+        let jwks_value = fetch_jwks(jwks_uri).await.map_err(|e| {
+            // Record failure in cache
+            tokio::spawn({
+                let cache = Arc::clone(&self.cache);
+                let provider = provider.to_string();
+                async move {
+                    let mut cache = cache.write().await;
+                    cache.record_fetch_failure(provider);
+                }
+            });
 
-                JwtValidationError::JwksFetchFailed(e)
-            })?;
+            JwtValidationError::JwksFetchFailed(e)
+        })?;
 
-        let jwks: JsonWebKeySet = serde_json::from_value(jwks_value)
-            .map_err(|e| JwtValidationError::JwksFetchFailed(
-                format!("Failed to parse JWKS: {e}")
-            ))?;
+        let jwks: JsonWebKeySet = serde_json::from_value(jwks_value).map_err(|e| {
+            JwtValidationError::JwksFetchFailed(format!("Failed to parse JWKS: {e}"))
+        })?;
         // Re-acquire write lock to store keys
         let mut cache = self.cache.write().await;
         cache.store_keys(provider, jwks.keys);
@@ -430,7 +456,9 @@ impl JwtValidator {
         // Parse JWT structure
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
-            return Err(JwtValidationError::InvalidToken("Invalid JWT format".to_string()));
+            return Err(JwtValidationError::InvalidToken(
+                "Invalid JWT format".to_string(),
+            ));
         }
 
         // Decode header
@@ -439,7 +467,7 @@ impl JwtValidator {
 
         // Verify algorithm is supported
         match header.alg.as_str() {
-            "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512" => {},
+            "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512" => {}
             alg => return Err(JwtValidationError::UnsupportedAlgorithm(alg.to_string())),
         }
 
@@ -467,8 +495,11 @@ impl JwtValidator {
 
     /// Decode JWT header from base64
     fn decode_jwt_header(header_b64: &str) -> Result<JwtHeader, JwtValidationError> {
-        let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(header_b64)
-            .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid header encoding: {e}")))?;
+        let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(header_b64)
+            .map_err(|e| {
+                JwtValidationError::InvalidToken(format!("Invalid header encoding: {e}"))
+            })?;
 
         serde_json::from_slice(&header_bytes)
             .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid header JSON: {e}")))
@@ -476,8 +507,11 @@ impl JwtValidator {
 
     /// Decode JWT claims from base64
     fn decode_jwt_claims(claims_b64: &str) -> Result<JwtClaims, JwtValidationError> {
-        let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims_b64)
-            .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid claims encoding: {e}")))?;
+        let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(claims_b64)
+            .map_err(|e| {
+                JwtValidationError::InvalidToken(format!("Invalid claims encoding: {e}"))
+            })?;
 
         serde_json::from_slice(&claims_bytes)
             .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid claims JSON: {e}")))
@@ -493,16 +527,23 @@ impl JwtValidator {
         let parts: Vec<&str> = token.split('.').collect();
         let signing_input = format!("{}.{}", parts[0], parts[1]);
 
-        let signature_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[2])
-            .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid signature encoding: {e}")))?;
+        let signature_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(parts[2])
+            .map_err(|e| {
+                JwtValidationError::InvalidToken(format!("Invalid signature encoding: {e}"))
+            })?;
 
         match algorithm {
             "RS256" | "RS384" | "RS512" => {
                 Self::verify_rsa_signature(&signing_input, &signature_bytes, algorithm, public_key)
-            },
-            "ES256" | "ES384" | "ES512" => {
-                Self::verify_ecdsa_signature(self, &signing_input, &signature_bytes, algorithm, public_key)
-            },
+            }
+            "ES256" | "ES384" | "ES512" => Self::verify_ecdsa_signature(
+                self,
+                &signing_input,
+                &signature_bytes,
+                algorithm,
+                public_key,
+            ),
             alg => Err(JwtValidationError::UnsupportedAlgorithm(alg.to_string())),
         }
     }
@@ -515,33 +556,53 @@ impl JwtValidator {
         public_key: &JsonWebKey,
     ) -> Result<(), JwtValidationError> {
         // Extract RSA components
-        let n = public_key.n.as_ref()
-            .ok_or_else(|| JwtValidationError::KeyDecodingFailed("Missing RSA modulus (n)".to_string()))?;
-        let e = public_key.e.as_ref()
-            .ok_or_else(|| JwtValidationError::KeyDecodingFailed("Missing RSA exponent (e)".to_string()))?;
+        let n = public_key.n.as_ref().ok_or_else(|| {
+            JwtValidationError::KeyDecodingFailed("Missing RSA modulus (n)".to_string())
+        })?;
+        let e = public_key.e.as_ref().ok_or_else(|| {
+            JwtValidationError::KeyDecodingFailed("Missing RSA exponent (e)".to_string())
+        })?;
 
         // Decode base64url components
-        let n_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(n)
-            .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid modulus encoding: {e}")))?;
-        let e_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(e)
-            .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid exponent encoding: {e}")))?;
+        let n_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(n)
+            .map_err(|e| {
+                JwtValidationError::KeyDecodingFailed(format!("Invalid modulus encoding: {e}"))
+            })?;
+        let e_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(e)
+            .map_err(|e| {
+                JwtValidationError::KeyDecodingFailed(format!("Invalid exponent encoding: {e}"))
+            })?;
 
         // Create RSA public key
         let rsa_key = RsaPublicKey::new(
             rsa::BigUint::from_bytes_be(&n_bytes),
             rsa::BigUint::from_bytes_be(&e_bytes),
-        ).map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid RSA key: {e}")))?;
+        )
+        .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid RSA key: {e}")))?;
 
         // Create verifying key based on algorithm
         match algorithm {
             "RS256" => {
                 use rsa::signature::Verifier;
                 let verifying_key = VerifyingKey::<Sha256>::new(rsa_key);
-                verifying_key.verify(signing_input.as_bytes(), &rsa::pkcs1v15::Signature::try_from(signature)
-                    .map_err(|e| JwtValidationError::CryptographicError(format!("Invalid signature format: {e}")))?)
+                verifying_key
+                    .verify(
+                        signing_input.as_bytes(),
+                        &rsa::pkcs1v15::Signature::try_from(signature).map_err(|e| {
+                            JwtValidationError::CryptographicError(format!(
+                                "Invalid signature format: {e}"
+                            ))
+                        })?,
+                    )
                     .map_err(|_| JwtValidationError::SignatureInvalid)?;
-            },
-            _ => return Err(JwtValidationError::UnsupportedAlgorithm(algorithm.to_string())),
+            }
+            _ => {
+                return Err(JwtValidationError::UnsupportedAlgorithm(
+                    algorithm.to_string(),
+                ))
+            }
         }
 
         Ok(())
@@ -559,32 +620,44 @@ impl JwtValidator {
         match algorithm {
             "ES256" => {
                 // Extract ECDSA P-256 components
-                let x = public_key.x.as_ref()
-                    .ok_or_else(|| JwtValidationError::KeyDecodingFailed("Missing ECDSA x coordinate".to_string()))?;
-                let y = public_key.y.as_ref()
-                    .ok_or_else(|| JwtValidationError::KeyDecodingFailed("Missing ECDSA y coordinate".to_string()))?;
+                let x = public_key.x.as_ref().ok_or_else(|| {
+                    JwtValidationError::KeyDecodingFailed("Missing ECDSA x coordinate".to_string())
+                })?;
+                let y = public_key.y.as_ref().ok_or_else(|| {
+                    JwtValidationError::KeyDecodingFailed("Missing ECDSA y coordinate".to_string())
+                })?;
 
                 // Decode coordinates
-                let x_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(x)
-                    .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid x coordinate: {e}")))?;
-                let y_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(y)
-                    .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid y coordinate: {e}")))?;
+                let x_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(x)
+                    .map_err(|e| {
+                        JwtValidationError::KeyDecodingFailed(format!("Invalid x coordinate: {e}"))
+                    })?;
+                let y_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(y)
+                    .map_err(|e| {
+                        JwtValidationError::KeyDecodingFailed(format!("Invalid y coordinate: {e}"))
+                    })?;
 
                 // Create encoded point (uncompressed format: 0x04 + x + y)
                 let mut point_bytes = vec![0x04];
                 point_bytes.extend_from_slice(&x_bytes);
                 point_bytes.extend_from_slice(&y_bytes);
 
-                let encoded_point = EncodedPoint::from_bytes(&point_bytes)
-                    .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid EC point: {e}")))?;
+                let encoded_point = EncodedPoint::from_bytes(&point_bytes).map_err(|e| {
+                    JwtValidationError::KeyDecodingFailed(format!("Invalid EC point: {e}"))
+                })?;
 
                 // Create verifying key
-                let verifying_key = EcdsaVerifyingKey::from_encoded_point(&encoded_point)
-                    .map_err(|e| JwtValidationError::KeyDecodingFailed(format!("Invalid ECDSA key: {e}")))?;
+                let verifying_key =
+                    EcdsaVerifyingKey::from_encoded_point(&encoded_point).map_err(|e| {
+                        JwtValidationError::KeyDecodingFailed(format!("Invalid ECDSA key: {e}"))
+                    })?;
 
                 // Parse signature (DER format)
-                let signature = EcdsaSignature::from_der(signature)
-                    .map_err(|e| JwtValidationError::CryptographicError(format!("Invalid signature format: {e}")))?;
+                let signature = EcdsaSignature::from_der(signature).map_err(|e| {
+                    JwtValidationError::CryptographicError(format!("Invalid signature format: {e}"))
+                })?;
 
                 // Hash the signing input with SHA256
                 let mut hasher = Sha256::new();
@@ -592,10 +665,15 @@ impl JwtValidator {
                 let hash = hasher.finalize();
 
                 // Verify signature
-                verifying_key.verify(&hash, &signature)
+                verifying_key
+                    .verify(&hash, &signature)
                     .map_err(|_| JwtValidationError::SignatureInvalid)?;
-            },
-            _ => return Err(JwtValidationError::UnsupportedAlgorithm(algorithm.to_string())),
+            }
+            _ => {
+                return Err(JwtValidationError::UnsupportedAlgorithm(
+                    algorithm.to_string(),
+                ))
+            }
         }
 
         Ok(())
@@ -664,7 +742,9 @@ impl JwtValidator {
             return Ok(()); // No issuer claim to validate
         };
 
-        let expected_issuer = config.expected_issuer.as_ref()
+        let expected_issuer = config
+            .expected_issuer
+            .as_ref()
             .unwrap_or(&discovery_doc.issuer);
 
         if token_issuer != expected_issuer {
@@ -704,11 +784,10 @@ impl JwtValidator {
     fn extract_audiences_from_claims(claims: &JwtClaims) -> Vec<String> {
         match &claims.aud {
             Some(serde_json::Value::String(aud)) => vec![aud.clone()],
-            Some(serde_json::Value::Array(auds)) => {
-                auds.iter()
-                    .filter_map(|v| v.as_str().map(ToString::to_string))
-                    .collect()
-            },
+            Some(serde_json::Value::Array(auds)) => auds
+                .iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect(),
             _ => vec![],
         }
     }
@@ -735,11 +814,14 @@ impl Default for JwtValidator {
 pub fn extract_key_id_from_jwt(token: &str) -> Result<Option<String>, JwtValidationError> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
-        return Err(JwtValidationError::InvalidToken("Invalid JWT format".to_string()));
+        return Err(JwtValidationError::InvalidToken(
+            "Invalid JWT format".to_string(),
+        ));
     }
 
     // Decode header (first part)
-    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[0])
+    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[0])
         .map_err(|e| JwtValidationError::InvalidToken(format!("Invalid header encoding: {e}")))?;
 
     let header: serde_json::Value = serde_json::from_slice(&header_bytes)
@@ -761,19 +843,17 @@ mod tests {
         assert!(cache.should_retry_fetch("test-provider"));
 
         // Store some test keys
-        let test_keys = vec![
-            JsonWebKey {
-                kty: "RSA".to_string(),
-                kid: Some("key1".to_string()),
-                alg: Some("RS256".to_string()),
-                key_use: Some("sig".to_string()),
-                n: Some("test-modulus".to_string()),
-                e: Some("AQAB".to_string()),
-                crv: None,
-                x: None,
-                y: None,
-            }
-        ];
+        let test_keys = vec![JsonWebKey {
+            kty: "RSA".to_string(),
+            kid: Some("key1".to_string()),
+            alg: Some("RS256".to_string()),
+            key_use: Some("sig".to_string()),
+            n: Some("test-modulus".to_string()),
+            e: Some("AQAB".to_string()),
+            crv: None,
+            x: None,
+            y: None,
+        }];
 
         cache.store_keys("test-provider", test_keys);
 
@@ -831,8 +911,11 @@ mod tests {
 
         // Test valid JWT claims
         let now = chrono::Utc::now().timestamp(); // Use chrono's timestamp which is already i64
-        let claims = format!(r#"{{"iss":"https://example.com","aud":"test-client","exp":{},"iat":{},"sub":"test-user"}}"#,
-                           now + 3600, now);
+        let claims = format!(
+            r#"{{"iss":"https://example.com","aud":"test-client","exp":{},"iat":{},"sub":"test-user"}}"#,
+            now + 3600,
+            now
+        );
         let claims_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.as_bytes());
         let result = JwtValidator::decode_jwt_claims(&claims_b64);
         assert!(result.is_ok());
@@ -975,7 +1058,10 @@ mod tests {
 
         let result = JwtValidator::validate_claims(&validator, &claims_mismatch, &config, None);
         assert!(result.is_err());
-        matches!(result.unwrap_err(), JwtValidationError::ClaimValidationFailed { .. });
+        matches!(
+            result.unwrap_err(),
+            JwtValidationError::ClaimValidationFailed { .. }
+        );
     }
 
     #[test]
@@ -995,7 +1081,10 @@ mod tests {
 
         let result = validator.verify_signature("header.payload.signature", "HS256", &dummy_key);
         assert!(result.is_err());
-        matches!(result.unwrap_err(), JwtValidationError::UnsupportedAlgorithm(_));
+        matches!(
+            result.unwrap_err(),
+            JwtValidationError::UnsupportedAlgorithm(_)
+        );
     }
 
     #[test]
@@ -1015,7 +1104,10 @@ mod tests {
 
         let result = JwtValidator::validate_expiration_claims(&expired_claims, now, clock_skew);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), JwtValidationError::TokenExpired));
+        assert!(matches!(
+            result.unwrap_err(),
+            JwtValidationError::TokenExpired
+        ));
 
         // Test not yet valid token
         let future_claims = JwtClaims {
@@ -1029,7 +1121,10 @@ mod tests {
 
         let result = JwtValidator::validate_expiration_claims(&future_claims, now, clock_skew);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), JwtValidationError::TokenNotYetValid));
+        assert!(matches!(
+            result.unwrap_err(),
+            JwtValidationError::TokenNotYetValid
+        ));
 
         // Test valid token
         let valid_claims = JwtClaims {
@@ -1091,7 +1186,8 @@ mod tests {
             sub: None,
         };
 
-        let result = JwtValidator::validate_issuer_claim(&valid_claims, &config, Some(&discovery_doc));
+        let result =
+            JwtValidator::validate_issuer_claim(&valid_claims, &config, Some(&discovery_doc));
         assert!(result.is_ok());
 
         // Test invalid issuer
@@ -1104,9 +1200,13 @@ mod tests {
             sub: None,
         };
 
-        let result = JwtValidator::validate_issuer_claim(&invalid_claims, &config, Some(&discovery_doc));
+        let result =
+            JwtValidator::validate_issuer_claim(&invalid_claims, &config, Some(&discovery_doc));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), JwtValidationError::ClaimValidationFailed { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            JwtValidationError::ClaimValidationFailed { .. }
+        ));
 
         // Test no discovery document (should pass)
         let result = JwtValidator::validate_issuer_claim(&valid_claims, &config, None);
@@ -1122,7 +1222,8 @@ mod tests {
             sub: None,
         };
 
-        let result = JwtValidator::validate_issuer_claim(&no_issuer_claims, &config, Some(&discovery_doc));
+        let result =
+            JwtValidator::validate_issuer_claim(&no_issuer_claims, &config, Some(&discovery_doc));
         assert!(result.is_ok());
     }
 
@@ -1180,7 +1281,10 @@ mod tests {
 
         let result = JwtValidator::validate_audience_claim(&no_match_claims, &config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), JwtValidationError::ClaimValidationFailed { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            JwtValidationError::ClaimValidationFailed { .. }
+        ));
 
         // Test no expected audience configured (should pass)
         let config_no_aud = JwtValidationConfig {
