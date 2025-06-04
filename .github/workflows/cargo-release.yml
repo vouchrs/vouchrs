@@ -280,10 +280,6 @@ jobs:
             **Supported Platforms:** linux/amd64, linux/arm64
 
             **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
-
-            **Supported Platforms:** linux/amd64, linux/arm64
-
-            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
             `;
 
                 await github.rest.repos.updateRelease({
