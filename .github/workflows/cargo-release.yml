@@ -45,6 +45,28 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v2
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v2
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Cargo tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+          key: ${{ runner.os }}-cargo-tools-${{ hashFiles('.github/workflows/cargo-release.yml') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-cargo-tools-
+
       - name: Install cargo-release
         uses: taiki-e/install-action@v2
         with:
