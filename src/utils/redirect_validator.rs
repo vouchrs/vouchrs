@@ -100,9 +100,10 @@ fn contains_bytes_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
     }
 
     haystack.windows(needle.len()).any(|window| {
-        window.iter().zip(needle.iter()).all(|(&a, &b)| {
-            a.eq_ignore_ascii_case(&b)
-        })
+        window
+            .iter()
+            .zip(needle.iter())
+            .all(|(&a, &b)| a.eq_ignore_ascii_case(&b))
     })
 }
 
@@ -345,9 +346,10 @@ fn contains_redirect_in_query(url: &str) -> bool {
             let param_bytes = param.as_bytes();
 
             // Check for parameter=value pattern without allocation
-            if check_query_param_pattern(query_bytes, param_bytes, b'=') ||
-               check_query_param_pattern(query_bytes, param_bytes, b'&') ||
-               check_encoded_query_param_pattern(query_bytes, param_bytes) {
+            if check_query_param_pattern(query_bytes, param_bytes, b'=')
+                || check_query_param_pattern(query_bytes, param_bytes, b'&')
+                || check_encoded_query_param_pattern(query_bytes, param_bytes)
+            {
                 return true;
             }
         }

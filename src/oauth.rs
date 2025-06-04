@@ -399,15 +399,16 @@ impl OAuthConfig {
             + encoded_scopes.len();
 
         // Add capacity for extra parameters
-        let extra_params_capacity = runtime_provider
-            .settings
-            .extra_auth_params
-            .as_ref()
-            .map_or(0, |params| {
-                params.iter().fold(0, |acc, (k, v)| {
-                    acc + "&".len() + k.len() + "=".len() + urlencoding::encode(v).len()
-                })
-            });
+        let extra_params_capacity =
+            runtime_provider
+                .settings
+                .extra_auth_params
+                .as_ref()
+                .map_or(0, |params| {
+                    params.iter().fold(0, |acc, (k, v)| {
+                        acc + "&".len() + k.len() + "=".len() + urlencoding::encode(v).len()
+                    })
+                });
 
         // Pre-allocate with the calculated capacity to avoid reallocations
         let mut url = String::with_capacity(base_capacity + extra_params_capacity);
