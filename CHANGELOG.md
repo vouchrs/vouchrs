@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2025-06-04
+
+### 📚 Documentation
+
+- Update changelog for v0.3.0
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix action script
+- Revert filter
+
 ## [0.3.0] - 2025-06-04
 
 ### 🚀 Features
