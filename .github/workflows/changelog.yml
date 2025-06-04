@@ -42,36 +42,8 @@ jobs:
             git cliff --config ./cliff.toml --unreleased --tag unreleased --output CHANGELOG.md
           fi
 
-      - name: Check for changes
-        id: verify-changed-files
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit changelog
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            git commit -m "docs: update changelog for ${{ github.event.release.tag_name }}"
-          else
-            git commit -m "docs: update changelog"
-          fi
-
-      - name: Push changes
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
-
       - name: Update release notes
-        if: github.event_name == 'release' && steps.verify-changed-files.outputs.changed == 'true'
+        if: github.event_name == 'release'
         uses: actions/github-script@v7
         with:
           script: |
