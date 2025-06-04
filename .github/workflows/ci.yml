@@ -101,6 +101,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -117,7 +119,7 @@ jobs:
       with:
         context: .
         file: ./docker/Dockerfile
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         push: true
         tags: |
           ghcr.io/${{ github.repository }}:dev
@@ -135,9 +137,11 @@ jobs:
           type=gha,scope=vouchrs-docker
           type=gha,scope=vouchrs-docker-dev
           type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
+          type=registry,ref=ghcr.io/${{ github.repository }}:dev
         cache-to: |
           type=gha,mode=max,scope=vouchrs-docker-dev
           type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev,mode=max
+          type=inline
 
   docker-build-test:
     name: Docker Build Test
@@ -164,4 +168,7 @@ jobs:
           type=gha,scope=vouchrs-docker-release
           type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
           type=registry,ref=ghcr.io/${{ github.repository }}:cache-release
-        cache-to: type=gha,mode=max,scope=vouchrs-docker
+          type=registry,ref=ghcr.io/${{ github.repository }}:dev
+        cache-to: |
+          type=gha,mode=max,scope=vouchrs-docker
+          type=inline
