@@ -108,7 +108,8 @@ jobs:
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
           # Update changelog using git-cliff with proper configuration
-          git cliff --tag "v$VERSION" --output CHANGELOG.md
+          # Use --filter-unconventional flag to ensure we only include conventional commits
+          git cliff --tag "v$VERSION" --output CHANGELOG.md --filter-unconventional
           echo "✅ Generated changelog for v$VERSION"
 
           # Extract release notes for the GitHub release
@@ -236,12 +237,18 @@ jobs:
             **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
             `;
 
-              await github.rest.repos.updateRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.id,
-                body: release.body + dockerInfo
-              });
+                await github.rest.repos.updateRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.id,
+                  body: release.body + dockerInfo
+                });
 
-              console.log("✅ Updated release with Docker information");
+                console.log("✅ Updated release with Docker information");
+              } else {
+                console.log("❌ Release not found for version: v" + version);
+              }
+            } catch (error) {
+              console.error("❌ Error updating release:", error);
+              core.setFailed(`Failed to update release: ${error.message}`);
             }
