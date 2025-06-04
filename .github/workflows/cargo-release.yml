@@ -107,9 +107,9 @@ jobs:
           # Get the new version from Cargo.toml
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
-          # Update changelog using git-cliff with proper configuration
+          # Update changelog using git-cliff with explicit configuration
           # Filtering is handled by cliff.toml configuration (filter_unconventional = true)
-          git cliff --tag "v$VERSION" --output CHANGELOG.md
+          git cliff --config ./cliff.toml --tag "v$VERSION" --output CHANGELOG.md
           echo "✅ Generated changelog for v$VERSION"
 
           # Extract release notes for the GitHub release

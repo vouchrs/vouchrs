@@ -33,13 +33,13 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
             # Generate changelog for the new release
-            git cliff --tag ${{ github.event.release.tag_name }} --output CHANGELOG.md
+            git cliff --config ./cliff.toml --tag ${{ github.event.release.tag_name }} --output CHANGELOG.md
           elif [[ -n "${{ github.event.inputs.tag }}" ]]; then
             # Generate changelog for specific tag
-            git cliff --tag ${{ github.event.inputs.tag }} --output CHANGELOG.md
+            git cliff --config ./cliff.toml --tag ${{ github.event.inputs.tag }} --output CHANGELOG.md
           else
             # Generate changelog for unreleased changes
-            git cliff --unreleased --tag unreleased --output CHANGELOG.md
+            git cliff --config ./cliff.toml --unreleased --tag unreleased --output CHANGELOG.md
           fi
 
       - name: Check for changes
