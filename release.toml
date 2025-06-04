@@ -1,0 +1,31 @@
+# cargo-release configuration
+
+# Don't publish to crates.io
+publish = false
+
+# Use conventional commit messages for changelog
+pre-release-commit-message = "chore(release): {{version}}"
+tag-message = "release: {{version}}"
+
+# Use git-cliff to generate changelog
+pre-release-hook = [
+    "git",
+    "cliff",
+    "--tag",
+    "{{version}}",
+    "--output",
+    "CHANGELOG.md",
+]
+
+# Don't push changes immediately (we'll do it in the GitHub Action)
+push = false
+
+# Don't sign commits or tags
+sign-commit = false
+sign-tag = false
+
+# Allow any branch to run release
+allow-branch = ["*"]
+
+# Use Git cliff config for changelog generation
+tag = true
