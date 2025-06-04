@@ -392,7 +392,8 @@ impl OAuthConfig {
 
         // Calculate total capacity needed to avoid reallocations
         let base_capacity = runtime_provider.auth_url.len()
-            + first_separator.len() + "client_id=".len()
+            + first_separator.len()
+            + "client_id=".len()
             + encoded_client_id.len()
             + "&response_type=code".len()
             + "&redirect_uri=".len()
