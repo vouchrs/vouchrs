@@ -1,0 +1,167 @@
+name: Release with release-plz
+
+permissions:
+  pull-requests: write
+  contents: write
+  packages: write
+  id-token: write
+
+on:
+  # Trigger on direct pushes to main branch
+  push:
+    branches:
+      - main
+  # Trigger on PR merges to main
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+jobs:
+  release-plz:
+    name: Release-plz
+    # Only run if this is a direct push to main OR if the PR was merged (not just closed)
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    outputs:
+      releases-created: ${{ steps.release.outputs.releases_created }}
+      releases: ${{ steps.release.outputs.releases }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        id: release
+        uses: MarcoIeni/release-plz-action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    name: Build and Push Docker Images
+    needs: release-plz
+    if: needs.release-plz.outputs.releases-created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from releases
+        id: version_parts
+        run: |
+          # Parse the releases JSON to get version info
+          RELEASES='${{ needs.release-plz.outputs.releases }}'
+          echo "Releases JSON: $RELEASES"
+
+          if [ "$RELEASES" = "[]" ] || [ -z "$RELEASES" ]; then
+            echo "No releases found in output"
+            exit 1
+          fi
+
+          VERSION=$(echo "$RELEASES" | jq -r '.[0].version' | sed 's/^v//')
+          TAG=$(echo "$RELEASES" | jq -r '.[0].tag')
+
+          echo "Extracted version: $VERSION"
+          echo "Extracted tag: $TAG"
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+            ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.title=Vouchrs
+            org.opencontainers.image.description=A lightweight, high-performance OIDC reverse proxy built in Rust
+            org.opencontainers.image.url=https://github.com/vouchrs/vouchrs
+            org.opencontainers.image.source=https://github.com/vouchrs/vouchrs
+            org.opencontainers.image.version=${{ steps.version_parts.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.pushed_at }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Update release with Docker info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get the release we just created
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const release = releases.data.find(r => r.tag_name === '${{ steps.version_parts.outputs.tag }}');
+
+            if (release) {
+              const dockerInfo = `
+
+            ## 🐳 Docker Images
+
+            This release is available as a Docker image:
+
+            \`\`\`bash
+            # Pull the latest release
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+
+            # Or use semantic versioning tags
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+
+            # Or use latest
+            docker pull ghcr.io/${{ github.repository }}:latest
+            \`\`\`
+
+            **Supported Platforms:** linux/amd64, linux/arm64
+
+            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
+            `;
+
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                body: release.body + dockerInfo
+              });
+
+              console.log("✅ Updated release with Docker information");
+            }
+
+      - name: Notify successful release
+        run: |
+          echo "🎉 Successfully released ${{ steps.version_parts.outputs.tag }}"
+          echo "📦 Docker images available at: ghcr.io/${{ github.repository }}"
+          echo "🔗 Release page: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version_parts.outputs.tag }}"

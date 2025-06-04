@@ -56,8 +56,8 @@ jobs:
             exit 0
           fi
 
-          # Get the last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # Get the last tag (check all branches, not just current branch)
+          LAST_TAG=$(git tag --sort=-version:refname | head -n1 || echo "")
           echo "Last tag: ${LAST_TAG:-none}"
 
           # Check for commits since last tag or all commits if no tags exist
@@ -65,8 +65,10 @@ jobs:
             echo "No tags found, using all commits"
             COMMITS=$(git log --pretty=format:"%s" --no-merges)
           else
-            # Check for conventional commits since last tag
+            # Check for conventional commits since last tag (including commits from merged branches)
             COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+            echo "Checking commits since ${LAST_TAG}:"
+            git log ${LAST_TAG}..HEAD --oneline --no-merges | head -10
           fi
 
           if [ -z "$COMMITS" ]; then
