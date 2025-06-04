@@ -29,9 +29,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  packages: write
-  id-token: write
-  attestations: write
 
 jobs:
   release:
@@ -41,18 +38,11 @@ jobs:
       major: ${{ steps.get-version.outputs.major }}
       minor: ${{ steps.get-version.outputs.minor }}
     steps:
-      - name: get GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-           app-id: ${{ vars.RELEASE_BOT_ID }}
-           private-key: ${{ secrets.RELEASE_BOT_KEY }}
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -65,7 +55,7 @@ jobs:
       - name: Install git-cliff
         uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff@2.9.1
+          tool: git-cliff
 
       - name: Configure Git
         run: |
@@ -107,24 +97,8 @@ jobs:
           # Get the new version from Cargo.toml
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
-          # Update changelog using git-cliff with explicit configuration
-          # Filtering is handled by cliff.toml configuration (filter_unconventional = true)
-          git cliff --config ./cliff.toml --tag "v$VERSION" --output CHANGELOG.md
-          echo "✅ Generated changelog for v$VERSION"
-
-          # Extract release notes for the GitHub release
-          awk -v version="$VERSION" '
-            /^## \[/ {
-              if (found) exit
-              if ($0 ~ "\\[" version "\\]") {
-                found=1
-                print
-                next
-              }
-            }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md > release_notes.txt
+          # Update changelog
+          git cliff --tag "v$VERSION" --output CHANGELOG.md
 
           # Commit changelog changes
           git add CHANGELOG.md
@@ -150,30 +124,19 @@ jobs:
             IS_PRERELEASE="true"
           fi
 
-          # Use the extracted release notes from git-cliff
-          RELEASE_NOTES=""
-          if [ -s release_notes.txt ]; then
-            RELEASE_NOTES=$(cat release_notes.txt)
-          else
-            # Fallback if release_notes.txt is empty or doesn't exist
-            RELEASE_NOTES=$(awk -v version="## [v$VERSION]" 'BEGIN {p=0} $0 ~ version {p=1} p==1 && /^## \[v[0-9]/ && $0 !~ version {p=0} p' CHANGELOG.md)
-          fi
+          # Extract changelog for this version
+          CHANGELOG_SECTION=$(awk -v version="## [v$VERSION]" 'BEGIN {p=0} $0 ~ version {p=1} p==1 && /^## \[v[0-9]/ && $0 !~ version {p=0} p' CHANGELOG.md)
 
           # Create GitHub release
           gh release create "v$VERSION" \
             --title "Release v$VERSION" \
-            --notes "$RELEASE_NOTES" \
+            --notes "$CHANGELOG_SECTION" \
             --prerelease=$IS_PRERELEASE \
             --target main
 
   build-docker:
     needs: release
     if: github.event.inputs.dry_run == 'false'
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
     uses: ./.github/workflows/docker-build.yml
     with:
       version: ${{ needs.release.outputs.version }}
@@ -210,7 +173,7 @@ jobs:
 
               if (release) {
                 // Create the Docker info without indentation issues
-                const dockerInfo = `
+                              const dockerInfo = `
 
             ## 🐳 Docker Images
 
@@ -218,37 +181,27 @@ jobs:
 
             \`\`\`bash
             # Pull the latest release
-            docker pull ghcr.io/${repo}:${version}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
 
             # Or use semantic versioning tags
-            docker pull ghcr.io/${repo}:${major}
-            docker pull ghcr.io/${repo}:${minor}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
 
             # Or use latest
-            docker pull ghcr.io/${repo}:latest
+            docker pull ghcr.io/${{ github.repository }}:latest
             \`\`\`
-
-            **Supported Platforms:** linux/amd64, linux/arm64
-
-            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
 
             **Supported Platforms:** linux/amd64, linux/arm64
 
             **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
             `;
 
-                await github.rest.repos.updateRelease({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id,
-                  body: release.body + dockerInfo
-                });
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                body: release.body + dockerInfo
+              });
 
-                console.log("✅ Updated release with Docker information");
-              } else {
-                console.log("❌ Release not found for version: v" + version);
-              }
-            } catch (error) {
-              console.error("❌ Error updating release:", error);
-              core.setFailed(`Failed to update release: ${error.message}`);
+              console.log("✅ Updated release with Docker information");
             }

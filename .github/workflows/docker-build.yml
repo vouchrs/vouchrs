@@ -33,8 +33,6 @@ permissions:
 jobs:
   build-docker:
     runs-on: ubuntu-latest
-    # Use higher-spec runner for faster builds if available
-    # runs-on: ubuntu-latest-4-cores  # Uncomment if using GitHub Teams/Enterprise
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,11 +41,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          # Use docker-container driver for better caching and multiplatform support
-          driver: docker-container
-          # Enable experimental features like cache mounts
-          buildkitd-flags: --allow-insecure-entitlement network.host --allow-insecure-entitlement security.insecure
 
       - name: Login to GitHub Container Registry
         if: inputs.dry_run == false
@@ -64,8 +57,6 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
           echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
-
-
 
       - name: Build and Push Docker Image
         id: build
@@ -89,12 +80,8 @@ jobs:
             org.opencontainers.image.created=${{ github.event.repository.pushed_at || github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
-          # Use GitHub Actions cache for efficiency and sharing with CI workflow
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Enable build-time variables for optimization
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
 
       - name: Generate artifact attestation
         if: inputs.dry_run == false
@@ -104,24 +91,9 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
-      - name: Display build information
-        run: |
-          echo "🏗️ Build Summary:"
-          echo "📦 Version: ${{ steps.version_parts.outputs.version }}"
-          echo "🏷️ Tags: ${{ steps.version_parts.outputs.major }}, ${{ steps.version_parts.outputs.minor }}, latest"
-          echo "🏛️ Platforms: linux/amd64, linux/arm64"
-          echo "⚡ Cache: GitHub Actions cache (shared with CI)"
-          echo "📝 Digest: ${{ steps.build.outputs.digest }}"
-          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
-            echo "🔍 Mode: Dry run (not pushed to registry)"
-          else
-            echo "✅ Mode: Built and pushed to registry"
-          fi
-
       - name: Notify successful build
         if: inputs.dry_run == false
         run: |
           echo "🎉 Successfully built and pushed Docker images for v${{ steps.version_parts.outputs.version }}"
           echo "📦 Docker images available at: ghcr.io/${{ github.repository }}"
           echo "🔒 Built with artifact attestation for supply chain security"
-          echo "⚡ Using shared GitHub Actions cache for faster builds"
