@@ -1,0 +1,207 @@
+name: Cargo Release
+
+on:
+  # Only trigger on PR merges to main, not direct pushes
+  pull_request:
+    branches: [main]
+    types: [closed]
+  # Manual trigger for testing or fixing issues
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Release level'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - alpha
+          - beta
+          - rc
+        default: 'patch'
+      dry_run:
+        description: 'Dry run (no changes will be made)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      major: ${{ steps.get-version.outputs.major }}
+      minor: ${{ steps.get-version.outputs.minor }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-release
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-release
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Execute Release Process
+        run: |
+          RELEASE_ARGS=""
+
+          # Add appropriate flags based on inputs
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            RELEASE_ARGS="--dry-run"
+            echo "🔍 Running in dry-run mode, no changes will be made"
+          fi
+
+          # Handle pre-release versions
+          if [[ "${{ github.event.inputs.level }}" == "alpha" ]]; then
+            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm alpha
+          elif [[ "${{ github.event.inputs.level }}" == "beta" ]]; then
+            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm beta
+          elif [[ "${{ github.event.inputs.level }}" == "rc" ]]; then
+            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm rc
+          else
+            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm ${{ github.event.inputs.level }}
+          fi
+
+      - name: Get Version
+        id: get-version
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+
+      - name: Update Changelog
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          # Get the new version from Cargo.toml
+          VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+
+          # Update changelog
+          git cliff --tag "v$VERSION" --output CHANGELOG.md
+
+          # Commit changelog changes
+          git add CHANGELOG.md
+          git commit -m "docs: update changelog for v$VERSION"
+
+      - name: Push Changes
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          git push origin main
+          git push origin v$VERSION
+
+      - name: Create GitHub Release
+        if: github.event.inputs.dry_run == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+
+          # Determine if this is a prerelease
+          IS_PRERELEASE="false"
+          if [[ "$VERSION" == *"-alpha"* || "$VERSION" == *"-beta"* || "$VERSION" == *"-rc"* ]]; then
+            IS_PRERELEASE="true"
+          fi
+
+          # Extract changelog for this version
+          CHANGELOG_SECTION=$(awk -v version="## [v$VERSION]" 'BEGIN {p=0} $0 ~ version {p=1} p==1 && /^## \[v[0-9]/ && $0 !~ version {p=0} p' CHANGELOG.md)
+
+          # Create GitHub release
+          gh release create "v$VERSION" \
+            --title "Release v$VERSION" \
+            --notes "$CHANGELOG_SECTION" \
+            --prerelease=$IS_PRERELEASE \
+            --target main
+
+  build-docker:
+    needs: release
+    if: github.event.inputs.dry_run == 'false'
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+      dry_run: false
+    secrets: inherit
+
+  update-release:
+    needs: [release, build-docker]
+    if: github.event.inputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update GitHub Release with Docker info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ needs.release.outputs.version }}";
+            const major = "${{ needs.release.outputs.major }}";
+            const minor = "${{ needs.release.outputs.minor }}";
+            const repo = "${{ github.repository }}";
+
+            try {
+              // Get the release we created earlier
+              const releases = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+
+              const release = releases.data.find(r => r.tag_name === `v${version}`);
+
+              if (release) {
+                // Create the Docker info without indentation issues
+                              const dockerInfo = `
+
+            ## 🐳 Docker Images
+
+            This release is available as a Docker image:
+
+            \`\`\`bash
+            # Pull the latest release
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+
+            # Or use semantic versioning tags
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+
+            # Or use latest
+            docker pull ghcr.io/${{ github.repository }}:latest
+            \`\`\`
+
+            **Supported Platforms:** linux/amd64, linux/arm64
+
+            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
+            `;
+
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                body: release.body + dockerInfo
+              });
+
+              console.log("✅ Updated release with Docker information");
+            }

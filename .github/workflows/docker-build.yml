@@ -1,0 +1,99 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to tag the Docker image with'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run mode (build but do not push)'
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag the Docker image with (e.g., 1.0.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run mode (build but do not push)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: inputs.dry_run == false
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version parts
+        id: version_parts
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.dry_run == false }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
+            ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+            ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.title=Vouchrs
+            org.opencontainers.image.description=A lightweight, high-performance OIDC reverse proxy built in Rust
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version_parts.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.pushed_at || github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        if: inputs.dry_run == false
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Notify successful build
+        if: inputs.dry_run == false
+        run: |
+          echo "🎉 Successfully built and pushed Docker images for v${{ steps.version_parts.outputs.version }}"
+          echo "📦 Docker images available at: ghcr.io/${{ github.repository }}"
+          echo "🔒 Built with artifact attestation for supply chain security"
