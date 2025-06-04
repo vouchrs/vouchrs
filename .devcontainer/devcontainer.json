@@ -20,7 +20,7 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "bash -c 'curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.6.23/scripts/download-actionlint.bash | bash && sudo mv actionlint /usr/local/bin/ && rustc --version'",
+	"postCreateCommand": "bash -c 'curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.6.23/scripts/download-actionlint.bash | bash && sudo mv actionlint /usr/local/bin/ && cargo install cargo-audit && rustc --version'",
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
