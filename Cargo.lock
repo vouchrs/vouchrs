@@ -2400,11 +2400,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vouchrs"
-<<<<<<< HEAD
 version = "0.2.0"
-=======
-version = "0.1.1"
->>>>>>> 3a66602 (chore(release): prepare for v0.1.1)
 dependencies = [
  "actix-cors",
  "actix-web",
