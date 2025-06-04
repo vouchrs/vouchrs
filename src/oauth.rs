@@ -471,19 +471,18 @@ impl OAuthConfig {
         let runtime_provider = self
             .providers
             .get(provider)
-            .ok_or("Provider not configured")?
-            .clone(); // Clone to avoid borrowing issues
+            .ok_or("Provider not configured")?;
 
         // Prepare token exchange parameters
-        let params = self.prepare_token_exchange_params(provider, code, &runtime_provider)?;
+        let params = self.prepare_token_exchange_params(provider, code, runtime_provider)?;
 
         // Execute token exchange request
         let response_text = self
-            .execute_token_exchange(provider, &runtime_provider, &params)
+            .execute_token_exchange(provider, runtime_provider, &params)
             .await?;
 
         // Parse and process the token response, including JWT validation
-        self.process_token_response(provider, &response_text, &runtime_provider)
+        self.process_token_response(provider, &response_text, runtime_provider)
             .await
     }
 
