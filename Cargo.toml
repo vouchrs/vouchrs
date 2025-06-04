@@ -84,6 +84,16 @@ p256 = { version = "0.14.0-pre.4", default-features = false, features = [
     "pem",
     "pkcs8",
 ] }
+# SECURITY NOTE: RSA 0.9.8 has RUSTSEC-2023-0071 (Marvin Attack timing sidechannel vulnerability)
+# Risk Assessment: Medium (CVSS 5.9) - affects RSA signature verification operations
+# Mitigation Status:
+# - Version 0.10.0-rc.0 has breaking API changes requiring significant refactoring
+# - Vulnerability requires network-level timing attack access to JWT verification endpoint
+# - Application uses RSA only for OIDC JWT signature verification (read-only operations)
+# - No RSA private key operations exposed that could leak key material
+# Decision: Accept risk until stable patched version (0.10.0+) is available
+# Tracked in: https://github.com/RustCrypto/RSA/issues/390
+rsa = { version = "0.9", default-features = false, features = ["sha2", "pem"] }
 hmac = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 rand = { version = "0.9", default-features = false, features = [

@@ -1,0 +1,9 @@
+# Cargo Audit Configuration
+# This file allows acknowledging known vulnerabilities that have been risk-assessed
+
+[advisories]
+# RUSTSEC-2023-0071: Marvin Attack in RSA crate
+# Acknowledged as acceptable risk until stable patched version available
+ignore = [
+    "RUSTSEC-2023-0071", # RSA Marvin Attack - timing sidechannel vulnerability
+]

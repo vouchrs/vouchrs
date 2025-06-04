@@ -4,14 +4,16 @@
 // Standard library imports
 use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 
 // Third-party imports
 use actix_web::HttpResponse;
 use chrono::Utc;
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 
 // Local imports
 use crate::models::VouchrsSession;
@@ -20,6 +22,18 @@ use crate::utils::apple;
 use crate::utils::crypto::decrypt_data;
 #[cfg(test)]
 use crate::utils::crypto::encrypt_data;
+
+// Static HTTP client for making OAuth and JWT validation requests
+// Optimized with connection pooling for better performance
+static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
+        .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
+        .timeout(Duration::from_secs(30)) // 30 second request timeout
+        .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
+        .build()
+        .expect("Failed to create HTTP client")
+});
 
 // ============================================================================
 // Error Types
@@ -101,7 +115,7 @@ struct TokenResponse {
 // Provider Configuration
 // ============================================================================
 
-/// Runtime provider configuration with resolved endpoints
+/// Runtime provider configuration with resolved endpoints and cached encoded values
 #[derive(Debug, Clone)]
 pub struct RuntimeProvider {
     pub settings: ProviderSettings,
@@ -109,6 +123,9 @@ pub struct RuntimeProvider {
     pub token_url: String,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+    // Cached encoded values for performance optimization
+    pub encoded_client_id: Option<String>,
+    pub encoded_scopes: String,
 }
 
 impl RuntimeProvider {
@@ -140,11 +157,25 @@ impl RuntimeProvider {
         };
 
         Ok(Self {
-            settings,
+            settings: settings.clone(),
             auth_url,
             token_url,
-            client_id,
+            client_id: client_id.clone(),
             client_secret,
+            // Pre-compute encoded values for performance optimization
+            encoded_client_id: client_id.map(|id| urlencoding::encode(&id).into_owned()),
+            encoded_scopes: {
+                let total_scope_len: usize = settings.scopes.iter().map(String::len).sum();
+                let scope_separators = settings.scopes.len().saturating_sub(1);
+                let mut scopes = String::with_capacity(total_scope_len + scope_separators);
+                for (i, scope) in settings.scopes.iter().enumerate() {
+                    if i > 0 {
+                        scopes.push(' ');
+                    }
+                    scopes.push_str(scope);
+                }
+                urlencoding::encode(&scopes).into_owned()
+            },
         })
     }
 
@@ -205,7 +236,9 @@ type TokenExchangeResult = Result<
 pub struct OAuthConfig {
     pub providers: HashMap<String, RuntimeProvider>,
     pub redirect_base_url: String,
-    http_client: reqwest::Client,
+    // Cached encoded redirect URI for performance optimization
+    pub encoded_redirect_uri: String,
+    jwt_validator: Arc<RwLock<Option<crate::jwt_validation::JwtValidator>>>,
 }
 
 impl Default for OAuthConfig {
@@ -225,19 +258,15 @@ impl OAuthConfig {
         let redirect_base_url =
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
-        // Create an optimized HTTP client with connection pooling
-        let http_client = reqwest::Client::builder()
-            .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
-            .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
-            .timeout(Duration::from_secs(30)) // 30 second request timeout
-            .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
-            .build()
-            .expect("Failed to create HTTP client");
+        // Pre-compute encoded redirect URI with callback path for performance optimization
+        let redirect_uri_with_callback = format!("{redirect_base_url}/oauth2/callback");
+        let encoded_redirect_uri = urlencoding::encode(&redirect_uri_with_callback).to_string();
 
         Self {
             providers: HashMap::new(),
             redirect_base_url,
-            http_client,
+            encoded_redirect_uri,
+            jwt_validator: Arc::new(RwLock::new(None)), // Will be initialized when needed
         }
     }
 
@@ -305,6 +334,24 @@ impl OAuthConfig {
         Ok(())
     }
 
+    /// Get or initialize JWT validator
+    async fn get_jwt_validator(&self) -> crate::jwt_validation::JwtValidator {
+        let mut jwt_validator_guard = self.jwt_validator.write().await;
+        if jwt_validator_guard.is_none() {
+            *jwt_validator_guard = Some(crate::jwt_validation::JwtValidator::new());
+            info!("🔐 Initialized JWT validator for ID token validation");
+        }
+        jwt_validator_guard.as_ref().unwrap().clone()
+    }
+
+    /// Check if any provider has JWT validation enabled
+    #[must_use]
+    pub fn has_jwt_validation_enabled(&self) -> bool {
+        self.providers
+            .iter()
+            .any(|(_, provider)| provider.settings.should_enable_jwt_validation())
+    }
+
     /// Check if a provider's client is configured
     #[must_use]
     pub fn get_client_configured(&self, provider: &str) -> bool {
@@ -313,7 +360,7 @@ impl OAuthConfig {
             .is_some_and(RuntimeProvider::is_configured)
     }
 
-    /// Get the authorization URL for a provider
+    /// Get the authorization URL for a provider (optimized for performance)
     ///
     /// # Errors
     ///
@@ -327,53 +374,82 @@ impl OAuthConfig {
             .get(provider)
             .ok_or("Provider not configured")?;
 
-        // Get client ID using the new getter method
-        let client_id = runtime_provider
-            .settings
-            .get_client_id()
+        // Use pre-encoded client ID to avoid re-encoding on every request
+        let encoded_client_id = runtime_provider
+            .encoded_client_id
+            .as_ref()
             .ok_or("Client ID not configured for provider")?;
 
-        // Pre-allocate redirect URI string with known capacity to avoid reallocation
-        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
-        redirect_uri.push_str(&self.redirect_base_url);
-        redirect_uri.push_str("/oauth2/callback");
+        // Use cached encoded redirect URI from config for better performance
+        let encoded_redirect_uri = &self.encoded_redirect_uri;
 
-        // Pre-allocate scopes string with estimated capacity
-        let total_scope_len: usize = runtime_provider
-            .settings
-            .scopes
-            .iter()
-            .map(std::string::String::len)
-            .sum();
-        let scope_separators = runtime_provider.settings.scopes.len().saturating_sub(1);
-        let mut scopes = String::with_capacity(total_scope_len + scope_separators);
-        for (i, scope) in runtime_provider.settings.scopes.iter().enumerate() {
-            if i > 0 {
-                scopes.push(' ');
+        // Use pre-encoded scopes from cached value
+        let encoded_scopes = &runtime_provider.encoded_scopes;
+
+        // Determine if auth URL already has query parameters
+        let has_query_params = runtime_provider.auth_url.contains('?');
+        let first_separator = if has_query_params { "&" } else { "?" };
+
+        // Calculate total capacity needed to avoid reallocations
+        let base_capacity = runtime_provider.auth_url.len()
+            + first_separator.len()
+            + "client_id=".len()
+            + encoded_client_id.len()
+            + "&response_type=code".len()
+            + "&redirect_uri=".len()
+            + encoded_redirect_uri.len()
+            + "&state=".len()
+            + state.len()
+            + "&scope=".len()
+            + encoded_scopes.len();
+
+        // Add capacity for extra parameters
+        let extra_params_capacity =
+            runtime_provider
+                .settings
+                .extra_auth_params
+                .as_ref()
+                .map_or(0, |params| {
+                    params.iter().fold(0, |acc, (k, v)| {
+                        acc + "&".len() + k.len() + "=".len() + urlencoding::encode(v).len()
+                    })
+                });
+
+        // Pre-allocate with the calculated capacity to avoid reallocations
+        let mut url = String::with_capacity(base_capacity + extra_params_capacity);
+
+        // Build URL efficiently with single pass - no intermediate allocations
+        url.push_str(&runtime_provider.auth_url);
+        url.push_str(first_separator);
+        url.push_str("client_id=");
+        url.push_str(encoded_client_id);
+        url.push_str("&response_type=code");
+        url.push_str("&redirect_uri=");
+        url.push_str(encoded_redirect_uri);
+        url.push_str("&state=");
+        url.push_str(state);
+        url.push_str("&scope=");
+        url.push_str(encoded_scopes);
+
+        // Add provider-specific extra parameters efficiently
+        if let Some(ref extra_params) = runtime_provider.settings.extra_auth_params {
+            for (key, value) in extra_params {
+                url.push('&');
+                url.push_str(key);
+                url.push('=');
+                url.push_str(&urlencoding::encode(value));
             }
-            scopes.push_str(scope);
-        }
-
-        // Start with base parameters
-        let mut url = url::Url::parse(&runtime_provider.auth_url).map_err(|e| e.to_string())?;
-        url.query_pairs_mut()
-            .append_pair("client_id", &client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("response_type", "code")
-            .append_pair("scope", &scopes)
-            .append_pair("state", state);
-
-        // Add provider-specific extra parameters
-        for (key, value) in &runtime_provider.settings.extra_auth_params {
-            url.query_pairs_mut().append_pair(key, value);
         }
 
         info!(
             "🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}",
-            provider, scopes, runtime_provider.settings.extra_auth_params
+            provider,
+            // Decode for logging purposes only
+            urlencoding::decode(encoded_scopes).unwrap_or_default(),
+            runtime_provider.settings.extra_auth_params
         );
 
-        Ok(url.to_string())
+        Ok(url)
     }
 
     /// Exchange OAuth authorization code for OAuth tokens
@@ -405,8 +481,9 @@ impl OAuthConfig {
             .execute_token_exchange(provider, runtime_provider, &params)
             .await?;
 
-        // Parse and process the token response
-        Self::process_token_response(provider, &response_text)
+        // Parse and process the token response, including JWT validation
+        self.process_token_response(provider, &response_text, runtime_provider)
+            .await
     }
 
     /// Prepare parameters for token exchange request
@@ -465,13 +542,12 @@ impl OAuthConfig {
     ) -> Result<String, String> {
         info!("🔄 Exchanging authorization code for tokens with {provider}");
 
-        let response = self
-            .http_client
+        let response = CLIENT
             .post(&runtime_provider.token_url)
             .form(params)
             .send()
             .await
-            .map_err(|e| format!("Failed to exchange code for token: {e}"))?;
+            .map_err(|e| format!("Failed to send token exchange request: {e}"))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -491,7 +567,12 @@ impl OAuthConfig {
     }
 
     /// Process the token response and extract relevant information
-    fn process_token_response(provider: &str, response_text: &str) -> TokenExchangeResult {
+    async fn process_token_response(
+        &self,
+        provider: &str,
+        response_text: &str,
+        runtime_provider: &RuntimeProvider,
+    ) -> TokenExchangeResult {
         // Log the raw token response for debugging
         if provider == "apple" {
             info!("=== Raw Apple Token Response ===");
@@ -515,6 +596,23 @@ impl OAuthConfig {
             },
         );
 
+        // Perform JWT validation if enabled and ID token is present
+        if let Some(ref id_token) = token_response.id_token {
+            if runtime_provider.settings.should_enable_jwt_validation() {
+                info!("🔐 Performing JWT validation for provider '{provider}'");
+                if let Err(e) = self
+                    .validate_jwt_token(provider, id_token, runtime_provider)
+                    .await
+                {
+                    warn!("❌ JWT validation failed for provider '{provider}': {e}");
+                    // Continue for now - in the future this could be configurable
+                    // return Err(format!("JWT validation failed: {}", e));
+                }
+            } else {
+                debug!("⏭️  JWT validation disabled for provider '{provider}'");
+            }
+        }
+
         // Log detailed information about what we extracted
         let refresh_status = token_response
             .refresh_token
@@ -525,7 +623,7 @@ impl OAuthConfig {
             .expires_in
             .map(|v| i64::try_from(v).unwrap_or(3600));
 
-        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}", 
+        info!("🔍 Token exchange summary for {}: refresh_token={}, id_token={}, token_type={}, expires_in={:?}",
             provider, refresh_status, id_status, token_response.token_type, expires_in);
 
         Ok((
@@ -560,15 +658,45 @@ impl OAuthConfig {
             .get(provider)
             .and_then(|p| p.settings.display_name.as_deref())
     }
+    /// Validate JWT ID token using JWKS discovery and cryptographic verification
+    async fn validate_jwt_token(
+        &self,
+        provider: &str,
+        id_token: &str,
+        runtime_provider: &RuntimeProvider,
+    ) -> Result<(), crate::jwt_validation::JwtValidationError> {
+        let jwt_config = runtime_provider.settings.get_jwt_validation_config();
+
+        // Get the JWT validator
+        let validator = self.get_jwt_validator().await;
+
+        // If discovery URL is available, fetch discovery document for issuer/jwks_uri
+        let discovery_doc = if let Some(ref discovery_url) = runtime_provider.settings.discovery_url
+        {
+            match validator.fetch_discovery_document(discovery_url).await {
+                Ok(doc) => {
+                    debug!("✅ Discovery document fetched for provider '{provider}'");
+                    Some(doc)
+                }
+                Err(e) => {
+                    warn!("⚠️  Failed to fetch discovery document for '{provider}': {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Perform JWT validation using the validator
+        validator
+            .validate_id_token(id_token, provider, &jwt_config, discovery_doc.as_ref())
+            .await
+    }
 }
 
 // ============================================================================
 // Token Management Functions
 // ============================================================================
-
-// Static HTTP client for making token refresh requests
-static CLIENT: std::sync::LazyLock<reqwest::Client> =
-    std::sync::LazyLock::new(reqwest::Client::new);
 
 /// Check if tokens need refresh and refresh them if necessary
 ///
@@ -791,6 +919,72 @@ pub fn get_state_from_callback(
             }
         }
     }
+}
+
+/// Fetch an OIDC discovery document from the given URL
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request fails
+/// - The response cannot be parsed as JSON
+/// - The discovery document is missing required fields
+pub async fn fetch_discovery_document(discovery_url: &str) -> Result<serde_json::Value, String> {
+    debug!("📄 Fetching OIDC discovery document from {discovery_url}");
+
+    let response = CLIENT
+        .get(discovery_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch discovery document: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Discovery document request failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let discovery_doc: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse discovery document: {e}"))?;
+
+    debug!("✅ Discovery document fetched successfully");
+    Ok(discovery_doc)
+}
+
+/// Fetch JWKS (JSON Web Key Set) from the given URI
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request fails
+/// - The response cannot be parsed as JSON
+/// - The JWKS document is malformed
+pub async fn fetch_jwks(jwks_uri: &str) -> Result<serde_json::Value, String> {
+    debug!("🔑 Fetching JWKS from {jwks_uri}");
+
+    let response = CLIENT
+        .get(jwks_uri)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch JWKS: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "JWKS request failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let jwks: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse JWKS: {e}"))?;
+
+    debug!("✅ JWKS fetched successfully");
+    Ok(jwks)
 }
 
 // ============================================================================

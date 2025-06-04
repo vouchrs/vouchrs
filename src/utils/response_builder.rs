@@ -1,4 +1,5 @@
 // HTTP response building utilities
+use crate::utils::cached_responses::RESPONSES;
 use actix_web::{cookie::Cookie, HttpResponse};
 use log::{debug, warn};
 use reqwest;
@@ -75,10 +76,7 @@ pub fn convert_http_method(
         "PATCH" => Ok(reqwest::Method::PATCH),
         "HEAD" => Ok(reqwest::Method::HEAD),
         "OPTIONS" => Ok(reqwest::Method::OPTIONS),
-        method_str => Err(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "bad_request",
-            "message": format!("HTTP method '{method_str}' is not supported")
-        }))),
+        _method_str => Err(RESPONSES.invalid_request()),
     }
 }
 
@@ -97,10 +95,7 @@ pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, 
     // Parse base URL
     let base = url::Url::parse(base_url).map_err(|e| {
         warn!("Failed to parse base URL '{base_url}': {e}");
-        HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "bad_request",
-            "message": "Invalid upstream URL configuration"
-        }))
+        RESPONSES.invalid_request()
     })?;
 
     // Normalize the request path by removing leading slashes
@@ -109,10 +104,7 @@ pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, 
     // Join the path with the base URL
     let final_url = base.join(clean_path).map_err(|e| {
         warn!("Failed to join URL '{base_url}' + '{clean_path}': {e}");
-        HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "bad_request",
-            "message": "Invalid request path"
-        }))
+        RESPONSES.invalid_request()
     })?;
 
     debug!("Successfully built upstream URL: {final_url}");

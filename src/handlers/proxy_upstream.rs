@@ -8,6 +8,7 @@ use crate::{
     oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
     settings::VouchrsSettings,
+    utils::cached_responses::RESPONSES,
     utils::cookie::filter_vouchrs_cookies,
     utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
     utils::user_agent::is_browser_request,
@@ -41,9 +42,13 @@ pub async fn proxy_upstream(
     };
 
     // Check and refresh tokens if necessary
-    let _tokens =
+    let (updated_session, tokens_were_refreshed) =
         match check_and_refresh_tokens(session.clone(), &oauth_config, &session.provider).await {
-            Ok(tokens) => tokens,
+            Ok(updated_session) => {
+                // Check if tokens were actually refreshed by comparing expires_at
+                let tokens_refreshed = updated_session.expires_at != session.expires_at;
+                (updated_session, tokens_refreshed)
+            }
             Err(response) => return Ok(response),
         };
 
@@ -65,7 +70,8 @@ pub async fn proxy_upstream(
         &req,
         &settings,
         &session_manager,
-        &session,
+        &updated_session,
+        tokens_were_refreshed,
     )
     .await
 }
@@ -81,6 +87,7 @@ async fn forward_upstream_response(
     settings: &VouchrsSettings,
     session_manager: &SessionManager,
     session: &VouchrsSession,
+    tokens_were_refreshed: bool,
 ) -> ActixResult<HttpResponse> {
     let status_code = upstream_response.status();
 
@@ -99,10 +106,7 @@ async fn forward_upstream_response(
                 })));
         }
         // For non-browser requests, return 401 with JSON error
-        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "unauthorized",
-            "message": "Authentication required. Please obtain a valid session cookie or bearer token."
-        })));
+        return Ok(RESPONSES.unauthorized());
     }
 
     // For all other status codes, forward the response as-is
@@ -121,19 +125,25 @@ async fn forward_upstream_response(
         }
     }
 
-    // Check if session cookie refresh is enabled and should be refreshed
-    if session_manager.is_cookie_refresh_enabled() {
-        log::debug!("Session refresh is enabled, checking if session should be refreshed");
-        match session_manager.create_refreshed_session_cookie(session) {
-            Ok(refreshed_cookie) => {
+    // Check if session cookie should be updated due to token refresh or regular refresh
+    if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
+        let reason = if tokens_were_refreshed {
+            "tokens were refreshed"
+        } else {
+            "regular session refresh is enabled"
+        };
+        log::debug!("Updating session cookie because {reason}");
+
+        match session_manager.create_session_cookie(session) {
+            Ok(updated_cookie) => {
                 log::info!(
-                    "Setting refreshed session cookie for active user on provider: {}",
+                    "Setting updated session cookie for user on provider: {} (reason: {reason})",
                     session.provider
                 );
-                response_builder.cookie(refreshed_cookie);
+                response_builder.cookie(updated_cookie);
             }
             Err(e) => {
-                log::warn!("Failed to create refreshed session cookie: {e}");
+                log::warn!("Failed to create updated session cookie: {e}");
                 // Continue without refresh rather than failing the request
             }
         }
@@ -182,12 +192,9 @@ async fn execute_upstream_request(
     }
 
     // Execute the request
-    request_builder.send().await.map_err(|err| {
-        // Return a simple error response
-        HttpResponse::BadGateway().json(serde_json::json!({
-            "error": "upstream_error",
-            "message": format!("Failed to reach upstream service: {err}")
-        }))
+    request_builder.send().await.map_err(|_err| {
+        // Return a bad gateway error response for upstream connection failures
+        RESPONSES.bad_gateway()
     })
 }
 
@@ -206,7 +213,7 @@ fn extract_session_from_request(
     session_manager: &SessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {
     // Helper function to handle authentication errors
-    let handle_auth_error = |message: &str| {
+    let handle_auth_error = |_message: &str| {
         if is_browser_request(req) {
             // For browser requests, redirect to sign-in page
             let sign_in_url = "/oauth2/sign_in";
@@ -215,10 +222,7 @@ fn extract_session_from_request(
                 .finish()
         } else {
             // For non-browser requests, return JSON error
-            HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "unauthorized",
-                "message": message
-            }))
+            RESPONSES.unauthorized()
         }
     };
 

@@ -7,6 +7,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod handlers;
+pub mod jwt_validation;
 pub mod models;
 pub mod oauth;
 pub mod session;

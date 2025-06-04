@@ -75,7 +75,7 @@ level = "info"
 # OAuth Provider Configuration
 # At least one provider must be configured for Vouchrs to start
 # Each provider can be customized with discovery URLs, custom endpoints, scopes, etc.
-# 
+#
 # Secret values can be set directly in this file OR via environment variables
 # Environment variables take precedence over direct values
 
@@ -93,6 +93,8 @@ client_id_env = "GOOGLE_CLIENT_ID"
 client_secret_env = "GOOGLE_CLIENT_SECRET"
 enabled = true
 extra_auth_params = { access_type = "offline", prompt = "consent" }
+# JWT validation is automatically enabled for providers with discovery_url
+# No configuration needed unless you want to override defaults
 
 [[providers]]
 name = "apple"
@@ -110,6 +112,9 @@ extra_auth_params = { response_mode = "form_post" }
 # team_id = "ABCD123456", key_id = "XYZ987654", private_key_path = "/path/to/apple-private-key.p8"
 # Environment variable overrides (recommended for production)
 jwt_signing = { team_id_env = "APPLE_TEAM_ID", key_id_env = "APPLE_KEY_ID", private_key_path_env = "APPLE_PRIVATE_KEY_PATH" }
+# JWT validation automatically enabled with discovery_url
+# Custom validation settings (optional)
+jwt_validation = { validate_audience = false, expected_issuer = "https://appleid.apple.com" }
 
 [[providers]]
 name = "microsoft"
@@ -122,5 +127,35 @@ client_secret = "dev-microsoft-client-secret"
 # Environment variable overrides (will take precedence if set)
 client_id_env = "MICROSOFT_CLIENT_ID"
 client_secret_env = "MICROSOFT_CLIENT_SECRET"
-enabled = false  # Set to true to enable
+enabled = false                                                         # Set to true to enable
 extra_auth_params = { response_type = "code", response_mode = "query" }
+# JWT validation automatically enabled with discovery_url
+# Override defaults if needed
+# jwt_validation = { expected_audience = "api://your-api-identifier", clock_skew_seconds = 600 }
+
+# Example: Legacy provider without discovery URL
+[[providers]]
+name = "legacy-provider"
+display_name = "Legacy OAuth Provider"
+authorization_endpoint = "https://legacy.example.com/oauth/authorize"
+token_endpoint = "https://legacy.example.com/oauth/token"
+userinfo_endpoint = "https://legacy.example.com/oauth/userinfo"
+scopes = ["openid", "email"]
+client_id_env = "LEGACY_CLIENT_ID"
+client_secret_env = "LEGACY_CLIENT_SECRET"
+enabled = false                                                       # Set to true to enable
+# JWT validation disabled by default (no discovery_url)
+# TODO: Manual JWKS configuration will be supported in future versions
+# jwt_validation = { enabled = false }
+
+# Example: Provider with JWT validation explicitly disabled
+[[providers]]
+name = "test-provider"
+display_name = "Test Provider (No JWT Validation)"
+discovery_url = "https://test.example.com/.well-known/openid-configuration"
+scopes = ["openid", "email"]
+client_id = "test-client-id"
+client_secret = "test-client-secret"
+enabled = false                                                             # Set to true to enable
+# Explicitly disable JWT validation even though discovery_url is present
+jwt_validation = { enabled = false }
