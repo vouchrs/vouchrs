@@ -29,6 +29,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
+  id-token: write
 
 jobs:
   release:
@@ -55,7 +57,7 @@ jobs:
       - name: Install git-cliff
         uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.9.1
 
       - name: Configure Git
         run: |
@@ -97,8 +99,23 @@ jobs:
           # Get the new version from Cargo.toml
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
-          # Update changelog
+          # Update changelog using git-cliff with proper configuration
           git cliff --tag "v$VERSION" --output CHANGELOG.md
+          echo "✅ Generated changelog for v$VERSION"
+
+          # Extract release notes for the GitHub release
+          awk -v version="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" version "\\]") {
+                found=1
+                print
+                next
+              }
+            }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.txt
 
           # Commit changelog changes
           git add CHANGELOG.md
@@ -124,19 +141,29 @@ jobs:
             IS_PRERELEASE="true"
           fi
 
-          # Extract changelog for this version
-          CHANGELOG_SECTION=$(awk -v version="## [v$VERSION]" 'BEGIN {p=0} $0 ~ version {p=1} p==1 && /^## \[v[0-9]/ && $0 !~ version {p=0} p' CHANGELOG.md)
+          # Use the extracted release notes from git-cliff
+          RELEASE_NOTES=""
+          if [ -s release_notes.txt ]; then
+            RELEASE_NOTES=$(cat release_notes.txt)
+          else
+            # Fallback if release_notes.txt is empty or doesn't exist
+            RELEASE_NOTES=$(awk -v version="## [v$VERSION]" 'BEGIN {p=0} $0 ~ version {p=1} p==1 && /^## \[v[0-9]/ && $0 !~ version {p=0} p' CHANGELOG.md)
+          fi
 
           # Create GitHub release
           gh release create "v$VERSION" \
             --title "Release v$VERSION" \
-            --notes "$CHANGELOG_SECTION" \
+            --notes "$RELEASE_NOTES" \
             --prerelease=$IS_PRERELEASE \
             --target main
 
   build-docker:
     needs: release
     if: github.event.inputs.dry_run == 'false'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/docker-build.yml
     with:
       version: ${{ needs.release.outputs.version }}
@@ -173,7 +200,7 @@ jobs:
 
               if (release) {
                 // Create the Docker info without indentation issues
-                              const dockerInfo = `
+                const dockerInfo = `
 
             ## 🐳 Docker Images
 
@@ -181,15 +208,19 @@ jobs:
 
             \`\`\`bash
             # Pull the latest release
-            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.version }}
+            docker pull ghcr.io/${repo}:${version}
 
             # Or use semantic versioning tags
-            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.major }}
-            docker pull ghcr.io/${{ github.repository }}:${{ steps.version_parts.outputs.minor }}
+            docker pull ghcr.io/${repo}:${major}
+            docker pull ghcr.io/${repo}:${minor}
 
             # Or use latest
-            docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull ghcr.io/${repo}:latest
             \`\`\`
+
+            **Supported Platforms:** linux/amd64, linux/arm64
+
+            **Image Size:** Ultra-minimal distroless static image for maximum security and efficiency.
 
             **Supported Platforms:** linux/amd64, linux/arm64
 
