@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 - Fix action script
 - Revert filter
+- **release**: 0.3.1
 
 ## [0.3.0] - 2025-06-04
 
