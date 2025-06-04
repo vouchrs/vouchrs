@@ -58,10 +58,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
     esac && \
-    cargo build --release --target $TARGET --locked
-
-# Copy the binary to a predictable location for the runtime stage
-RUN TARGET=$(cat /target.txt) && \
+    cargo build --release --target $TARGET --locked && \
     cp /app/target/$TARGET/release/vouchrs /app/vouchrs
 
 # Runtime stage - distroless static (smallest possible)
