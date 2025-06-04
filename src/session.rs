@@ -1,6 +1,7 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
 use crate::session_validation::{calculate_client_context_hash, validate_client_context};
+use crate::utils::cached_responses::RESPONSES;
 use crate::utils::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{decrypt_data, derive_encryption_key, encrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
@@ -29,9 +30,9 @@ impl ResponseError for SessionError {
         let error_msg = self.0.to_string();
 
         if error_msg.contains("Session expired") || error_msg.contains("Session not found") {
-            HttpResponse::Unauthorized().json("Authentication required")
+            RESPONSES.unauthorized()
         } else {
-            HttpResponse::InternalServerError().json("Internal server error")
+            RESPONSES.server_error()
         }
     }
 }

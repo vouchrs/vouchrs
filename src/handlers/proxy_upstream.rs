@@ -8,6 +8,7 @@ use crate::{
     oauth::{check_and_refresh_tokens, OAuthConfig},
     session::SessionManager,
     settings::VouchrsSettings,
+    utils::cached_responses::RESPONSES,
     utils::cookie::filter_vouchrs_cookies,
     utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
     utils::user_agent::is_browser_request,
@@ -99,10 +100,7 @@ async fn forward_upstream_response(
                 })));
         }
         // For non-browser requests, return 401 with JSON error
-        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "unauthorized",
-            "message": "Authentication required. Please obtain a valid session cookie or bearer token."
-        })));
+        return Ok(RESPONSES.unauthorized());
     }
 
     // For all other status codes, forward the response as-is
@@ -182,12 +180,9 @@ async fn execute_upstream_request(
     }
 
     // Execute the request
-    request_builder.send().await.map_err(|err| {
+    request_builder.send().await.map_err(|_err| {
         // Return a simple error response
-        HttpResponse::BadGateway().json(serde_json::json!({
-            "error": "upstream_error",
-            "message": format!("Failed to reach upstream service: {err}")
-        }))
+        RESPONSES.server_error()
     })
 }
 
@@ -206,7 +201,7 @@ fn extract_session_from_request(
     session_manager: &SessionManager,
 ) -> Result<VouchrsSession, HttpResponse> {
     // Helper function to handle authentication errors
-    let handle_auth_error = |message: &str| {
+    let handle_auth_error = |_message: &str| {
         if is_browser_request(req) {
             // For browser requests, redirect to sign-in page
             let sign_in_url = "/oauth2/sign_in";
@@ -215,10 +210,7 @@ fn extract_session_from_request(
                 .finish()
         } else {
             // For non-browser requests, return JSON error
-            HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "unauthorized",
-                "message": message
-            }))
+            RESPONSES.unauthorized()
         }
     };
 
