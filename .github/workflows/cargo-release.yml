@@ -8,18 +8,6 @@ on:
   # Manual trigger for testing or fixing issues
   workflow_dispatch:
     inputs:
-      level:
-        description: 'Release level'
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-          - alpha
-          - beta
-          - rc
-        default: 'patch'
       dry_run:
         description: 'Dry run (no changes will be made)'
         required: false
@@ -79,21 +67,35 @@ jobs:
 
       - name: Execute Release Process
         run: |
-          # Set execute flag based on dry-run input
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+          # Determine dry-run setting
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Manual trigger - use the provided inputs
+            DRY_RUN="${{ github.event.inputs.dry_run }}"
+          else
+            # PR merge - always execute (not dry-run)
+            DRY_RUN="false"
+          fi
+
+          echo "Running with dry_run: $DRY_RUN"
+
+          # Set execute flag based on dry-run setting
+          if [[ "$DRY_RUN" == "true" ]]; then
             echo "🔍 Running in dry-run mode"
             EXECUTE_FLAG=""
           else
             EXECUTE_FLAG="--execute"
           fi
-          # Check if current version already has a tag
-          CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
-          if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
-            echo "⚠️  Tag v$CURRENT_VERSION already exists, using git-cliff for next version"
 
-            # Use git-cliff to determine the next version
-            NEXT_VERSION=$(git-cliff --bumped-version | sed 's/^v//')
-            echo "Next version: $NEXT_VERSION"
+          # Always use git-cliff to determine the next version automatically
+          CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          NEXT_VERSION=$(git-cliff --bumped-version | sed 's/^v//')
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "Next version (auto-detected): $NEXT_VERSION"
+
+          # Check if we need to update the version
+          if [[ "$CURRENT_VERSION" != "$NEXT_VERSION" ]]; then
+            echo "✅ Updating version from $CURRENT_VERSION to $NEXT_VERSION"
 
             # Set the new version and commit the changes
             cargo set-version "$NEXT_VERSION"
@@ -102,23 +104,12 @@ jobs:
 
             # Push the version bump commit before running cargo-release
             git push origin main
-
-            # Run cargo-release (it will create the tag)
-            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm
           else
-            echo "✅ Proceeding with ${{ github.event.inputs.level }} release"
-
-            # Normal release with specified level
-            if [[ "${{ github.event.inputs.level }}" == "alpha" ]]; then
-              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm alpha
-            elif [[ "${{ github.event.inputs.level }}" == "beta" ]]; then
-              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm beta
-            elif [[ "${{ github.event.inputs.level }}" == "rc" ]]; then
-              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm rc
-            else
-              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm ${{ github.event.inputs.level }}
-            fi
+            echo "ℹ️  Version is already up to date: $CURRENT_VERSION"
           fi
+
+          # Run cargo-release (it will create the tag)
+          cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm
 
       - name: Get Version
         id: get-version
@@ -129,7 +120,7 @@ jobs:
           echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
 
       - name: Generate Release Notes
-        if: github.event.inputs.dry_run == 'false'
+        if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
         run: |
           # Get the new version from Cargo.toml
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
@@ -158,7 +149,7 @@ jobs:
           echo "✅ Extracted release notes and cleaned up changelog file"
 
       - name: Push Changes
-        if: github.event.inputs.dry_run == 'false'
+        if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
         run: |
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
@@ -174,7 +165,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        if: github.event.inputs.dry_run == 'false'
+        if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -204,7 +195,7 @@ jobs:
 
   build-docker:
     needs: release
-    if: github.event.inputs.dry_run == 'false'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
     permissions:
       contents: read
       packages: write
@@ -218,7 +209,7 @@ jobs:
 
   update-release:
     needs: [release, build-docker]
-    if: github.event.inputs.dry_run == 'false'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
     runs-on: ubuntu-latest
     permissions:
       contents: write
