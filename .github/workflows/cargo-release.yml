@@ -62,6 +62,11 @@ jobs:
         with:
           tool: cargo-release
 
+      - name: Install cargo-edit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
       - name: Install git-cliff
         uses: taiki-e/install-action@v2
         with:
@@ -72,48 +77,41 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Check for existing tag
-        id: check-tag
-        run: |
-          CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
-          echo "Current version in Cargo.toml: $CURRENT_VERSION"
-
-          # Check if tag already exists for current version
-          if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
-            echo "⚠️  Tag v$CURRENT_VERSION already exists"
-            echo "tag_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Tag v$CURRENT_VERSION does not exist yet"
-            echo "tag_exists=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Execute Release Process
         run: |
-          RELEASE_ARGS=""
-
-          # Add appropriate flags based on inputs
+          # Set execute flag based on dry-run input
           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            echo "🔍 Running in dry-run mode, no changes will be made"
-            # For dry-run, we don't use --execute
+            echo "🔍 Running in dry-run mode"
             EXECUTE_FLAG=""
           else
             EXECUTE_FLAG="--execute"
           fi
 
           # Check if current version already has a tag
-          if [[ "${{ steps.check-tag.outputs.tag_exists }}" == "true" ]] && [[ "${{ github.event.inputs.dry_run }}" != "true" ]]; then
-            echo "🔄 Current version already has a tag, cargo-release will increment it"
-          fi
+          CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
+            echo "⚠️  Tag v$CURRENT_VERSION already exists, using git-cliff for next version"
 
-          # Handle pre-release versions
-          if [[ "${{ github.event.inputs.level }}" == "alpha" ]]; then
-            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm alpha
-          elif [[ "${{ github.event.inputs.level }}" == "beta" ]]; then
-            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm beta
-          elif [[ "${{ github.event.inputs.level }}" == "rc" ]]; then
-            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm rc
+            # Use git-cliff to determine the next version
+            NEXT_VERSION=$(git-cliff --bumped-version | sed 's/^v//')
+            echo "Next version: $NEXT_VERSION"
+
+            # Set the new version and run cargo-release
+            cargo set-version "$NEXT_VERSION"
+            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm
           else
-            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm ${{ github.event.inputs.level }}
+            echo "✅ Proceeding with ${{ github.event.inputs.level }} release"
+
+            # Normal release with specified level
+            if [[ "${{ github.event.inputs.level }}" == "alpha" ]]; then
+              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm alpha
+            elif [[ "${{ github.event.inputs.level }}" == "beta" ]]; then
+              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm beta
+            elif [[ "${{ github.event.inputs.level }}" == "rc" ]]; then
+              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm rc
+            else
+              cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm ${{ github.event.inputs.level }}
+            fi
           fi
 
       - name: Get Version
