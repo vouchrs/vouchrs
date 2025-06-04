@@ -101,13 +101,13 @@ jobs:
           echo "major=$(echo ${VERSION} | cut -d. -f1)" >> $GITHUB_OUTPUT
           echo "minor=$(echo ${VERSION} | cut -d. -f1-2)" >> $GITHUB_OUTPUT
 
-      - name: Update Changelog
+      - name: Generate Release Notes
         if: github.event.inputs.dry_run == 'false'
         run: |
           # Get the new version from Cargo.toml
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
 
-          # Update changelog using git-cliff with proper configuration
+          # Generate changelog using git-cliff with proper configuration
           # Filtering is handled by cliff.toml configuration (filter_unconventional = true)
           git cliff --tag "v$VERSION" --output CHANGELOG.md
           echo "✅ Generated changelog for v$VERSION"
@@ -126,9 +126,9 @@ jobs:
             found { print }
           ' CHANGELOG.md > release_notes.txt
 
-          # Commit changelog changes
-          git add CHANGELOG.md
-          git commit -m "docs: update changelog for v$VERSION"
+          # Clean up the generated changelog file - we don't want to commit it
+          rm CHANGELOG.md
+          echo "✅ Extracted release notes and cleaned up changelog file"
 
       - name: Push Changes
         if: github.event.inputs.dry_run == 'false'
