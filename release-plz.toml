@@ -1,0 +1,14 @@
+[workspace]
+# release-plz configuration
+# See all options: https://release-plz.ieni.dev/docs/config
+changelog_config = "cliff.toml"
+# Use existing git-cliff configuration for changelog
+changelog_update = true
+
+# Don't publish to crates.io (remove this if you want to publish)
+publish = false
+
+# Create GitHub releases
+git_release_enable = true
+
+# Package-specific settings can be added here if needed
