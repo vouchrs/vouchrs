@@ -72,25 +72,48 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
+      - name: Check for existing tag
+        id: check-tag
+        run: |
+          CURRENT_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          echo "Current version in Cargo.toml: $CURRENT_VERSION"
+
+          # Check if tag already exists for current version
+          if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
+            echo "⚠️  Tag v$CURRENT_VERSION already exists"
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Tag v$CURRENT_VERSION does not exist yet"
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Execute Release Process
         run: |
           RELEASE_ARGS=""
 
           # Add appropriate flags based on inputs
           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            RELEASE_ARGS="--dry-run"
             echo "🔍 Running in dry-run mode, no changes will be made"
+            # For dry-run, we don't use --execute
+            EXECUTE_FLAG=""
+          else
+            EXECUTE_FLAG="--execute"
+          fi
+
+          # Check if current version already has a tag
+          if [[ "${{ steps.check-tag.outputs.tag_exists }}" == "true" ]] && [[ "${{ github.event.inputs.dry_run }}" != "true" ]]; then
+            echo "🔄 Current version already has a tag, cargo-release will increment it"
           fi
 
           # Handle pre-release versions
           if [[ "${{ github.event.inputs.level }}" == "alpha" ]]; then
-            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm alpha
+            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm alpha
           elif [[ "${{ github.event.inputs.level }}" == "beta" ]]; then
-            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm beta
+            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm beta
           elif [[ "${{ github.event.inputs.level }}" == "rc" ]]; then
-            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm rc
+            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm rc
           else
-            cargo release $RELEASE_ARGS --no-publish --no-push --execute --no-confirm ${{ github.event.inputs.level }}
+            cargo release --no-publish --no-push $EXECUTE_FLAG --no-confirm ${{ github.event.inputs.level }}
           fi
 
       - name: Get Version
@@ -134,8 +157,17 @@ jobs:
         if: github.event.inputs.dry_run == 'false'
         run: |
           VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+
+          # Push the commit changes first
           git push origin main
-          git push origin v$VERSION
+
+          # Check if tag already exists before trying to push it
+          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION"; then
+            echo "⚠️  Tag v$VERSION already exists on remote, skipping tag push"
+          else
+            echo "✅ Pushing new tag v$VERSION"
+            git push origin v$VERSION
+          fi
 
       - name: Create GitHub Release
         if: github.event.inputs.dry_run == 'false'
