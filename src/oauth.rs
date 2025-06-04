@@ -115,7 +115,7 @@ struct TokenResponse {
 // Provider Configuration
 // ============================================================================
 
-/// Runtime provider configuration with resolved endpoints
+/// Runtime provider configuration with resolved endpoints and cached encoded values
 #[derive(Debug, Clone)]
 pub struct RuntimeProvider {
     pub settings: ProviderSettings,
@@ -123,6 +123,9 @@ pub struct RuntimeProvider {
     pub token_url: String,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+    // Cached encoded values for performance optimization
+    pub encoded_client_id: Option<String>,
+    pub encoded_scopes: String,
 }
 
 impl RuntimeProvider {
@@ -154,11 +157,25 @@ impl RuntimeProvider {
         };
 
         Ok(Self {
-            settings,
+            settings: settings.clone(),
             auth_url,
             token_url,
-            client_id,
+            client_id: client_id.clone(),
             client_secret,
+            // Pre-compute encoded values for performance optimization
+            encoded_client_id: client_id.map(|id| urlencoding::encode(&id).into_owned()),
+            encoded_scopes: {
+                let total_scope_len: usize = settings.scopes.iter().map(String::len).sum();
+                let scope_separators = settings.scopes.len().saturating_sub(1);
+                let mut scopes = String::with_capacity(total_scope_len + scope_separators);
+                for (i, scope) in settings.scopes.iter().enumerate() {
+                    if i > 0 {
+                        scopes.push(' ');
+                    }
+                    scopes.push_str(scope);
+                }
+                urlencoding::encode(&scopes).into_owned()
+            },
         })
     }
 
@@ -219,6 +236,8 @@ type TokenExchangeResult = Result<
 pub struct OAuthConfig {
     pub providers: HashMap<String, RuntimeProvider>,
     pub redirect_base_url: String,
+    // Cached encoded redirect URI for performance optimization
+    pub encoded_redirect_uri: String,
     jwt_validator: Arc<RwLock<Option<crate::jwt_validation::JwtValidator>>>,
 }
 
@@ -239,10 +258,14 @@ impl OAuthConfig {
         let redirect_base_url =
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
+        // Pre-compute encoded redirect URI with callback path for performance optimization
+        let redirect_uri_with_callback = format!("{redirect_base_url}/oauth2/callback");
+        let encoded_redirect_uri = urlencoding::encode(&redirect_uri_with_callback).to_string();
+
         Self {
             providers: HashMap::new(),
             redirect_base_url,
-
+            encoded_redirect_uri,
             jwt_validator: Arc::new(RwLock::new(None)), // Will be initialized when needed
         }
     }
@@ -337,7 +360,7 @@ impl OAuthConfig {
             .is_some_and(RuntimeProvider::is_configured)
     }
 
-    /// Get the authorization URL for a provider
+    /// Get the authorization URL for a provider (optimized for performance)
     ///
     /// # Errors
     ///
@@ -351,55 +374,75 @@ impl OAuthConfig {
             .get(provider)
             .ok_or("Provider not configured")?;
 
-        // Get client ID using the new getter method
-        let client_id = runtime_provider
-            .settings
-            .get_client_id()
+        // Use pre-encoded client ID to avoid re-encoding on every request
+        let encoded_client_id = runtime_provider
+            .encoded_client_id
+            .as_ref()
             .ok_or("Client ID not configured for provider")?;
 
-        // Pre-allocate redirect URI string with known capacity to avoid reallocation
-        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
-        redirect_uri.push_str(&self.redirect_base_url);
-        redirect_uri.push_str("/oauth2/callback");
+        // Use cached encoded redirect URI from config for better performance
+        let encoded_redirect_uri = &self.encoded_redirect_uri;
 
-        // Pre-allocate scopes string with estimated capacity
-        let total_scope_len: usize = runtime_provider
+        // Use pre-encoded scopes from cached value
+        let encoded_scopes = &runtime_provider.encoded_scopes;
+
+        // Calculate total capacity needed to avoid reallocations
+        let base_capacity = runtime_provider.auth_url.len()
+            + "?client_id=".len()
+            + encoded_client_id.len()
+            + "&response_type=code".len()
+            + "&redirect_uri=".len()
+            + encoded_redirect_uri.len()
+            + "&state=".len()
+            + state.len()
+            + "&scope=".len()
+            + encoded_scopes.len();
+
+        // Add capacity for extra parameters
+        let extra_params_capacity = runtime_provider
             .settings
-            .scopes
-            .iter()
-            .map(std::string::String::len)
-            .sum();
-        let scope_separators = runtime_provider.settings.scopes.len().saturating_sub(1);
-        let mut scopes = String::with_capacity(total_scope_len + scope_separators);
-        for (i, scope) in runtime_provider.settings.scopes.iter().enumerate() {
-            if i > 0 {
-                scopes.push(' ');
-            }
-            scopes.push_str(scope);
-        }
+            .extra_auth_params
+            .as_ref()
+            .map_or(0, |params| {
+                params.iter().fold(0, |acc, (k, v)| {
+                    acc + "&".len() + k.len() + "=".len() + urlencoding::encode(v).len()
+                })
+            });
 
-        // Start with base parameters
-        let mut url = url::Url::parse(&runtime_provider.auth_url).map_err(|e| e.to_string())?;
-        url.query_pairs_mut()
-            .append_pair("client_id", &client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("response_type", "code")
-            .append_pair("scope", &scopes)
-            .append_pair("state", state);
+        // Pre-allocate with the calculated capacity to avoid reallocations
+        let mut url = String::with_capacity(base_capacity + extra_params_capacity);
 
-        // Add provider-specific extra parameters
+        // Build URL efficiently with single pass - no intermediate allocations
+        url.push_str(&runtime_provider.auth_url);
+        url.push_str("?client_id=");
+        url.push_str(encoded_client_id);
+        url.push_str("&response_type=code");
+        url.push_str("&redirect_uri=");
+        url.push_str(encoded_redirect_uri);
+        url.push_str("&state=");
+        url.push_str(state);
+        url.push_str("&scope=");
+        url.push_str(encoded_scopes);
+
+        // Add provider-specific extra parameters efficiently
         if let Some(ref extra_params) = runtime_provider.settings.extra_auth_params {
             for (key, value) in extra_params {
-                url.query_pairs_mut().append_pair(key, value);
+                url.push('&');
+                url.push_str(key);
+                url.push('=');
+                url.push_str(&urlencoding::encode(value));
             }
         }
 
         info!(
             "🔍 Built {} OAuth URL with scopes: {} and extra params: {:?}",
-            provider, scopes, runtime_provider.settings.extra_auth_params
+            provider,
+            // Decode for logging purposes only
+            urlencoding::decode(encoded_scopes).unwrap_or_default(),
+            runtime_provider.settings.extra_auth_params
         );
 
-        Ok(url.to_string())
+        Ok(url)
     }
 
     /// Exchange OAuth authorization code for OAuth tokens

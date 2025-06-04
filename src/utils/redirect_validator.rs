@@ -339,7 +339,7 @@ fn contains_protocol_injection(url: &str) -> bool {
 fn contains_redirect_in_query(url: &str) -> bool {
     // Check if URL has query string
     if let Some(query_start) = url.find('?') {
-        let query_bytes = &url[query_start + 1..].as_bytes();
+        let query_bytes = &url.as_bytes()[query_start + 1..];
 
         for param in REDIRECT_PARAM_NAMES {
             let param_bytes = param.as_bytes();
