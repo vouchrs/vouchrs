@@ -88,6 +88,69 @@ const REDIRECT_PARAM_NAMES: &[&str] = &[
     "failure_url",
 ];
 
+// Helper functions for efficient byte-level operations
+
+/// Case-insensitive byte sequence search without allocations
+fn contains_bytes_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+
+    haystack.windows(needle.len()).any(|window| {
+        window.iter().zip(needle.iter()).all(|(&a, &b)| {
+            a.eq_ignore_ascii_case(&b)
+        })
+    })
+}
+
+/// Check for query parameter patterns without allocations
+/// Looks for param followed by separator (= or &)
+fn check_query_param_pattern(query_bytes: &[u8], param_bytes: &[u8], separator: u8) -> bool {
+    if param_bytes.is_empty() || query_bytes.len() < param_bytes.len() + 1 {
+        return false;
+    }
+
+    // Create pattern: param + separator
+    let pattern_len = param_bytes.len() + 1;
+    if pattern_len > query_bytes.len() {
+        return false;
+    }
+
+    query_bytes.windows(pattern_len).any(|window| {
+        // Check if first part matches param (case-insensitive)
+        window[..param_bytes.len()].iter()
+            .zip(param_bytes.iter())
+            .all(|(&a, &b)| a.eq_ignore_ascii_case(&b)) &&
+        // Check if last byte is the separator
+        window[param_bytes.len()] == separator
+    })
+}
+
+/// Check for URL-encoded query parameter patterns (param%3d for param=)
+fn check_encoded_query_param_pattern(query_bytes: &[u8], param_bytes: &[u8]) -> bool {
+    if param_bytes.is_empty() || query_bytes.len() < param_bytes.len() + 3 {
+        return false;
+    }
+
+    // Create pattern: param + %3d (URL encoded =)
+    let pattern_len = param_bytes.len() + 3;
+    if pattern_len > query_bytes.len() {
+        return false;
+    }
+
+    query_bytes.windows(pattern_len).any(|window| {
+        // Check if first part matches param (case-insensitive)
+        window[..param_bytes.len()].iter()
+            .zip(param_bytes.iter())
+            .all(|(&a, &b)| a.eq_ignore_ascii_case(&b)) &&
+        // Check if last 3 bytes are %3d or %3D
+        (&window[param_bytes.len()..] == b"%3d" || &window[param_bytes.len()..] == b"%3D")
+    })
+}
+
 /// Validate post-authentication redirect URLs to prevent open redirect attacks
 /// Balanced approach between security and simplicity
 ///
@@ -102,7 +165,7 @@ const REDIRECT_PARAM_NAMES: &[&str] = &[
 /// - URL contains encoded double slashes
 /// - URL contains protocol injection attempts
 /// - URL contains suspicious redirect parameters in query string
-pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<String, HttpResponse> {
+pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<&str, HttpResponse> {
     debug!("Validating post-authentication redirect URL: {redirect_url}");
 
     // Empty redirects are invalid
@@ -168,7 +231,7 @@ pub fn validate_post_auth_redirect(redirect_url: &str) -> Result<String, HttpRes
             .body(INVALID_REDIRECT_JSON));
     }
 
-    Ok(redirect_url.to_string())
+    Ok(redirect_url)
 }
 
 /// Check for dangerous characters including control chars and Unicode tricks
@@ -253,19 +316,18 @@ fn contains_encoded_double_slash(url: &str) -> bool {
 
 /// Check for protocol injection attempts
 fn contains_protocol_injection(url: &str) -> bool {
-    // Single allocation for case-insensitive comparison
-    let url_lower = url.to_ascii_lowercase();
+    let bytes = url.as_bytes();
 
-    // Direct protocol check
+    // Direct protocol check using case-insensitive byte comparison
     for protocol in DANGEROUS_PROTOCOLS {
-        if url_lower.contains(protocol) {
+        if contains_bytes_ignore_ascii_case(bytes, protocol.as_bytes()) {
             return true;
         }
     }
 
     // Check for encoded protocols (these are case-sensitive)
     for encoded_protocol in ENCODED_PROTOCOLS {
-        if url_lower.contains(encoded_protocol) {
+        if contains_bytes_ignore_ascii_case(bytes, encoded_protocol.as_bytes()) {
             return true;
         }
     }
@@ -277,21 +339,16 @@ fn contains_protocol_injection(url: &str) -> bool {
 fn contains_redirect_in_query(url: &str) -> bool {
     // Check if URL has query string
     if let Some(query_start) = url.find('?') {
-        let query_part = &url[query_start + 1..];
-        let query_lower = query_part.to_ascii_lowercase();
+        let query_bytes = &url[query_start + 1..].as_bytes();
 
         for param in REDIRECT_PARAM_NAMES {
-            // Check for parameter=value pattern
-            let patterns = [
-                format!("{param}="),
-                format!("{param}&"),
-                format!("{param}%3d"), // URL encoded =
-            ];
+            let param_bytes = param.as_bytes();
 
-            for pattern in &patterns {
-                if query_lower.contains(pattern) {
-                    return true;
-                }
+            // Check for parameter=value pattern without allocation
+            if check_query_param_pattern(query_bytes, param_bytes, b'=') ||
+               check_query_param_pattern(query_bytes, param_bytes, b'&') ||
+               check_encoded_query_param_pattern(query_bytes, param_bytes) {
+                return true;
             }
         }
     }

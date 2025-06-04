@@ -466,13 +466,15 @@ impl SessionBuilder {
 
                 // Validate the redirect URL to prevent open redirect attacks
                 let validated_redirect =
-                    validate_post_auth_redirect(&redirect_to).unwrap_or_else(|_| {
-                        log::error!(
-                            "Invalid post-authentication redirect URL '{redirect_to}': rejecting"
-                        );
-                        // Fallback to safe default on validation failure
-                        "/".to_string()
-                    });
+                    validate_post_auth_redirect(&redirect_to)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|_| {
+                            log::error!(
+                                "Invalid post-authentication redirect URL '{redirect_to}': rejecting"
+                            );
+                            // Fallback to safe default on validation failure
+                            "/".to_string()
+                        });
 
                 // Create response with multiple cookies
                 success_redirect_with_cookies(
