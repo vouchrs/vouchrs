@@ -76,46 +76,32 @@ pub async fn proxy_upstream(
     .await
 }
 
-/// Forward upstream response back to client with session refresh functionality
-///
-/// # Errors
-///
-/// Returns an error if reading the upstream response body fails
-async fn forward_upstream_response(
-    upstream_response: reqwest::Response,
+/// Handle 401 Unauthorized responses with appropriate redirect or error response
+fn handle_unauthorized_response(
     req: &HttpRequest,
     settings: &VouchrsSettings,
-    session_manager: &SessionManager,
-    session: &VouchrsSession,
-    tokens_were_refreshed: bool,
-) -> ActixResult<HttpResponse> {
-    let status_code = upstream_response.status();
-
-    // Check if this is a 401 Unauthorized response
-    if status_code == reqwest::StatusCode::UNAUTHORIZED {
-        // Determine if this is a browser request
-        if is_browser_request(req) {
-            // Redirect browser requests to sign-in page
-            let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-            return Ok(HttpResponse::Found()
-                .insert_header(("Location", sign_in_url.clone()))
-                .json(serde_json::json!({
-                    "error": "authentication_required",
-                    "message": "Authentication required. Redirecting to sign-in page.",
-                    "redirect_url": sign_in_url
-                })));
-        }
+) -> HttpResponse {
+    if is_browser_request(req) {
+        // Redirect browser requests to sign-in page
+        let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
+        HttpResponse::Found()
+            .insert_header(("Location", sign_in_url.clone()))
+            .json(serde_json::json!({
+                "error": "authentication_required",
+                "message": "Authentication required. Redirecting to sign-in page.",
+                "redirect_url": sign_in_url
+            }))
+    } else {
         // For non-browser requests, return 401 with JSON error
-        return Ok(RESPONSES.unauthorized());
+        RESPONSES.unauthorized()
     }
+}
 
-    // For all other status codes, forward the response as-is
-    let actix_status = actix_web::http::StatusCode::from_u16(status_code.as_u16())
-        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
-
-    let mut response_builder = HttpResponse::build(actix_status);
-
-    // Forward relevant headers (excluding hop-by-hop headers)
+/// Forward response headers while excluding hop-by-hop headers
+fn forward_response_headers(
+    upstream_response: &reqwest::Response,
+    response_builder: &mut actix_web::HttpResponseBuilder,
+) {
     for (name, value) in upstream_response.headers() {
         let name_str = name.as_str().to_lowercase();
         if !is_hop_by_hop_header(&name_str) {
@@ -124,8 +110,15 @@ async fn forward_upstream_response(
             }
         }
     }
+}
 
-    // Check if session cookie should be updated due to token refresh or regular refresh
+/// Update session cookie if needed due to token refresh or regular refresh
+fn update_session_cookie_if_needed(
+    response_builder: &mut actix_web::HttpResponseBuilder,
+    session_manager: &SessionManager,
+    session: &VouchrsSession,
+    tokens_were_refreshed: bool,
+) {
     if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
         let reason = if tokens_were_refreshed {
             "tokens were refreshed"
@@ -148,6 +141,44 @@ async fn forward_upstream_response(
             }
         }
     }
+}
+
+/// Forward upstream response back to client with session refresh functionality
+///
+/// # Errors
+///
+/// Returns an error if reading the upstream response body fails
+async fn forward_upstream_response(
+    upstream_response: reqwest::Response,
+    req: &HttpRequest,
+    settings: &VouchrsSettings,
+    session_manager: &SessionManager,
+    session: &VouchrsSession,
+    tokens_were_refreshed: bool,
+) -> ActixResult<HttpResponse> {
+    let status_code = upstream_response.status();
+
+    // Check if this is a 401 Unauthorized response
+    if status_code == reqwest::StatusCode::UNAUTHORIZED {
+        return Ok(handle_unauthorized_response(req, settings));
+    }
+
+    // For all other status codes, forward the response as-is
+    let actix_status = actix_web::http::StatusCode::from_u16(status_code.as_u16())
+        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+
+    let mut response_builder = HttpResponse::build(actix_status);
+
+    // Forward relevant headers (excluding hop-by-hop headers)
+    forward_response_headers(&upstream_response, &mut response_builder);
+
+    // Check if session cookie should be updated due to token refresh or regular refresh
+    update_session_cookie_if_needed(
+        &mut response_builder,
+        session_manager,
+        session,
+        tokens_were_refreshed,
+    );
 
     // Get response body
     let response_body = upstream_response.bytes().await.map_err(|err| {
