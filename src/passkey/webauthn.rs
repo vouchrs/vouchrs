@@ -340,7 +340,7 @@ impl WebAuthnService {
 
     /// Verify assertion signature
     /// Prepare the data needed for signature verification
-fn prepare_verification_data(
+    fn prepare_verification_data(
         response: &AuthenticationResponse,
     ) -> Result<(Vec<u8>, Vec<u8>), WebAuthnError> {
         // 1. Get client data hash
@@ -373,10 +373,10 @@ fn prepare_verification_data(
             })?;
 
         Ok((verify_data, signature_bytes))
-}
+    }
 
-/// Verify a `WebAuthn` assertion signature
-fn verify_assertion_signature(
+    /// Verify a `WebAuthn` assertion signature
+    fn verify_assertion_signature(
         response: &AuthenticationResponse,
         credential: &PasskeyCredential,
     ) -> Result<(), WebAuthnError> {
@@ -384,7 +384,8 @@ fn verify_assertion_signature(
         let (verify_data, signature_bytes) = Self::prepare_verification_data(response)?;
 
         // Extract COSE key details
-        let (kty_value, alg_value, cose_map) = Self::extract_cose_key_details(&credential.public_key)?;
+        let (kty_value, alg_value, cose_map) =
+            Self::extract_cose_key_details(&credential.public_key)?;
 
         match (kty_value, alg_value) {
             // EC2 key with ES256 algorithm
@@ -524,16 +525,15 @@ fn verify_assertion_signature(
     fn extract_cose_key_details(public_key: &[u8]) -> Result<CoseKeyDetails, WebAuthnError> {
         // Parse the COSE key to determine algorithm and get verification key
         let cose_key =
-            ciborium::de::from_reader::<ciborium::value::Value, _>(public_key)
-                .map_err(|_| {
-                    WebAuthnError::VerificationFailed("Invalid COSE key format".to_string())
-                })?;
+            ciborium::de::from_reader::<ciborium::value::Value, _>(public_key).map_err(|_| {
+                WebAuthnError::VerificationFailed("Invalid COSE key format".to_string())
+            })?;
 
         // Extract key type (kty) and algorithm (alg)
         let ciborium::value::Value::Map(cose_map) = cose_key else {
             return Err(WebAuthnError::VerificationFailed(
                 "COSE key is not a map".to_string(),
-            ))
+            ));
         }; // Get key type (1 = EC2, 3 = RSA)
         let kty_key = ciborium::value::Value::Integer(1.into());
         let kty_value = cose_map.iter()
@@ -557,20 +557,23 @@ fn verify_assertion_signature(
             })
             .ok_or_else(|| WebAuthnError::VerificationFailed("Missing or invalid key type".to_string()))?;
 
-    // Get algorithm (-7 = ES256, -257 = RS256)
-    let alg_value = match kty_value {
-        // If key type is EC2, assume it's ES256 (-7)
-        1 => -7,
-        // If key type is RSA, assume it's RS256 (-257)
-        3 => -257,
-        // Otherwise, unknown algorithm
-        _ => return Err(WebAuthnError::NotSupported("Unknown key type".to_string())),
-    };
+        // Get algorithm (-7 = ES256, -257 = RS256)
+        let alg_value = match kty_value {
+            // If key type is EC2, assume it's ES256 (-7)
+            1 => -7,
+            // If key type is RSA, assume it's RS256 (-257)
+            3 => -257,
+            // Otherwise, unknown algorithm
+            _ => return Err(WebAuthnError::NotSupported("Unknown key type".to_string())),
+        };
 
-    Ok((kty_value, alg_value, cose_map))
-}
-
+        Ok((kty_value, alg_value, cose_map))
+    }
 }
 
 /// COSE key details type (key type, algorithm, and key map)
-type CoseKeyDetails = (i64, i64, Vec<(ciborium::value::Value, ciborium::value::Value)>);
+type CoseKeyDetails = (
+    i64,
+    i64,
+    Vec<(ciborium::value::Value, ciborium::value::Value)>,
+);
