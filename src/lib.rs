@@ -10,6 +10,7 @@ pub mod handlers;
 pub mod jwt_validation;
 pub mod models;
 pub mod oauth;
+pub mod passkey;
 pub mod passkey_session;
 pub mod session;
 pub mod session_builder;

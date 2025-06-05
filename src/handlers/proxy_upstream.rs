@@ -77,10 +77,7 @@ pub async fn proxy_upstream(
 }
 
 /// Handle 401 Unauthorized responses with appropriate redirect or error response
-fn handle_unauthorized_response(
-    req: &HttpRequest,
-    settings: &VouchrsSettings,
-) -> HttpResponse {
+fn handle_unauthorized_response(req: &HttpRequest, settings: &VouchrsSettings) -> HttpResponse {
     if is_browser_request(req) {
         // Redirect browser requests to sign-in page
         let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
