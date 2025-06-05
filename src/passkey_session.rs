@@ -87,8 +87,8 @@ impl PasskeySessionBuilder {
         let duration_hours = session_duration_hours.unwrap_or(168); // Default 7 days
 
         // Safely convert u64 to i64, preventing overflow
-        let duration_hours_i64 = i64::try_from(duration_hours)
-            .map_err(|_| "Session duration too large".to_string())?;
+        let duration_hours_i64 =
+            i64::try_from(duration_hours).map_err(|_| "Session duration too large".to_string())?;
 
         let expires_at = now + chrono::Duration::hours(duration_hours_i64);
 
