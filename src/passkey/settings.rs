@@ -47,7 +47,6 @@ impl PasskeySettings {
     #[must_use]
     pub fn to_webauthn_settings(&self) -> crate::webauthn::WebAuthnSettings {
         crate::webauthn::WebAuthnSettings {
-            enabled: self.enabled,
             rp_id: self.rp_id.clone(),
             rp_name: self.rp_name.clone(),
             rp_origin: self.rp_origin.clone(),

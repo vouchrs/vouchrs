@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 /// `WebAuthn` settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebAuthnSettings {
-    /// Whether `WebAuthn` is enabled
-    pub enabled: bool,
     /// Relying Party ID (usually the domain)
     pub rp_id: String,
     /// Relying Party name (displayed to user)
@@ -27,7 +25,6 @@ pub struct WebAuthnSettings {
 impl Default for WebAuthnSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
             rp_id: "localhost".to_string(),
             rp_name: "VouchRS".to_string(),
             rp_origin: "https://localhost".to_string(),
