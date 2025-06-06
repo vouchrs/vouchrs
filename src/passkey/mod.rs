@@ -1,18 +1,21 @@
-//! `WebAuthn` passkey implementation for `VouchRS`
+//! Passkey functionality for application integration
 //!
-//! This module provides a custom implementation of the `WebAuthn` standard
-//! specifically designed for `VouchRS`'s stateless architecture.
+//! This module provides passkey functionality by integrating the `WebAuthn`
+//! implementation with application session management.
 
-mod cbor;
-mod errors;
-mod handlers;
+// Core settings
 mod settings;
-mod types;
-mod webauthn;
-
-pub use errors::WebAuthnError;
-pub use handlers::*;
 pub use settings::PasskeySettings;
-pub use types::*;
-pub use webauthn::generate_user_handle;
-pub use webauthn::WebAuthnService;
+
+// Handlers
+mod handlers;
+pub use handlers::*;
+
+// Session management
+mod session;
+pub use session::*;
+
+// Re-export types from WebAuthn module
+pub use crate::webauthn::{
+    generate_user_handle, AuthenticationResult, Credential, WebAuthnError, WebAuthnService,
+};

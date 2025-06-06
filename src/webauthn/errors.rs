@@ -1,6 +1,7 @@
-//! `WebAuthn` error types for `VouchRS`
+//! `WebAuthn` error types
 //!
-//! This module defines custom error types for `WebAuthn` operations.
+//! This module defines error types for `WebAuthn` operations,
+//! independent of application-specific error handling.
 
 use std::fmt;
 

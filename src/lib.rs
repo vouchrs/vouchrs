@@ -11,12 +11,12 @@ pub mod jwt_validation;
 pub mod models;
 pub mod oauth;
 pub mod passkey;
-pub mod passkey_session;
 pub mod session;
 pub mod session_builder;
 pub mod session_validation;
 pub mod settings;
 pub mod utils;
+pub mod webauthn; // Decoupled WebAuthn implementation
 
 /// Re-export commonly used items
 pub use handlers::{
@@ -24,6 +24,6 @@ pub use handlers::{
 };
 pub use models::VouchrsSession;
 pub use oauth::OAuthConfig;
-pub use passkey_session::{PasskeySessionBuilder, PasskeySessionData};
+pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
 pub use session::SessionManager;
 pub use settings::VouchrsSettings;

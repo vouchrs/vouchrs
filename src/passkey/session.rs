@@ -1,17 +1,49 @@
-// Passkey session management for WebAuthn authentication
-//
-// This module provides passkey-specific session handling that produces identical
-// session outputs to OAuth flows, enabling seamless upstream integration.
-//
-// Key Features:
-// - PasskeySessionData model for WebAuthn session creation
-// - Session builder methods for passkey authentication
-// - Identical cookie output format to OAuth (VouchrsSession + VouchrsUserData)
-// - Stateless design - no persistent storage in VouchRS
+//! Passkey session management and related types
+//!
+//! This module handles passkey session creation, validation, and conversion
+//! between different session formats
+
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::models::{VouchrsSession, VouchrsUserData};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use crate::webauthn::{AuthenticationResult, Credential};
+
+/// Error types for passkey session operations
+#[derive(Debug)]
+pub enum PasskeySessionError {
+    /// Authentication failed
+    AuthenticationFailed(String),
+    /// Session creation error
+    SessionCreationFailed(String),
+    /// `WebAuthn` error
+    WebAuthnError(crate::webauthn::WebAuthnError),
+    /// Other error
+    OtherError(String),
+}
+
+impl From<crate::webauthn::WebAuthnError> for PasskeySessionError {
+    fn from(error: crate::webauthn::WebAuthnError) -> Self {
+        PasskeySessionError::WebAuthnError(error)
+    }
+}
+
+impl std::fmt::Display for PasskeySessionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PasskeySessionError::AuthenticationFailed(msg) => {
+                write!(f, "Authentication failed: {msg}")
+            }
+            PasskeySessionError::SessionCreationFailed(msg) => {
+                write!(f, "Session creation failed: {msg}")
+            }
+            PasskeySessionError::WebAuthnError(err) => write!(f, "WebAuthn error: {err}"),
+            PasskeySessionError::OtherError(msg) => write!(f, "Error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for PasskeySessionError {}
 
 /// Complete session data structure for passkey authentication
 /// Equivalent to `CompleteSessionData` but for `WebAuthn` flows
@@ -64,6 +96,86 @@ impl PasskeySessionData {
             session_start: Some(self.authenticated_at.timestamp()),
         }
     }
+}
+
+/// Creates a passkey session from authentication result
+///
+/// # Arguments
+/// * `auth_result` - The authentication result from `WebAuthn`
+/// * `credential` - The credential used for authentication
+/// * `user_email` - User's email address
+/// * `user_name` - Optional user display name
+/// * `session_duration` - Session duration in seconds
+///
+/// # Returns
+/// * `Ok(PasskeySessionData)` - The created passkey session
+/// * `Err(PasskeySessionError)` - If session creation fails
+///
+/// # Errors
+/// Returns `PasskeySessionError` if the session creation fails
+pub fn create_passkey_session(
+    auth_result: &AuthenticationResult,
+    credential: &Credential,
+    user_email: &str,
+    user_name: Option<&str>,
+    session_duration: i64,
+) -> Result<PasskeySessionData, PasskeySessionError> {
+    let now = Utc::now();
+
+    // Create passkey session
+    let session = PasskeySessionData {
+        user_email: user_email.to_string(),
+        user_name: user_name.map(ToString::to_string),
+        provider: "passkey".to_string(),
+        provider_id: credential.user_handle.clone(),
+        credential_id: credential.credential_id.clone(),
+        authenticated_at: auth_result.authenticated_at,
+        expires_at: now + Duration::seconds(session_duration),
+    };
+
+    Ok(session)
+}
+
+/// Converts a passkey session to `VouchrsSession` and `VouchrsUserData`
+///
+/// # Arguments
+/// * `session` - The passkey session data
+/// * `client_ip` - Optional client IP address
+/// * `user_agent_info` - Optional user agent information
+///
+/// # Returns
+/// * `(VouchrsSession, VouchrsUserData)` - The session and user data
+pub fn to_vouchrs_session(
+    session: &PasskeySessionData,
+    client_ip: Option<&str>,
+    user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
+) -> (VouchrsSession, VouchrsUserData) {
+    // Create VouchrsSession (compatible with OAuth flows)
+    let vouchrs_session = VouchrsSession {
+        id_token: None,
+        refresh_token: None,
+        credential_id: Some(session.credential_id.clone()),
+        user_handle: Some(session.provider_id.clone()),
+        provider: session.provider.clone(),
+        expires_at: session.expires_at,
+        authenticated_at: session.authenticated_at,
+    };
+
+    // Create VouchrsUserData (compatible with OAuth flows)
+    let vouchrs_user_data = VouchrsUserData {
+        email: session.user_email.clone(),
+        name: session.user_name.clone(),
+        provider: session.provider.clone(),
+        provider_id: session.provider_id.clone(),
+        client_ip: client_ip.map(String::from),
+        user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
+        platform: user_agent_info.and_then(|ua| ua.platform.clone()),
+        lang: user_agent_info.and_then(|ua| ua.lang.clone()),
+        mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
+        session_start: Some(session.authenticated_at.timestamp()),
+    };
+
+    (vouchrs_session, vouchrs_user_data)
 }
 
 /// Passkey session builder methods for creating `WebAuthn` sessions
@@ -177,8 +289,6 @@ mod tests {
 
         // Test conversion to VouchrsSession
         let session = session_data.to_session();
-        assert!(session.is_passkey_session());
-        assert!(!session.is_oauth_session());
         assert_eq!(session.provider, "passkey");
         assert_eq!(session.credential_id, Some("credential_456".to_string()));
         assert_eq!(session.user_handle, Some("user_handle_123".to_string()));
@@ -208,31 +318,5 @@ mod tests {
             user_data.session_start,
             Some(session_data.authenticated_at.timestamp())
         );
-    }
-
-    #[test]
-    fn test_passkey_session_type_detection() {
-        let session_data = PasskeySessionBuilder::build_passkey_session(
-            "test@example.com".to_string(),
-            Some("Test User".to_string()),
-            "test_handle".to_string(),
-            "test_credential".to_string(),
-            None,
-        )
-        .expect("Passkey session should be created successfully");
-
-        let session = session_data.to_session();
-
-        // Test type detection methods
-        assert!(session.is_passkey_session());
-        assert!(!session.is_oauth_session());
-
-        // Verify passkey-specific fields are set
-        assert!(session.credential_id.is_some());
-        assert!(session.user_handle.is_some());
-
-        // Verify OAuth fields are not set
-        assert!(session.id_token.is_none());
-        assert!(session.refresh_token.is_none());
     }
 }

@@ -6,12 +6,21 @@
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use serde_json::json;
 
-use crate::passkey::types::{
-    AuthenticationResponse, AuthenticationState, RegistrationRequest, RegistrationResponse,
-    RegistrationState,
+use crate::webauthn::{
+    AuthenticationResponse, AuthenticationState, RegistrationResponse, RegistrationState,
+    WebAuthnService,
 };
-use crate::passkey::WebAuthnService;
-use crate::passkey_session::PasskeySessionBuilder;
+
+// Local types specific to handlers
+use serde::Deserialize;
+
+/// Registration request
+#[derive(Deserialize)]
+pub struct RegistrationRequest {
+    pub name: String,
+    pub email: String,
+}
+use crate::passkey::PasskeySessionBuilder;
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
 
@@ -51,54 +60,38 @@ pub fn start_registration(
     }
 
     // Create WebAuthn service
-    let passkeys_service = match WebAuthnService::new(settings.passkeys.clone()) {
-        Ok(service) => service,
-        Err(e) => {
-            log::error!("Failed to create WebAuthn service: {e}");
-            return Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "configuration_error",
-                "message": "WebAuthn configuration error"
-            })));
-        }
-    };
+    let webauthn_settings = settings.passkeys.to_webauthn_settings();
+    let passkeys_service = WebAuthnService::new(webauthn_settings);
 
     // Generate secure user handle
     let user_handle = crate::passkey::generate_user_handle();
 
     // Start registration
-    match passkeys_service.start_registration(&data.name, &data.email, &user_handle) {
-        Ok((creation_options, registration_state)) => {
-            // In a stateless architecture, we'd typically store the state
-            // in a secure, signed cookie or include it in the response for the
-            // client to pass back in the complete call
+    let (creation_options, registration_state) =
+        passkeys_service.start_registration(&user_handle, &data.email, &data.name);
 
-            // For this example, we'll include it in the response
-            // In production, you might want to encrypt or sign this
-            let state_serialized = match serde_json::to_string(&registration_state) {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("Failed to serialize registration state: {e}");
-                    return Ok(HttpResponse::InternalServerError().json(json!({
-                        "error": "internal_error",
-                        "message": "Failed to process registration"
-                    })));
-                }
-            };
+    // In a stateless architecture, we'd typically store the state
+    // in a secure, signed cookie or include it in the response for the
+    // client to pass back in the complete call
 
-            Ok(HttpResponse::Ok().json(json!({
-                "creation_options": creation_options,
-                "registration_state": state_serialized,
-                "user_handle": user_handle
-            })))
-        }
+    // For this example, we'll include it in the response
+    // In production, you might want to encrypt or sign this
+    let state_serialized = match serde_json::to_string(&registration_state) {
+        Ok(s) => s,
         Err(e) => {
-            log::error!("Registration start failed: {e}");
-            Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "registration_failed",
-                "message": format!("Failed to start registration: {e}")
-            })))
+            log::error!("Failed to serialize registration state: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "internal_error",
+                "message": "Failed to process registration"
+            })));
         }
-    }
+    };
+
+    Ok(HttpResponse::Ok().json(json!({
+        "creation_options": creation_options,
+        "registration_state": state_serialized,
+        "user_handle": user_handle
+    })))
 }
 
 /// Complete passkey registration
@@ -167,19 +160,11 @@ pub fn complete_registration(
     }
 
     // Create WebAuthn service
-    let passkeys_service = match WebAuthnService::new(settings.passkeys.clone()) {
-        Ok(service) => service,
-        Err(e) => {
-            log::error!("Failed to create WebAuthn service: {e}");
-            return Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "configuration_error",
-                "message": "WebAuthn configuration error"
-            })));
-        }
-    };
+    let webauthn_settings = settings.passkeys.to_webauthn_settings();
+    let passkeys_service = WebAuthnService::new(webauthn_settings);
 
     // Complete registration
-    match passkeys_service.complete_registration(&credential_response, &registration_state) {
+    match passkeys_service.finish_registration(&credential_response, &registration_state) {
         Ok(credential) => {
             // This is where upstream systems would store the credential
             // Since VouchRS is stateless, we'll just acknowledge successful registration
@@ -222,54 +207,36 @@ pub fn start_authentication(
     }
 
     // Extract user handle if provided (optional)
-    let user_handle = data
+    let _user_handle = data
         .get("user_handle")
         .and_then(|v| v.as_str())
         .map(String::from);
 
     // Create WebAuthn service
-    let passkeys_service = match WebAuthnService::new(settings.passkeys.clone()) {
-        Ok(service) => service,
+    let webauthn_settings = settings.passkeys.to_webauthn_settings();
+    let passkeys_service = WebAuthnService::new(webauthn_settings);
+
+    // Start authentication
+    // In this implementation, we don't have any stored credentials yet
+    // so we pass None to the start_authentication method
+    let (request_options, auth_state) = passkeys_service.start_authentication(None);
+
+    // Serialize authentication state
+    let state_serialized = match serde_json::to_string(&auth_state) {
+        Ok(s) => s,
         Err(e) => {
-            log::error!("Failed to create WebAuthn service: {e}");
+            log::error!("Failed to serialize authentication state: {e}");
             return Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "configuration_error",
-                "message": "WebAuthn configuration error"
+                "error": "internal_error",
+                "message": "Failed to process authentication"
             })));
         }
     };
 
-    // Start authentication
-    match passkeys_service.start_authentication(
-        user_handle.as_deref(),
-        None, // No credential filtering
-    ) {
-        Ok((request_options, auth_state)) => {
-            // Serialize authentication state
-            let state_serialized = match serde_json::to_string(&auth_state) {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("Failed to serialize authentication state: {e}");
-                    return Ok(HttpResponse::InternalServerError().json(json!({
-                        "error": "internal_error",
-                        "message": "Failed to process authentication"
-                    })));
-                }
-            };
-
-            Ok(HttpResponse::Ok().json(json!({
-                "request_options": request_options,
-                "authentication_state": state_serialized
-            })))
-        }
-        Err(e) => {
-            log::error!("Authentication start failed: {e}");
-            Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "authentication_failed",
-                "message": format!("Failed to start authentication: {e}")
-            })))
-        }
-    }
+    Ok(HttpResponse::Ok().json(json!({
+        "request_options": request_options,
+        "authentication_state": state_serialized
+    })))
 }
 
 /// Validate authentication state
@@ -369,8 +336,15 @@ pub fn complete_authentication(
     // In a real implementation, this would be a call to an upstream API
     // or database to retrieve the stored credential and user information
 
-    // For now, we'll mock a successful authentication
-    // In a real implementation, this is where you'd verify the signature
+    // Create WebAuthn service
+    let webauthn_settings = settings.passkeys.to_webauthn_settings();
+    let _passkeys_service = WebAuthnService::new(webauthn_settings);
+
+    // Since we don't have a real credential store, we'll skip the verification
+    // In a real implementation you would:
+    // 1. Look up the credential from storage
+    // 2. Verify the authentication using:
+    //    passkeys_service.finish_authentication(&credential_response, &authentication_state, &stored_credential)
 
     // Create a mock user for this example
     // In a real implementation, this data would come from your user store

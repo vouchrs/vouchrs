@@ -1,6 +1,7 @@
-//! `WebAuthn` data types for `VouchRS`
+//! `WebAuthn` core types
 //!
-//! This module defines serializable data structures for `WebAuthn` operations.
+//! This module defines core data structures for `WebAuthn` operations,
+//! independent of application-specific logic.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -64,13 +65,6 @@ pub struct PublicKeyCredentialDescriptor {
     pub id: String,     // Base64URL-encoded credential ID
 }
 
-/// Registration request from client
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RegistrationRequest {
-    pub name: String,  // User's name
-    pub email: String, // User's email
-}
-
 /// Registration response from client
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegistrationResponse {
@@ -124,9 +118,9 @@ pub struct AuthenticationState {
     pub created_at: DateTime<Utc>, // When authentication started
 }
 
-/// Credential data stored by upstream systems
+/// Credential data
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PasskeyCredential {
+pub struct Credential {
     pub credential_id: String,            // Base64URL-encoded credential ID
     pub user_handle: String,              // User handle (provider_id)
     pub public_key: Vec<u8>,              // COSE-encoded public key
@@ -134,15 +128,6 @@ pub struct PasskeyCredential {
     pub created_at: DateTime<Utc>,        // When credential was created
     pub last_used: Option<DateTime<Utc>>, // When credential was last used
     pub name: Option<String>,             // User-friendly credential name
-}
-
-/// User handle mapping stored by upstream systems
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct UserHandleMapping {
-    pub user_handle: String,       // User handle (provider_id)
-    pub email: String,             // User's email
-    pub name: String,              // User's name
-    pub created_at: DateTime<Utc>, // When user was registered
 }
 
 /// Authentication result
