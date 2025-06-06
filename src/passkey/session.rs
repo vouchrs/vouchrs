@@ -49,16 +49,17 @@ impl std::error::Error for PasskeySessionError {}
 /// Equivalent to `CompleteSessionData` but for `WebAuthn` flows
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PasskeySessionData {
-    // User identification (same as OAuth)
+    // Common session data
     pub user_email: String,
     pub user_name: Option<String>,
     pub provider: String,
     pub provider_id: String, // Maps to user_handle
+    pub authenticated_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
 
     // Passkey-specific authentication data
     pub credential_id: String,
-    pub authenticated_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+
 }
 
 impl PasskeySessionData {
