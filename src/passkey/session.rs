@@ -59,7 +59,6 @@ pub struct PasskeySessionData {
 
     // Passkey-specific authentication data
     pub credential_id: String,
-
 }
 
 impl PasskeySessionData {

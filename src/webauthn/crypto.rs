@@ -44,11 +44,7 @@ pub fn generate_user_handle() -> String {
 /// * Returns `true` if signature is valid
 /// * In the future, will return error information if invalid
 #[allow(dead_code)] // Will be used in future implementation
-fn verify_es256_signature(
-    _public_key: &[u8],
-    _data: &[u8],
-    _signature: &[u8],
-) {
+fn verify_es256_signature(_public_key: &[u8], _data: &[u8], _signature: &[u8]) {
     // Convert COSE encoded public key to ring format
     // Implementation would extract x and y coordinates and create UnparsedPublicKey
 

@@ -72,8 +72,7 @@ impl WebAuthnService {
                 r#type: "public-key".to_string(),
                 alg: -7, // ES256
             }],
-            timeout: u32::try_from(self.settings.timeout_seconds * 1000)
-                .unwrap_or(60000), // Default to 60s if conversion fails
+            timeout: u32::try_from(self.settings.timeout_seconds * 1000).unwrap_or(60000), // Default to 60s if conversion fails
             attestation: "none".to_string(),
             authenticator_selection: AuthenticatorSelectionCriteria {
                 authenticator_attachment: self.settings.authenticator_attachment.clone(),
@@ -149,8 +148,7 @@ impl WebAuthnService {
         // Create authentication options
         let options = AuthenticationOptions {
             challenge: challenge.clone(),
-            timeout: u32::try_from(self.settings.timeout_seconds * 1000)
-                .unwrap_or(60000), // Default to 60s if conversion fails
+            timeout: u32::try_from(self.settings.timeout_seconds * 1000).unwrap_or(60000), // Default to 60s if conversion fails
             rp_id: self.settings.rp_id.clone(),
             allow_credentials,
             user_verification: self.settings.user_verification.clone(),
