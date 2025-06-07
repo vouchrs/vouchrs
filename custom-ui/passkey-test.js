@@ -94,7 +94,13 @@ async function startRegistration() {
     const displayName = document.getElementById('registerDisplayName').value.trim();
 
     if (!username || !displayName) {
-        showStatus('registerStatus', 'Please enter both username and display name', 'error');
+        showStatus('registerStatus', 'Please enter both email address and display name', 'error');
+        return;
+    }
+
+    // Basic email validation on frontend
+    if (!username.includes('@') || !username.includes('.') || username.length < 5) {
+        showStatus('registerStatus', 'Please enter a valid email address (e.g., user@example.com)', 'error');
         return;
     }
 
@@ -107,7 +113,7 @@ async function startRegistration() {
         const options = await apiRequest('/oauth2/passkey/register/start', {
             body: JSON.stringify({
                 name: displayName,
-                email: username.includes('@') ? username : `${username}@example.com`
+                email: username
             })
         });
 
@@ -142,7 +148,7 @@ async function startRegistration() {
         // Add better options for password manager compatibility
         publicKeyOptions.authenticatorSelection = {
             authenticatorAttachment: "cross-platform", // Allow external authenticators
-            userVerification: "preferred", // Prefer but don't require user verification
+            userVerification: "required", // Match server configuration that requires user verification
             requireResidentKey: true, // Enable discoverable credentials
             residentKey: "preferred" // Prefer resident keys for better UX
         };
@@ -265,7 +271,7 @@ async function startAuthentication() {
         }
 
         // Enhance options for password manager compatibility
-        options.request_options.publicKey.userVerification = "preferred";
+        options.request_options.publicKey.userVerification = "required";
 
         // Ensure timeout is reasonable
         if (!options.request_options.publicKey.timeout || options.request_options.publicKey.timeout > 120000) {
@@ -451,7 +457,7 @@ async function testPasswordManagerDetection() {
             ],
             authenticatorSelection: {
                 authenticatorAttachment: "cross-platform",
-                userVerification: "preferred",
+                userVerification: "required",
                 requireResidentKey: true,
                 residentKey: "preferred"
             },
@@ -541,7 +547,7 @@ async function startUsernamelessAuthentication() {
         delete options.request_options.publicKey.allowCredentials;
 
         // Enhance options for discoverable credential authentication
-        options.request_options.publicKey.userVerification = "required"; // Require user verification for security
+        options.request_options.publicKey.userVerification = "required"; // Match server configuration that requires user verification
         options.request_options.publicKey.timeout = 120000; // 2 minutes max
 
         console.log('Getting discoverable credential with options:', options.request_options.publicKey);

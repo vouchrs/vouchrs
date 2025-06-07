@@ -12,9 +12,11 @@ pub struct RegistrationOptions {
     pub challenge: String, // Base64URL-encoded random challenge
     pub rp: RelyingParty,  // Relying party information
     pub user: UserEntity,  // User information
+    #[serde(rename = "pubKeyCredParams")]
     pub public_key_params: Vec<PublicKeyCredentialParameters>, // Allowed algorithms
     pub timeout: u32,      // Timeout in milliseconds
     pub attestation: String, // "none", "indirect", "direct"
+    #[serde(rename = "authenticatorSelection")]
     pub authenticator_selection: AuthenticatorSelectionCriteria,
 }
 
@@ -23,8 +25,11 @@ pub struct RegistrationOptions {
 pub struct AuthenticationOptions {
     pub challenge: String, // Base64URL-encoded random challenge
     pub timeout: u32,      // Timeout in milliseconds
-    pub rp_id: String,     // Relying party ID
+    #[serde(rename = "rpId")]
+    pub rp_id: String, // Relying party ID
+    #[serde(rename = "allowCredentials")]
     pub allow_credentials: Vec<PublicKeyCredentialDescriptor>, // Optional allowed credentials
+    #[serde(rename = "userVerification")]
     pub user_verification: String, // "required", "preferred", "discouraged"
 }
 
@@ -38,31 +43,37 @@ pub struct RelyingParty {
 /// `WebAuthn` user entity
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserEntity {
-    pub id: String,           // Base64URL-encoded user handle
-    pub name: String,         // Username (e.g., email)
+    pub id: String,   // Base64URL-encoded user handle
+    pub name: String, // Username (e.g., email)
+    #[serde(rename = "displayName")]
     pub display_name: String, // Display name
 }
 
 /// Public key credential parameters
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PublicKeyCredentialParameters {
+    #[serde(rename = "type")]
     pub r#type: String, // Always "public-key"
-    pub alg: i32,       // Algorithm identifier (-7 for ES256, -257 for RS256)
+    pub alg: i32, // Algorithm identifier (-7 for ES256, -257 for RS256)
 }
 
 /// Authenticator selection criteria
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AuthenticatorSelectionCriteria {
+    #[serde(rename = "authenticatorAttachment")]
     pub authenticator_attachment: Option<String>, // "platform", "cross-platform"
-    pub require_resident_key: bool,               // Whether resident key is required
-    pub user_verification: String,                // "required", "preferred", "discouraged"
+    #[serde(rename = "requireResidentKey")]
+    pub require_resident_key: bool, // Whether resident key is required
+    #[serde(rename = "userVerification")]
+    pub user_verification: String, // "required", "preferred", "discouraged"
 }
 
 /// Public key credential descriptor
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PublicKeyCredentialDescriptor {
+    #[serde(rename = "type")]
     pub r#type: String, // Always "public-key"
-    pub id: String,     // Base64URL-encoded credential ID
+    pub id: String, // Base64URL-encoded credential ID
 }
 
 /// Registration response from client

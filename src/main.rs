@@ -5,6 +5,7 @@
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result};
+use vouchrs::passkey::complete_registration;
 use vouchrs::{
     handlers::{
         health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
@@ -96,9 +97,9 @@ async fn passkey_complete_registration(
     req: HttpRequest,
     data: web::Json<serde_json::Value>,
     settings: web::Data<VouchrsSettings>,
+    session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    use vouchrs::passkey::complete_registration;
-    complete_registration(&req, &data, &settings)
+    complete_registration(&req, &data, &settings, &session_manager)
 }
 
 async fn passkey_start_authentication(
