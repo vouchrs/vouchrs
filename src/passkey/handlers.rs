@@ -5,6 +5,7 @@
 
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use base64::Engine;
+use once_cell::sync::OnceCell;
 use serde_json::json;
 
 // Import both the old and new WebAuthn implementations for transition
@@ -26,6 +27,22 @@ pub struct RegistrationRequest {
 use crate::passkey::PasskeySessionBuilder;
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
+
+/// Lazily initialized static Webauthn instance
+fn get_webauthn(
+    settings: &VouchrsSettings,
+) -> Result<&'static webauthn_rs::Webauthn, HttpResponse> {
+    static WEBAUTHN: OnceCell<webauthn_rs::Webauthn> = OnceCell::new();
+    WEBAUTHN.get_or_try_init(|| {
+        settings.passkeys.create_webauthn().map_err(|e| {
+            log::error!("Failed to create WebAuthn: {e}");
+            HttpResponse::InternalServerError().json(json!({
+                "error": "webauthn_creation_failed",
+                "message": "Failed to initialize WebAuthn"
+            }))
+        })
+    })
+}
 
 /// Start passkey registration
 ///
@@ -62,16 +79,10 @@ pub fn start_registration(
         })));
     }
 
-    // Create webauthn-rs instance
-    let webauthn = match settings.passkeys.create_webauthn() {
+    // Use static Webauthn instance
+    let webauthn = match get_webauthn(settings) {
         Ok(w) => w,
-        Err(e) => {
-            log::error!("Failed to create WebAuthn: {e}");
-            return Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "webauthn_creation_failed",
-                "message": "Failed to initialize WebAuthn"
-            })));
-        }
+        Err(resp) => return Ok(resp),
     };
 
     // Generate secure user handle as Uuid, which is what the API expects
@@ -151,16 +162,10 @@ pub fn complete_registration(
         })));
     }
 
-    // Create webauthn-rs instance
-    let webauthn = match settings.passkeys.create_webauthn() {
+    // Use static Webauthn instance
+    let webauthn = match get_webauthn(settings) {
         Ok(w) => w,
-        Err(e) => {
-            log::error!("Failed to create WebAuthn: {e}");
-            return Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "webauthn_creation_failed",
-                "message": "Failed to initialize WebAuthn"
-            })));
-        }
+        Err(resp) => return Ok(resp),
     };
 
     // Extract credential response (keep existing format for compatibility)
