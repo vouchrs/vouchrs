@@ -72,6 +72,39 @@ secure = false
 # Environment variable: RUST_LOG
 level = "info"
 
+[passkeys]
+# Passkey/WebAuthn configuration
+# Environment variable: PASSKEYS_ENABLED
+enabled = true
+
+# Relying Party ID (usually your domain)
+# Environment variable: PASSKEYS_RP_ID
+rp_id = "play.dev.filmfeud.app"
+
+# Relying Party name (displayed to users during registration)
+# Environment variable: PASSKEYS_RP_NAME
+rp_name = "VouchRS Development"
+
+# Relying Party origin (must match the origin where passkeys are used)
+# Environment variable: PASSKEYS_RP_ORIGIN
+rp_origin = "https://play.dev.filmfeud.app"
+
+# Operation timeout in seconds
+# Environment variable: PASSKEYS_TIMEOUT_SECONDS
+timeout_seconds = 60
+
+# User verification preference: "required", "preferred", "discouraged"
+# Environment variable: PASSKEYS_USER_VERIFICATION
+user_verification = "preferred"
+
+# Optional authenticator attachment: "platform", "cross-platform", or null for any
+# Environment variable: PASSKEYS_AUTHENTICATOR_ATTACHMENT
+# authenticator_attachment = "platform"
+
+# Session duration in seconds for passkey-based sessions
+# Environment variable: PASSKEYS_SESSION_DURATION_SECONDS
+session_duration_seconds = 86400 # 24 hours
+
 # OAuth Provider Configuration
 # At least one provider must be configured for Vouchrs to start
 # Each provider can be customized with discovery URLs, custom endpoints, scopes, etc.
