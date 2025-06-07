@@ -43,19 +43,6 @@ impl Default for PasskeySettings {
 
 /// Convert `PasskeySettings` to `WebAuthn` settings
 impl PasskeySettings {
-    /// Get `WebAuthn` settings from passkey settings
-    #[must_use]
-    pub fn to_webauthn_settings(&self) -> crate::webauthn::WebAuthnSettings {
-        crate::webauthn::WebAuthnSettings {
-            rp_id: self.rp_id.clone(),
-            rp_name: self.rp_name.clone(),
-            rp_origin: self.rp_origin.clone(),
-            timeout_seconds: self.timeout_seconds,
-            user_verification: self.user_verification.clone(),
-            authenticator_attachment: self.authenticator_attachment.clone(),
-        }
-    }
-
     /// Create a webauthn-rs instance directly from settings
     ///
     /// This method converts our existing `PasskeySettings` configuration into a
@@ -79,25 +66,6 @@ impl PasskeySettings {
 
         // Build and return the webauthn instance
         Ok(builder.build()?)
-    }
-
-    /// Create a `WebAuthnService` instance directly from settings
-    ///
-    /// This method converts our existing `PasskeySettings` configuration into a
-    /// `WebAuthnService` instance that can be used for registration and authentication flows.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The `rp_origin` is not a valid URL
-    /// - The `WebAuthnService` fails to create a new instance (e.g., if the RP ID is not a valid suffix of the origin's domain)
-    pub fn create_webauthn_service(
-        &self,
-    ) -> Result<crate::webauthn::WebAuthnService, anyhow::Error> {
-        // Validate the origin
-        let _ = url::Url::parse(&self.rp_origin)?;
-        let webauthn_settings = self.to_webauthn_settings();
-        Ok(crate::webauthn::WebAuthnService::new(webauthn_settings))
     }
 }
 

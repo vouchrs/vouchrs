@@ -109,6 +109,7 @@ cbor-codec = { version = "0.7", optional = true }
 ring = "0.17.14"
 webauthn-rs = { version = "0.5.1", features = [
     "danger-allow-state-serialisation",
+    "danger-credential-internals"
 ] }
 webauthn-rs-proto = "0.5.1" # For direct access to WebAuthn protocol structures
 uuid = { version = "1.17.0", features = ["v4"] }

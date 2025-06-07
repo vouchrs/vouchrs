@@ -7,7 +7,9 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::models::{VouchrsSession, VouchrsUserData};
-use crate::webauthn::{AuthenticationResult, Credential};
+use base64::Engine;
+use webauthn_rs::prelude::AuthenticationResult;
+use webauthn_rs::prelude::Credential;
 
 /// Error types for passkey session operations
 #[derive(Debug)]
@@ -17,15 +19,9 @@ pub enum PasskeySessionError {
     /// Session creation error
     SessionCreationFailed(String),
     /// `WebAuthn` error
-    WebAuthnError(crate::webauthn::WebAuthnError),
+    WebAuthnError(String),
     /// Other error
     OtherError(String),
-}
-
-impl From<crate::webauthn::WebAuthnError> for PasskeySessionError {
-    fn from(error: crate::webauthn::WebAuthnError) -> Self {
-        PasskeySessionError::WebAuthnError(error)
-    }
 }
 
 impl std::fmt::Display for PasskeySessionError {
@@ -114,7 +110,7 @@ impl PasskeySessionData {
 /// # Errors
 /// Returns `PasskeySessionError` if the session creation fails
 pub fn create_passkey_session(
-    auth_result: &AuthenticationResult,
+    _auth_result: &AuthenticationResult,
     credential: &Credential,
     user_email: &str,
     user_name: Option<&str>,
@@ -127,9 +123,10 @@ pub fn create_passkey_session(
         user_email: user_email.to_string(),
         user_name: user_name.map(ToString::to_string),
         provider: "passkey".to_string(),
-        provider_id: credential.user_handle.clone(),
-        credential_id: credential.credential_id.clone(),
-        authenticated_at: auth_result.authenticated_at,
+        provider_id: credential.counter.to_string(),
+        credential_id: base64::engine::general_purpose::URL_SAFE
+            .encode(credential.cred_id.as_ref()),
+        authenticated_at: now,
         expires_at: now + Duration::seconds(session_duration),
     };
 

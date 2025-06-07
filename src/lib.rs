@@ -16,7 +16,6 @@ pub mod session_builder;
 pub mod session_validation;
 pub mod settings;
 pub mod utils;
-pub mod webauthn; // Decoupled WebAuthn implementation
 
 /// Re-export commonly used items
 pub use handlers::{

@@ -147,10 +147,13 @@ pub fn start_registration(
 /// - Registration state is missing or expired
 /// - `WebAuthn` service creation fails
 /// - Registration completion verification fails
+/// - Session creation fails
+/// - Cookie creation fails
 pub fn complete_registration(
-    _req: &HttpRequest,
+    req: &HttpRequest,
     data: &web::Json<serde_json::Value>,
     settings: &web::Data<VouchrsSettings>,
+    session_manager: &web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     if !settings.passkeys.enabled {
         return Ok(HttpResponse::ServiceUnavailable().json(json!({
@@ -217,30 +220,35 @@ pub fn complete_registration(
     let credential_id =
         base64::engine::general_purpose::URL_SAFE.encode(passkey.cred_id().as_ref());
 
-    // Extract user_handle from the registration data in user_data
-    let user_handle = match data.get("user_data").and_then(|v| v.as_str()) {
-        Some(encoded_user_data) => {
-            match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
-                Ok(user_data) => user_data.user_handle,
-                Err(_) => {
-                    // If we can't decode, fall back to a default
-                    "unknown_user".to_string()
-                }
+    // Extract user data from the registration request
+    let user_data = if let Some(encoded_user_data) = data.get("user_data").and_then(|v| v.as_str()) {
+        match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
+            Ok(user_data) => {
+                log::debug!("Decoded user data for registration completion: email={}, name={:?}, user_handle={}",
+                    user_data.email, user_data.name, user_data.user_handle);
+                user_data
+            }
+            Err(e) => {
+                log::error!("Failed to decode user data: {e}");
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "invalid_user_data",
+                    "message": "Failed to decode user data"
+                })));
             }
         }
-        None => {
-            // If no user_data was provided, we'll use the one from the registration
-            "unknown_user".to_string()
-        }
+    } else {
+        log::error!("Missing user_data in registration completion");
+        return Ok(HttpResponse::BadRequest().json(json!({
+            "error": "missing_user_data",
+            "message": "User data is required for registration completion"
+        })));
     };
 
-    // Return the same response format as before
-    Ok(HttpResponse::Ok().json(json!({
-        "success": true,
-        "message": "Registration completed successfully",
-        "user_handle": user_handle,
-        "credential_id": credential_id,
-    })))
+    // Create session and cookies for the registered user
+    match create_authenticated_session(req, &user_data, credential_id.clone(), session_manager) {
+        Ok(success_response) => Ok(success_response),
+        Err(error_response) => Ok(error_response),
+    }
 }
 
 /// Start passkey authentication using `webauthn-rs` (stateless)
@@ -346,6 +354,8 @@ fn validate_authentication_timeout(_settings: &VouchrsSettings) {
 fn extract_and_validate_user_data(
     data: &web::Json<serde_json::Value>,
     credential_response: &webauthn_rs_proto::PublicKeyCredential,
+    req: &HttpRequest,
+    session_manager: &SessionManager,
 ) -> Result<crate::passkey::PasskeyUserData, HttpResponse> {
     // Check if user_data is provided (traditional auth) or null (usernameless auth)
     let user_data_value = data.get("user_data");
@@ -369,15 +379,40 @@ fn extract_and_validate_user_data(
                     |h| base64::engine::general_purpose::URL_SAFE.encode(h.as_ref()),
                 );
 
-            // For usernameless auth, we create minimal user data from the credential
-            // The email and name will be populated from stored credential data if available
+            // For usernameless auth, try to get stored user data from cookie first
+            match session_manager.get_user_data_from_request(req) {
+                Ok(Some(stored_user_data)) => {
+                    log::info!(
+                        "Found stored user data for usernameless auth: email={}, name={:?}",
+                        stored_user_data.email,
+                        stored_user_data.name
+                    );
+
+                    // Convert VouchrsUserData to PasskeyUserData using the stored information
+                    let user_data = crate::passkey::PasskeyUserData::new(
+                        &user_handle,
+                        &stored_user_data.email,
+                        stored_user_data.name.as_deref(),
+                    );
+
+                    return Ok(user_data);
+                }
+                Ok(None) => {
+                    log::warn!("No stored user data found for usernameless auth, using fallback placeholders");
+                }
+                Err(e) => {
+                    log::error!("Failed to retrieve stored user data for usernameless auth: {e}");
+                }
+            }
+
+            // Fallback: create minimal user data with placeholder values
             let user_data = crate::passkey::PasskeyUserData::new(
                 &user_handle,
                 "usernameless@passkey.auth", // Placeholder email for usernameless auth
                 Some("Passkey User"),        // Placeholder name for usernameless auth
             );
 
-            log::info!("Usernameless authentication for user handle: {user_handle}");
+            log::info!("Usernameless authentication for user handle: {user_handle} (using placeholder values)");
             return Ok(user_data);
         }
 
@@ -522,10 +557,11 @@ pub fn complete_authentication(
 
     validate_authentication_timeout(settings);
 
-    let user_data = match extract_and_validate_user_data(data, &credential_response) {
-        Ok(data) => data,
-        Err(error_response) => return Ok(error_response),
-    };
+    let user_data =
+        match extract_and_validate_user_data(data, &credential_response, req, session_manager) {
+            Ok(data) => data,
+            Err(error_response) => return Ok(error_response),
+        };
 
     let credential_id =
         base64::engine::general_purpose::URL_SAFE.encode(&credential_response.raw_id);

@@ -97,8 +97,9 @@ async fn passkey_complete_registration(
     req: HttpRequest,
     data: web::Json<serde_json::Value>,
     settings: web::Data<VouchrsSettings>,
+    session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    complete_registration(&req, &data, &settings)
+    complete_registration(&req, &data, &settings, &session_manager)
 }
 
 async fn passkey_start_authentication(
