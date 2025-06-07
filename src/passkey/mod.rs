@@ -15,6 +15,10 @@ pub use handlers::*;
 mod session;
 pub use session::*;
 
+// User store for stateless operations
+mod user_store;
+pub use user_store::PasskeyUserData;
+
 // Re-export types from WebAuthn module
 pub use crate::webauthn::{
     generate_user_handle, AuthenticationResult, Credential, WebAuthnError, WebAuthnService,

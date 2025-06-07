@@ -102,8 +102,7 @@ mod tests {
         let result = settings.create_webauthn();
         assert!(
             result.is_ok(),
-            "Failed to create WebAuthn instance: {:?}",
-            result
+            "Failed to create WebAuthn instance: {result:?}"
         );
 
         // Check invalid origin

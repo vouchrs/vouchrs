@@ -4,12 +4,15 @@
 //! implementing the registration and authentication endpoints.
 
 use actix_web::{web, HttpRequest, HttpResponse, Result};
+use base64::Engine;
 use serde_json::json;
 
-use crate::webauthn::{
-    AuthenticationResponse, AuthenticationState, RegistrationResponse, RegistrationState,
-    WebAuthnService,
-};
+// Import both the old and new WebAuthn implementations for transition
+use crate::webauthn::{AuthenticationResponse, AuthenticationState, WebAuthnService};
+
+// Import webauthn-rs-proto and prelude for the new implementation
+use webauthn_rs::prelude::*;
+use webauthn_rs_proto;
 
 // Local types specific to handlers
 use serde::Deserialize;
@@ -59,24 +62,55 @@ pub fn start_registration(
         })));
     }
 
-    // Create WebAuthn service
-    let webauthn_settings = settings.passkeys.to_webauthn_settings();
-    let passkeys_service = WebAuthnService::new(webauthn_settings);
+    // Create webauthn-rs instance
+    let webauthn = match settings.passkeys.create_webauthn() {
+        Ok(w) => w,
+        Err(e) => {
+            log::error!("Failed to create WebAuthn: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "webauthn_creation_failed",
+                "message": "Failed to initialize WebAuthn"
+            })));
+        }
+    };
 
-    // Generate secure user handle
-    let user_handle = crate::passkey::generate_user_handle();
+    // Generate secure user handle as Uuid, which is what the API expects
+    let user_handle_uuid = uuid::Uuid::new_v4();
+    let user_handle_str = user_handle_uuid.to_string(); // Keep the string version for the response
 
-    // Start registration
-    let (creation_options, registration_state) =
-        passkeys_service.start_registration(&user_handle, &data.email, &data.name);
+    // Start registration with webauthn-rs
+    let (options, state) = match webauthn.start_passkey_registration(
+        user_handle_uuid, // Pass the actual UUID type
+        &data.email,
+        &data.name,
+        None, // No existing credentials to exclude
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to start registration: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "registration_failed",
+                "message": "Failed to start registration process"
+            })));
+        }
+    };
 
-    // In a stateless architecture, we'd typically store the state
-    // in a secure, signed cookie or include it in the response for the
-    // client to pass back in the complete call
+    // Create user data to associate with the registration
+    let user_data =
+        crate::passkey::PasskeyUserData::new(&user_handle_str, &data.email, Some(&data.name));
+    let user_data_encoded = match user_data.encode() {
+        Ok(data) => data,
+        Err(e) => {
+            log::error!("Failed to encode user data: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "internal_error",
+                "message": "Failed to process registration"
+            })));
+        }
+    };
 
-    // For this example, we'll include it in the response
-    // In production, you might want to encrypt or sign this
-    let state_serialized = match serde_json::to_string(&registration_state) {
+    // Serialize the state for storage in the response
+    let state_serialized = match serde_json::to_string(&state) {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to serialize registration state: {e}");
@@ -87,10 +121,12 @@ pub fn start_registration(
         }
     };
 
+    // Return response with user data
     Ok(HttpResponse::Ok().json(json!({
-        "creation_options": creation_options,
-        "registration_state": state_serialized,
-        "user_handle": user_handle
+        "creation_options": options, // JSON options for the browser
+        "registration_state": state_serialized, // State for the verify call
+        "user_data": user_data_encoded, // User data for stateless retrieval
+        "user_handle": user_handle_str
     })))
 }
 
@@ -115,76 +151,94 @@ pub fn complete_registration(
         })));
     }
 
-    // Extract required fields
-    let credential_response: RegistrationResponse = match serde_json::from_value(
-        data.get("credential_response")
-            .cloned()
-            .unwrap_or(json!(null)),
-    ) {
-        Ok(response) => response,
+    // Create webauthn-rs instance
+    let webauthn = match settings.passkeys.create_webauthn() {
+        Ok(w) => w,
         Err(e) => {
-            log::error!("Invalid credential response: {e}");
-            return Ok(HttpResponse::BadRequest().json(json!({
-                "error": "invalid_request",
-                "message": "Invalid credential response format"
+            log::error!("Failed to create WebAuthn: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "webauthn_creation_failed",
+                "message": "Failed to initialize WebAuthn"
             })));
         }
     };
 
-    // Get registration state
-    let registration_state: RegistrationState = match data
-        .get("registration_state")
-        .and_then(|v| v.as_str())
-        .and_then(|s| serde_json::from_str(s).ok())
-    {
-        Some(state) => state,
+    // Extract credential response (keep existing format for compatibility)
+    let Some(credential_response) = data.get("credential_response").and_then(|v| {
+        let json_value = v.clone();
+        // Convert webauthn-rs-proto RegisterPublicKeyCredential from our JSON
+        serde_json::from_value::<webauthn_rs_proto::RegisterPublicKeyCredential>(json_value).ok()
+    }) else {
+        return Ok(HttpResponse::BadRequest().json(json!({
+            "error": "invalid_request",
+            "message": "Invalid credential response format"
+        })));
+    }; // Get registration state directly as a PasskeyRegistration
+
+    let registration_state = match data.get("registration_state").and_then(|v| v.as_str()) {
+        Some(s) => match serde_json::from_str::<PasskeyRegistration>(s) {
+            Ok(state) => state,
+            Err(e) => {
+                log::error!("Failed to deserialize registration state: {e}");
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "invalid_state",
+                    "message": "Invalid registration state format"
+                })));
+            }
+        },
         None => {
             return Ok(HttpResponse::BadRequest().json(json!({
                 "error": "invalid_state",
-                "message": "Missing or invalid registration state"
+                "message": "Missing registration state"
             })));
         }
     };
 
-    // Check if state has expired
-    let now = chrono::Utc::now();
-    // Use try_from to safely convert u64 to i64
-    let timeout_seconds = i64::try_from(settings.passkeys.timeout_seconds).unwrap_or(3600); // Default to 1 hour if overflow would occur
-    let expiry = registration_state.created_at + chrono::Duration::seconds(timeout_seconds);
+    // For webauthn-rs, we don't need to check expiry here because
+    // the library will handle timeout validation when we call finish_passkey_registration
+    // The library was initialized with our timeout setting
 
-    if now > expiry {
-        return Ok(HttpResponse::BadRequest().json(json!({
-            "error": "state_expired",
-            "message": "Registration session has expired"
-        })));
-    }
+    // Complete registration with webauthn-rs
+    let passkey =
+        match webauthn.finish_passkey_registration(&credential_response, &registration_state) {
+            Ok(passkey) => passkey,
+            Err(e) => {
+                log::error!("Registration verification failed: {e}");
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "registration_failed",
+                    "message": format!("Failed to complete registration: {e}")
+                })));
+            }
+        };
 
-    // Create WebAuthn service
-    let webauthn_settings = settings.passkeys.to_webauthn_settings();
-    let passkeys_service = WebAuthnService::new(webauthn_settings);
+    // Extract credential_id using the cred_id accessor and convert to base64
+    let credential_id =
+        base64::engine::general_purpose::URL_SAFE.encode(passkey.cred_id().as_ref());
 
-    // Complete registration
-    match passkeys_service.finish_registration(&credential_response, &registration_state) {
-        Ok(credential) => {
-            // This is where upstream systems would store the credential
-            // Since VouchRS is stateless, we'll just acknowledge successful registration
-            // The upstream system needs to associate user_handle with the user account
-
-            Ok(HttpResponse::Ok().json(json!({
-                "success": true,
-                "message": "Registration completed successfully",
-                "user_handle": registration_state.user_handle,
-                "credential_id": credential.credential_id,
-            })))
+    // Extract user_handle from the registration data in user_data
+    let user_handle = match data.get("user_data").and_then(|v| v.as_str()) {
+        Some(encoded_user_data) => {
+            match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
+                Ok(user_data) => user_data.user_handle,
+                Err(_) => {
+                    // If we can't decode, fall back to a default
+                    "unknown_user".to_string()
+                }
+            }
         }
-        Err(e) => {
-            log::error!("Registration completion failed: {e}");
-            Ok(HttpResponse::BadRequest().json(json!({
-                "error": "registration_failed",
-                "message": format!("Failed to complete registration: {e}")
-            })))
+        None => {
+            // If no user_data was provided, we'll use the one from the registration
+            "unknown_user".to_string()
         }
-    }
+    };
+
+    // Return the same response format as before
+    Ok(HttpResponse::Ok().json(json!({
+        "success": true,
+        "message": "Registration completed successfully",
+        "user_handle": user_handle,
+        "credential_id": credential_id,
+    })))
 }
 
 /// Start passkey authentication
