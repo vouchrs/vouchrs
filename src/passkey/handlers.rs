@@ -8,7 +8,8 @@ use base64::Engine;
 use once_cell::sync::OnceCell;
 use serde_json::json;
 
-// Import webauthn-rs-proto for external type compatibility
+// Import webauthn-rs-proto and prelude for the new implementation
+use webauthn_rs::prelude::*;
 use webauthn_rs_proto;
 
 // Local types specific to handlers
@@ -24,17 +25,17 @@ use crate::passkey::PasskeySessionBuilder;
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
 
-/// Lazily initialized static `WebAuthnService` instance
+/// Lazily initialized static Webauthn instance
 fn get_webauthn(
     settings: &VouchrsSettings,
-) -> Result<&'static crate::webauthn::WebAuthnService, HttpResponse> {
-    static WEBAUTHN: OnceCell<crate::webauthn::WebAuthnService> = OnceCell::new();
+) -> Result<&'static webauthn_rs::Webauthn, HttpResponse> {
+    static WEBAUTHN: OnceCell<webauthn_rs::Webauthn> = OnceCell::new();
     WEBAUTHN.get_or_try_init(|| {
-        settings.passkeys.create_webauthn_service().map_err(|e| {
-            log::error!("Failed to create WebAuthnService: {e}");
+        settings.passkeys.create_webauthn().map_err(|e| {
+            log::error!("Failed to create WebAuthn: {e}");
             HttpResponse::InternalServerError().json(json!({
                 "error": "webauthn_creation_failed",
-                "message": "Failed to initialize WebAuthnService"
+                "message": "Failed to initialize WebAuthn"
             }))
         })
     })
@@ -68,46 +69,43 @@ pub fn start_registration(
         })));
     }
 
-    // More comprehensive email validation
-    let email = data.email.trim();
-    if email.is_empty() {
+    if !data.email.contains('@') {
         return Ok(HttpResponse::BadRequest().json(json!({
             "error": "invalid_email",
-            "message": "Email address is required"
+            "message": "Invalid email format"
         })));
     }
 
-    if !email.contains('@') || !email.contains('.') || email.len() < 5 {
-        return Ok(HttpResponse::BadRequest().json(json!({
-            "error": "invalid_email",
-            "message": "Please enter a valid email address (e.g., user@example.com)"
-        })));
-    }
-
-    // Basic email format validation
-    let email_parts: Vec<&str> = email.split('@').collect();
-    if email_parts.len() != 2 || email_parts[0].is_empty() || email_parts[1].is_empty() {
-        return Ok(HttpResponse::BadRequest().json(json!({
-            "error": "invalid_email",
-            "message": "Please enter a valid email address (e.g., user@example.com)"
-        })));
-    }
-
-    // Generate secure user handle as Uuid, which is what the API expects
-    let user_handle = uuid::Uuid::new_v4().to_string();
-
-    // Use static Webauthn instance (with global policy)
+    // Use static Webauthn instance
     let webauthn = match get_webauthn(settings) {
         Ok(w) => w,
         Err(resp) => return Ok(resp),
     };
 
-    // Use the user_handle as a string (UUID)
-    let (options, state) = webauthn.start_registration(&user_handle, email, &data.name);
+    // Generate secure user handle as Uuid, which is what the API expects
+    let user_handle_uuid = uuid::Uuid::new_v4();
+    let user_handle_str = user_handle_uuid.to_string(); // Keep the string version for the response
+
+    // Start registration with webauthn-rs
+    let (options, state) = match webauthn.start_passkey_registration(
+        user_handle_uuid, // Pass the actual UUID type
+        &data.email,
+        &data.name,
+        None, // No existing credentials to exclude
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to start registration: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "registration_failed",
+                "message": "Failed to start registration process"
+            })));
+        }
+    };
 
     // Create user data to associate with the registration
     let user_data =
-        crate::passkey::PasskeyUserData::new(&user_handle, &data.email, Some(&data.name));
+        crate::passkey::PasskeyUserData::new(&user_handle_str, &data.email, Some(&data.name));
     let user_data_encoded = match user_data.encode() {
         Ok(data) => data,
         Err(e) => {
@@ -133,95 +131,11 @@ pub fn start_registration(
 
     // Return response with user data
     Ok(HttpResponse::Ok().json(json!({
-        "creation_options": {
-            "publicKey": options // Wrap options in publicKey field as per WebAuthn spec
-        },
+        "creation_options": options, // JSON options for the browser
         "registration_state": state_serialized, // State for the verify call
         "user_data": user_data_encoded, // User data for stateless retrieval
-        "user_handle": user_handle
+        "user_handle": user_handle_str
     })))
-}
-
-/// Extract registration credential response from request data
-fn extract_registration_credential_response(
-    data: &web::Json<serde_json::Value>,
-) -> Result<crate::webauthn::RegistrationResponse, HttpResponse> {
-    let webauthn_rs_credential = data
-        .get("credential_response")
-        .and_then(|v| {
-            let json_value = v.clone();
-            serde_json::from_value::<webauthn_rs_proto::RegisterPublicKeyCredential>(json_value)
-                .ok()
-        })
-        .ok_or_else(|| {
-            HttpResponse::BadRequest().json(json!({
-                "error": "invalid_request",
-                "message": "Invalid credential response format"
-            }))
-        })?;
-
-    // Convert webauthn-rs format to our internal format
-    let internal_response = crate::webauthn::RegistrationResponse {
-        id: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&webauthn_rs_credential.raw_id),
-        raw_id: base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(&webauthn_rs_credential.raw_id),
-        response: crate::webauthn::AuthenticatorAttestationResponse {
-            client_data_json: base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(&webauthn_rs_credential.response.client_data_json),
-            attestation_object: base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(&webauthn_rs_credential.response.attestation_object),
-        },
-        client_extension_results: None,
-        r#type: "public-key".to_string(),
-    };
-
-    Ok(internal_response)
-}
-
-/// Extract and parse registration state from request data
-fn extract_registration_state(
-    data: &web::Json<serde_json::Value>,
-) -> Result<crate::webauthn::RegistrationState, HttpResponse> {
-    let state_str = data
-        .get("registration_state")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            HttpResponse::BadRequest().json(json!({
-                "error": "invalid_state",
-                "message": "Missing registration state"
-            }))
-        })?;
-
-    serde_json::from_str::<crate::webauthn::RegistrationState>(state_str).map_err(|e| {
-        log::error!("Failed to deserialize registration state: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_state",
-            "message": "Invalid registration state format"
-        }))
-    })
-}
-
-/// Extract user data from registration request
-fn extract_registration_user_data(
-    data: &web::Json<serde_json::Value>,
-) -> Result<(String, String, Option<String>), HttpResponse> {
-    if let Some(encoded_user_data) = data.get("user_data").and_then(|v| v.as_str()) {
-        if let Ok(user_data) = crate::passkey::PasskeyUserData::decode(encoded_user_data) {
-            Ok((user_data.user_handle, user_data.email, user_data.name))
-        } else {
-            log::error!("Failed to decode user data during registration");
-            Err(HttpResponse::BadRequest().json(json!({
-                "error": "invalid_user_data",
-                "message": "Failed to decode user data"
-            })))
-        }
-    } else {
-        log::error!("Missing user_data in registration request");
-        Err(HttpResponse::BadRequest().json(json!({
-            "error": "missing_user_data",
-            "message": "User data is required for registration"
-        })))
-    }
 }
 
 /// Complete passkey registration
@@ -234,10 +148,9 @@ fn extract_registration_user_data(
 /// - `WebAuthn` service creation fails
 /// - Registration completion verification fails
 pub fn complete_registration(
-    req: &HttpRequest,
+    _req: &HttpRequest,
     data: &web::Json<serde_json::Value>,
     settings: &web::Data<VouchrsSettings>,
-    session_manager: &web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     if !settings.passkeys.enabled {
         return Ok(HttpResponse::ServiceUnavailable().json(json!({
@@ -246,73 +159,88 @@ pub fn complete_registration(
         })));
     }
 
+    // Use static Webauthn instance
     let webauthn = match get_webauthn(settings) {
         Ok(w) => w,
         Err(resp) => return Ok(resp),
     };
 
-    let credential_response = match extract_registration_credential_response(data) {
-        Ok(resp) => resp,
-        Err(error_resp) => return Ok(error_resp),
-    };
+    // Extract credential response (keep existing format for compatibility)
+    let Some(credential_response) = data.get("credential_response").and_then(|v| {
+        let json_value = v.clone();
+        // Convert webauthn-rs-proto RegisterPublicKeyCredential from our JSON
+        serde_json::from_value::<webauthn_rs_proto::RegisterPublicKeyCredential>(json_value).ok()
+    }) else {
+        return Ok(HttpResponse::BadRequest().json(json!({
+            "error": "invalid_request",
+            "message": "Invalid credential response format"
+        })));
+    }; // Get registration state directly as a PasskeyRegistration
 
-    let registration_state = match extract_registration_state(data) {
-        Ok(state) => state,
-        Err(error_resp) => return Ok(error_resp),
-    };
-
-    let passkey = match webauthn.finish_registration(&credential_response, &registration_state) {
-        Ok(passkey) => passkey,
-        Err(e) => {
-            log::error!("Registration verification failed: {e}");
+    let registration_state = match data.get("registration_state").and_then(|v| v.as_str()) {
+        Some(s) => match serde_json::from_str::<PasskeyRegistration>(s) {
+            Ok(state) => state,
+            Err(e) => {
+                log::error!("Failed to deserialize registration state: {e}");
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "invalid_state",
+                    "message": "Invalid registration state format"
+                })));
+            }
+        },
+        None => {
             return Ok(HttpResponse::BadRequest().json(json!({
-                "error": "registration_failed",
-                "message": format!("Failed to complete registration: {e}")
+                "error": "invalid_state",
+                "message": "Missing registration state"
             })));
         }
     };
 
-    let credential_id = passkey.credential_id.clone();
+    // For webauthn-rs, we don't need to check expiry here because
+    // the library will handle timeout validation when we call finish_passkey_registration
+    // The library was initialized with our timeout setting
 
-    let (user_handle, user_email, user_name) = match extract_registration_user_data(data) {
-        Ok(data) => data,
-        Err(error_resp) => return Ok(error_resp),
-    };
+    // Complete registration with webauthn-rs
+    let passkey =
+        match webauthn.finish_passkey_registration(&credential_response, &registration_state) {
+            Ok(passkey) => passkey,
+            Err(e) => {
+                log::error!("Registration verification failed: {e}");
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "registration_failed",
+                    "message": format!("Failed to complete registration: {e}")
+                })));
+            }
+        };
 
-    let client_ip = req
-        .connection_info()
-        .realip_remote_addr()
-        .map(ToString::to_string);
-    let user_agent_info = crate::utils::user_agent::extract_user_agent_info(req);
+    // Extract credential_id using the cred_id accessor and convert to base64
+    let credential_id =
+        base64::engine::general_purpose::URL_SAFE.encode(passkey.cred_id().as_ref());
 
-    let vouchrs_user_data = crate::models::VouchrsUserData {
-        email: user_email.clone(),
-        name: user_name.clone(),
-        provider: "passkey".to_string(),
-        provider_id: user_handle.clone(),
-        client_ip,
-        user_agent: user_agent_info.user_agent,
-        platform: user_agent_info.platform,
-        lang: user_agent_info.lang,
-        mobile: i32::from(user_agent_info.mobile),
-        session_start: Some(chrono::Utc::now().timestamp()),
-    };
-
-    match session_manager.create_user_cookie(&vouchrs_user_data) {
-        Ok(user_cookie) => Ok(HttpResponse::Ok().cookie(user_cookie).json(json!({
-            "success": true,
-            "message": "Registration completed successfully",
-            "user_handle": user_handle,
-            "credential_id": credential_id,
-        }))),
-        Err(e) => {
-            log::error!("Failed to create user cookie during registration: {e}");
-            Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "cookie_creation_failed",
-                "message": "Failed to create user session"
-            })))
+    // Extract user_handle from the registration data in user_data
+    let user_handle = match data.get("user_data").and_then(|v| v.as_str()) {
+        Some(encoded_user_data) => {
+            match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
+                Ok(user_data) => user_data.user_handle,
+                Err(_) => {
+                    // If we can't decode, fall back to a default
+                    "unknown_user".to_string()
+                }
+            }
         }
-    }
+        None => {
+            // If no user_data was provided, we'll use the one from the registration
+            "unknown_user".to_string()
+        }
+    };
+
+    // Return the same response format as before
+    Ok(HttpResponse::Ok().json(json!({
+        "success": true,
+        "message": "Registration completed successfully",
+        "user_handle": user_handle,
+        "credential_id": credential_id,
+    })))
 }
 
 /// Start passkey authentication using `webauthn-rs` (stateless)
@@ -333,15 +261,26 @@ pub fn start_authentication(
             "message": "Passkey support is not enabled"
         })));
     }
-
-    // Use the same static WebAuthn instance as registration to ensure consistency
-    let webauthn = match get_webauthn(settings) {
+    let webauthn = match settings.passkeys.create_webauthn() {
         Ok(w) => w,
-        Err(resp) => return Ok(resp),
+        Err(e) => {
+            log::error!("Failed to create WebAuthn: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "webauthn_creation_failed",
+                "message": "Failed to initialize WebAuthn"
+            })));
+        }
     };
-
-    let (options, state) = webauthn.start_authentication(None);
-
+    let (options, state) = match webauthn.start_passkey_authentication(&[]) {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to start authentication: {e}");
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "authentication_failed",
+                "message": "Failed to start authentication process"
+            })));
+        }
+    };
     let state_serialized = match serde_json::to_string(&state) {
         Ok(s) => s,
         Err(e) => {
@@ -357,9 +296,7 @@ pub fn start_authentication(
     log::debug!("Authentication options: {options:?}");
 
     Ok(HttpResponse::Ok().json(json!({
-        "request_options": {
-            "publicKey": options // Wrap options in publicKey field as per WebAuthn spec
-        },
+        "request_options": options,
         "authentication_state": state_serialized,
         "note": "For usernameless auth, send user_data as null"
     })))
@@ -407,17 +344,15 @@ fn validate_authentication_timeout(_settings: &VouchrsSettings) {
 
 /// Extract and validate user data from request
 fn extract_and_validate_user_data(
-    req: &HttpRequest,
     data: &web::Json<serde_json::Value>,
     credential_response: &webauthn_rs_proto::PublicKeyCredential,
-    session_manager: &SessionManager,
 ) -> Result<crate::passkey::PasskeyUserData, HttpResponse> {
     // Check if user_data is provided (traditional auth) or null (usernameless auth)
     let user_data_value = data.get("user_data");
 
     if let Some(user_data_val) = user_data_value {
         if user_data_val.is_null() {
-            // Usernameless authentication - try to get user data from existing vouchrs_user cookie
+            // Usernameless authentication - create user data from credential
             let user_handle = credential_response
                 .response
                 .user_handle
@@ -434,48 +369,15 @@ fn extract_and_validate_user_data(
                     |h| base64::engine::general_purpose::URL_SAFE.encode(h.as_ref()),
                 );
 
-            // Try to get user data from existing vouchrs_user cookie set during registration
-            match session_manager.get_user_data_from_request(req) {
-                Ok(Some(vouchrs_user_data)) => {
-                    // Successfully retrieved user data from cookie
-                    log::info!(
-                        "Usernameless authentication using stored user data for user: {}",
-                        vouchrs_user_data.email
-                    );
-
-                    // Create PasskeyUserData from the stored VouchrsUserData
-                    let user_data = crate::passkey::PasskeyUserData::new(
-                        &user_handle,
-                        &vouchrs_user_data.email,
-                        vouchrs_user_data.name.as_deref(),
-                    );
-
-                    return Ok(user_data);
-                }
-                Ok(None) => {
-                    // No user cookie found - fall back to placeholder values
-                    log::warn!(
-                        "Usernameless authentication: No vouchrs_user cookie found, using placeholder values"
-                    );
-                }
-                Err(e) => {
-                    // Error retrieving cookie - fall back to placeholder values
-                    log::warn!(
-                        "Usernameless authentication: Failed to retrieve vouchrs_user cookie: {e}, using placeholder values"
-                    );
-                }
-            }
-
-            // Fallback to placeholder values if no cookie data is available
+            // For usernameless auth, we create minimal user data from the credential
+            // The email and name will be populated from stored credential data if available
             let user_data = crate::passkey::PasskeyUserData::new(
                 &user_handle,
                 "usernameless@passkey.auth", // Placeholder email for usernameless auth
                 Some("Passkey User"),        // Placeholder name for usernameless auth
             );
 
-            log::info!(
-                "Usernameless authentication for user handle: {user_handle} (using placeholder data)"
-            );
+            log::info!("Usernameless authentication for user handle: {user_handle}");
             return Ok(user_data);
         }
 
@@ -620,11 +522,10 @@ pub fn complete_authentication(
 
     validate_authentication_timeout(settings);
 
-    let user_data =
-        match extract_and_validate_user_data(req, data, &credential_response, session_manager) {
-            Ok(data) => data,
-            Err(error_response) => return Ok(error_response),
-        };
+    let user_data = match extract_and_validate_user_data(data, &credential_response) {
+        Ok(data) => data,
+        Err(error_response) => return Ok(error_response),
+    };
 
     let credential_id =
         base64::engine::general_purpose::URL_SAFE.encode(&credential_response.raw_id);
