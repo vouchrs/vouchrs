@@ -24,7 +24,7 @@ upstream_url = "http://localhost:3000"
 [static_files]
 # Directory containing static assets (HTML, CSS, JS, images)
 # Environment variable: STATIC_FOLDER_PATH
-assets_folder = "src/static"
+assets_folder = "custom-ui"
 
 [session]
 # Session cookie expiration in hours (how long browser keeps the cookie)
@@ -83,7 +83,7 @@ rp_id = "play.dev.filmfeud.app"
 
 # Relying Party name (displayed to users during registration)
 # Environment variable: PASSKEYS_RP_NAME
-rp_name = "VouchRS Development"
+rp_name = "Film Feud Dev"
 
 # Relying Party origin (must match the origin where passkeys are used)
 # Environment variable: PASSKEYS_RP_ORIGIN
@@ -99,7 +99,8 @@ user_verification = "preferred"
 
 # Optional authenticator attachment: "platform", "cross-platform", or null for any
 # Environment variable: PASSKEYS_AUTHENTICATOR_ATTACHMENT
-# authenticator_attachment = "platform"
+# Using "cross-platform" to enable password managers and external authenticators
+authenticator_attachment = "cross-platform"
 
 # Session duration in seconds for passkey-based sessions
 # Environment variable: PASSKEYS_SESSION_DURATION_SECONDS

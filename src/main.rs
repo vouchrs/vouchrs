@@ -131,10 +131,22 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
         .route("/oauth2/debug", web::get().to(oauth_debug))
         .route("/oauth2/userinfo", web::get().to(oauth_userinfo))
         // Passkey endpoints
-        .route("/oauth2/passkey/register/start", web::post().to(passkey_start_registration))
-        .route("/oauth2/passkey/register/complete", web::post().to(passkey_complete_registration))
-        .route("/oauth2/passkey/auth/start", web::post().to(passkey_start_authentication))
-        .route("/oauth2/passkey/auth/complete", web::post().to(passkey_complete_authentication))
+        .route(
+            "/oauth2/passkey/register/start",
+            web::post().to(passkey_start_registration),
+        )
+        .route(
+            "/oauth2/passkey/register/complete",
+            web::post().to(passkey_complete_registration),
+        )
+        .route(
+            "/oauth2/passkey/auth/start",
+            web::post().to(passkey_start_authentication),
+        )
+        .route(
+            "/oauth2/passkey/auth/complete",
+            web::post().to(passkey_complete_authentication),
+        )
         // Static files endpoint
         .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint

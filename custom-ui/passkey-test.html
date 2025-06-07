@@ -93,6 +93,17 @@
             background: #c82333;
         }
 
+        .btn-outline {
+            background: transparent;
+            color: #4a90e2;
+            border: 2px solid #4a90e2;
+        }
+
+        .btn-outline:hover {
+            background: #4a90e2;
+            color: white;
+        }
+
         .status {
             margin-top: 1rem;
             padding: 10px;
@@ -226,10 +237,12 @@
                     <input type="text" id="authUsername" placeholder="Enter username or leave empty for usernameless">
                 </div>
                 <div class="form-group">
-                    <label for="authUserData">User Data (from registration):</label>
-                    <input type="text" id="authUserData" placeholder="Paste user_data from registration response">
+                    <label for="authUserData">User Data (auto-filled from registration):</label>
+                    <input type="text" id="authUserData"
+                        placeholder="Will be auto-filled if you registered on this device">
                 </div>
                 <button class="btn btn-secondary" id="authBtn">Authenticate</button>
+                <button class="btn btn-outline" id="authUsernamelessBtn">Authenticate (Usernameless)</button>
                 <div id="authStatus" class="status" style="display: none;"></div>
             </div>
 
@@ -244,407 +257,14 @@
             <div class="test-section">
                 <h2>🔧 Debug & Testing</h2>
                 <button class="btn btn-secondary" id="checkSupportBtn">Check WebAuthn Support</button>
+                <button class="btn btn-secondary" id="testPMDetectionBtn">Test Password Manager Detection</button>
                 <button class="btn btn-danger" id="clearDataBtn">Clear Test Data</button>
                 <div id="debugStatus" class="status" style="display: none;"></div>
             </div>
         </div>
     </div>
 
-    <script>
-        // Global state
-        let currentUser = null;
-        let registrationOptions = null;
-        let authenticationOptions = null;
-
-        // Utility functions
-        function showStatus(elementId, message, type = 'info', data = null) {
-            const element = document.getElementById(elementId);
-            element.className = `status ${type}`;
-            element.innerHTML = message;
-            if (data) {
-                element.innerHTML += `<div class="response-data">${JSON.stringify(data, null, 2)}</div>`;
-            }
-            element.style.display = 'block';
-        }
-
-        function hideStatus(elementId) {
-            document.getElementById(elementId).style.display = 'none';
-        }
-
-        function setLoading(buttonId, loading) {
-            const button = document.getElementById(buttonId);
-            if (loading) {
-                button.disabled = true;
-                button.innerHTML = '<span class="spinner"></span>' + button.textContent;
-                button.classList.add('loading');
-            } else {
-                button.disabled = false;
-                button.innerHTML = button.textContent.replace(/^.*?([A-Z])/, '$1');
-                button.classList.remove('loading');
-            }
-        }
-
-        // Base64URL encoding/decoding helpers
-        function base64urlToBuffer(base64url) {
-            if (!base64url || typeof base64url !== 'string') {
-                throw new Error(`Invalid base64url input: ${base64url}`);
-            }
-            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
-            const binary = atob(padded);
-            const buffer = new ArrayBuffer(binary.length);
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < binary.length; i++) {
-                bytes[i] = binary.charCodeAt(i);
-            }
-            return buffer;
-        }
-
-        function bufferToBase64url(buffer) {
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        }
-
-        // API helper function
-        async function apiRequest(endpoint, options = {}) {
-            const defaultOptions = {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                ...options
-            };
-
-            try {
-                const response = await fetch(endpoint, defaultOptions);
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                return data;
-            } catch (error) {
-                console.error('API Request failed:', error);
-                throw error;
-            }
-        }
-
-        // Registration flow
-        async function startRegistration() {
-            const username = document.getElementById('registerUsername').value.trim();
-            const displayName = document.getElementById('registerDisplayName').value.trim();
-
-            if (!username || !displayName) {
-                showStatus('registerStatus', 'Please enter both username and display name', 'error');
-                return;
-            }
-
-            setLoading('registerBtn', true);
-            hideStatus('registerStatus');
-
-            try {
-                showStatus('registerStatus', 'Starting registration...', 'info');
-
-                const options = await apiRequest('/oauth2/passkey/register/start', {
-                    body: JSON.stringify({
-                        name: displayName,
-                        email: username.includes('@') ? username : `${username}@example.com`
-                    })
-                });
-
-                registrationOptions = options;
-                showStatus('registerStatus', 'Registration options received, creating credential...', 'info', options);
-
-                // Validate response structure
-                if (!options.creation_options || !options.creation_options.publicKey) {
-                    throw new Error('Invalid response: missing creation_options.publicKey');
-                }
-                const publicKeyOptions = options.creation_options.publicKey;
-
-                if (!publicKeyOptions.challenge) {
-                    throw new Error('Invalid response: missing challenge in publicKey options');
-                }
-                if (!publicKeyOptions.user || !publicKeyOptions.user.id) {
-                    throw new Error('Invalid response: missing user.id in publicKey options');
-                }
-
-                // Convert challenge and user ID from base64url to ArrayBuffer
-                publicKeyOptions.challenge = base64urlToBuffer(publicKeyOptions.challenge);
-                publicKeyOptions.user.id = base64urlToBuffer(publicKeyOptions.user.id);
-
-                // Convert excludeCredentials if present
-                if (publicKeyOptions.excludeCredentials) {
-                    publicKeyOptions.excludeCredentials = publicKeyOptions.excludeCredentials.map(cred => ({
-                        ...cred,
-                        id: base64urlToBuffer(cred.id)
-                    }));
-                }
-
-                // Create the credential
-                const credential = await navigator.credentials.create({
-                    publicKey: publicKeyOptions
-                });
-
-                showStatus('registerStatus', 'Credential created, completing registration...', 'info');
-
-                // Complete registration
-                await completeRegistration(credential);
-
-            } catch (error) {
-                console.error('Registration failed:', error);
-                showStatus('registerStatus', `Registration failed: ${error.message}`, 'error');
-            } finally {
-                setLoading('registerBtn', false);
-            }
-        }
-
-        async function completeRegistration(credential) {
-            try {
-                const registrationData = {
-                    credential_response: {
-                        id: credential.id,
-                        rawId: bufferToBase64url(credential.rawId),
-                        response: {
-                            attestationObject: bufferToBase64url(credential.response.attestationObject),
-                            clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
-                        },
-                        type: credential.type
-                    },
-                    registration_state: registrationOptions.registration_state,
-                    user_data: registrationOptions.user_data
-                };
-
-                const result = await apiRequest('/oauth2/passkey/register/complete', {
-                    body: JSON.stringify(registrationData)
-                });
-
-                currentUser = {
-                    username: document.getElementById('registerUsername').value,
-                    displayName: document.getElementById('registerDisplayName').value,
-                    user_handle: result.user_handle,
-                    credential_id: result.credential_id
-                };
-
-                showStatus('registerStatus', 'Registration completed successfully! Copy the user_data below for authentication.', 'success', result);
-
-                // Auto-fill the user data for authentication
-                if (registrationOptions && registrationOptions.user_data) {
-                    document.getElementById('authUserData').value = registrationOptions.user_data;
-                }
-
-                updateUserInfo();
-
-            } catch (error) {
-                console.error('Registration completion failed:', error);
-                showStatus('registerStatus', `Registration completion failed: ${error.message}`, 'error');
-            }
-        }
-
-        // Authentication flow
-        async function startAuthentication() {
-            const username = document.getElementById('authUsername').value.trim();
-            const userData = document.getElementById('authUserData').value.trim();
-
-            if (!userData) {
-                showStatus('authStatus', 'User data is required for authentication. Please copy it from the registration response.', 'error');
-                return;
-            }
-
-            setLoading('authBtn', true);
-            hideStatus('authStatus');
-
-            try {
-                showStatus('authStatus', 'Starting authentication...', 'info');
-
-                const requestBody = username ? { username } : {};
-                const options = await apiRequest('/oauth2/passkey/auth/start', {
-                    body: JSON.stringify(requestBody)
-                });
-
-                authenticationOptions = options;
-                showStatus('authStatus', 'Authentication options received, getting credential...', 'info', options);
-
-                // Convert challenge from base64url to ArrayBuffer
-                options.request_options.challenge = base64urlToBuffer(options.request_options.challenge);
-
-                // Convert allowCredentials if present
-                if (options.request_options.allowCredentials) {
-                    options.request_options.allowCredentials = options.request_options.allowCredentials.map(cred => ({
-                        ...cred,
-                        id: base64urlToBuffer(cred.id)
-                    }));
-                }
-
-                // Get the credential
-                const credential = await navigator.credentials.get({
-                    publicKey: options.request_options
-                });
-
-                showStatus('authStatus', 'Credential obtained, completing authentication...', 'info');
-
-                // Complete authentication
-                await completeAuthentication(credential);
-
-            } catch (error) {
-                console.error('Authentication failed:', error);
-                showStatus('authStatus', `Authentication failed: ${error.message}`, 'error');
-            } finally {
-                setLoading('authBtn', false);
-            }
-        }
-
-        async function completeAuthentication(credential) {
-            try {
-                const authenticationData = {
-                    credential_response: {
-                        id: credential.id,
-                        rawId: bufferToBase64url(credential.rawId),
-                        response: {
-                            authenticatorData: bufferToBase64url(credential.response.authenticatorData),
-                            clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
-                            signature: bufferToBase64url(credential.response.signature),
-                            userHandle: credential.response.userHandle ? bufferToBase64url(credential.response.userHandle) : null
-                        },
-                        type: credential.type
-                    },
-                    authentication_state: authenticationOptions.authentication_state,
-                    user_data: document.getElementById('authUserData').value.trim()
-                };
-
-                const result = await apiRequest('/oauth2/passkey/auth/complete', {
-                    body: JSON.stringify(authenticationData)
-                });
-
-                showStatus('authStatus', 'Authentication completed successfully!', 'success', result);
-
-                // Update current user info if we have it
-                if (result.user) {
-                    currentUser = result.user;
-                }
-                updateUserInfo();
-
-            } catch (error) {
-                console.error('Authentication completion failed:', error);
-                showStatus('authStatus', `Authentication completion failed: ${error.message}`, 'error');
-            }
-        }
-
-        // User information
-        function updateUserInfo() {
-            const userInfoDiv = document.getElementById('userInfo');
-
-            if (currentUser) {
-                userInfoDiv.innerHTML = `
-                    <div class="user-info">
-                        <h3>Current User</h3>
-                        <p><strong>Username:</strong> ${currentUser.username || 'N/A'}</p>
-                        <p><strong>Display Name:</strong> ${currentUser.displayName || currentUser.display_name || 'N/A'}</p>
-                        <p><strong>User ID:</strong> ${currentUser.id || 'N/A'}</p>
-                        ${currentUser.credentials ? `
-                            <div class="credentials-list">
-                                <p><strong>Credentials:</strong></p>
-                                ${currentUser.credentials.map(cred => `
-                                    <div class="credential-item">ID: ${cred.id}</div>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-                userInfoDiv.style.display = 'block';
-            } else {
-                userInfoDiv.style.display = 'none';
-            }
-        }
-
-        async function getUserInfo() {
-            setLoading('getUserInfoBtn', true);
-
-            try {
-                // Try to get user info from the server
-                const userInfo = await apiRequest('/oauth2/user', { method: 'GET' });
-                currentUser = userInfo;
-                updateUserInfo();
-                showStatus('debugStatus', 'User info retrieved successfully', 'success', userInfo);
-            } catch (error) {
-                showStatus('debugStatus', `Failed to get user info: ${error.message}`, 'warning');
-                updateUserInfo(); // Still update with local info if available
-            } finally {
-                setLoading('getUserInfoBtn', false);
-            }
-        }
-
-        // Debug functions
-        function checkWebAuthnSupport() {
-            setLoading('checkSupportBtn', true);
-
-            const support = {
-                webauthn: !!window.PublicKeyCredential,
-                platform: false,
-                crossPlatform: false,
-                conditionalMediation: false
-            };
-
-            const checks = [];
-
-            if (window.PublicKeyCredential) {
-                checks.push(
-                    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-                        .then(available => support.platform = available),
-                    PublicKeyCredential.isConditionalMediationAvailable?.()
-                        .then(available => support.conditionalMediation = available)
-                        .catch(() => support.conditionalMediation = false)
-                );
-            }
-
-            Promise.all(checks).then(() => {
-                const message = support.webauthn
-                    ? 'WebAuthn is supported!'
-                    : 'WebAuthn is not supported in this browser';
-
-                const type = support.webauthn ? 'success' : 'error';
-                showStatus('debugStatus', message, type, support);
-            }).finally(() => {
-                setLoading('checkSupportBtn', false);
-            });
-        }
-
-        function clearTestData() {
-            currentUser = null;
-            registrationOptions = null;
-            authenticationOptions = null;
-
-            // Clear form fields
-            document.getElementById('registerUsername').value = 'testuser';
-            document.getElementById('registerDisplayName').value = 'Test User';
-            document.getElementById('authUsername').value = '';
-
-            // Hide all status messages
-            hideStatus('registerStatus');
-            hideStatus('authStatus');
-            hideStatus('debugStatus');
-            updateUserInfo();
-
-            showStatus('debugStatus', 'Test data cleared', 'info');
-        }
-
-        // Event listeners
-        document.addEventListener('DOMContentLoaded', function () {
-            document.getElementById('registerBtn').addEventListener('click', startRegistration);
-            document.getElementById('authBtn').addEventListener('click', startAuthentication);
-            document.getElementById('getUserInfoBtn').addEventListener('click', getUserInfo);
-            document.getElementById('checkSupportBtn').addEventListener('click', checkWebAuthnSupport);
-            document.getElementById('clearDataBtn').addEventListener('click', clearTestData);
-
-            // Check WebAuthn support on load
-            checkWebAuthnSupport();
-        });
-    </script>
+    <script src="/oauth2/static/passkey-test.js"></script>
 </body>
 
 </html>
