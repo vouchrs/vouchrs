@@ -1,11 +1,13 @@
 /**
  * Universal Passkey Implementation for Vouchrs
- * Version: 1.0.0 
+ * Version: 2.0.0
  *
- * Provides cross-platform passkey authentication supporting:
- * - Desktop password managers (Chrome, Safari, 1Password, Bitwarden, etc.)
+ * Provides automatic passkey detection and authentication with fallback to registration:
+ * - Automatic detection of available passkeys
+ * - Cross-platform passkey authentication (Chrome, Safari, 1Password, Bitwarden, etc.)
  * - Mobile platform authenticators (TouchID, FaceID, Android Biometric)
  * - Usernameless authentication flows
+ * - Automatic redirect to registration when no passkeys are available
  * - Robust error handling and timeout management
  *
  * Optimizations:
@@ -13,7 +15,7 @@
  * - Cross-browser compatibility fallbacks
  * - Enhanced timeout management for different platforms
  * - Secure credential cleanup on failures
- * - User-friendly error messages
+ * - User-friendly error messages and automatic registration fallback
  */
 
 // Utility functions
@@ -134,203 +136,10 @@ function detectPlatform() {
     };
 }
 
-/**
- * Register a new passkey for the user
- * Handles both mobile and desktop platforms with appropriate optimizations
- */
-async function registerPasskey() {
-    const email = document.getElementById('email').value.trim();
-    const displayName = document.getElementById('displayName').value.trim();
-    const registerBtn = document.getElementById('register-btn');        // Input validation
-    if (!email || !displayName) {
-        showStatus('Please enter both email address and display name', 'error');
-        return;
-    }
-
-    if (!email.includes('@') || email.length < 5) {
-        showStatus('Please enter a valid email address', 'error');
-        return;
-    }
-
-    if (displayName.length < 2) {
-        showStatus('Display name must be at least 2 characters', 'error');
-        return;
-    }
-
-    setLoading(registerBtn, true);
-    hideStatus();
-
-    try {
-        const platform = detectPlatform();
-        showStatus('Starting passkey registration...', 'info');
-
-        // Fetch passkey creation options from the server
-        const _options = await apiRequest('/oauth2/passkey/register/start', {
-            body: JSON.stringify({
-                name: displayName,
-                email: email
-            })
-        });
-
-        showStatus('Creating your passkey...', 'info');
-
-        let options;
-
-        // Try modern JSON parsing first (better for mobile)
-        if (PublicKeyCredential.parseCreationOptionsFromJSON) {
-            try {
-                options = PublicKeyCredential.parseCreationOptionsFromJSON(_options.creation_options);
-            } catch (e) {
-                options = null;
-            }
-        }
-
-        // Fallback to manual parsing (better for desktop)
-        if (!options) {
-            options = _options.creation_options.publicKey;
-            options.challenge = base64urlToBuffer(options.challenge);
-            options.user.id = base64urlToBuffer(options.user.id);
-            if (options.excludeCredentials) {
-                options.excludeCredentials = options.excludeCredentials.map(cred => ({
-                    ...cred,
-                    id: base64urlToBuffer(cred.id)
-                }));
-            }
-        }
-
-        // Platform-specific authenticator preferences
-        if (platform.isMobile) {
-            // Mobile: Prefer built-in platform authenticators (TouchID, FaceID, etc.)
-            options.authenticatorSelection = {
-                authenticatorAttachment: "platform",
-                userVerification: "required",
-                requireResidentKey: true,
-                residentKey: "preferred"
-            };
-            options.timeout = 180000; // 3 minutes for mobile biometric setup
-        } else {
-            // Desktop: Prefer cross-platform authenticators (password managers)
-            options.authenticatorSelection = {
-                authenticatorAttachment: "cross-platform",
-                userVerification: "required",
-                requireResidentKey: true,
-                residentKey: "preferred"
-            };
-            options.timeout = 120000; // 2 minutes for desktop
-        }
-
-        // Add extensions for better cross-platform support
-        if (!options.extensions) {
-            options.extensions = {};
-        }
-
-        // Enable credential protection extension
-        options.extensions.credProtect = {
-            credentialProtectionPolicy: "userVerificationRequired",
-            enforceCredentialProtectionPolicy: false
-        };
-
-        // Cross-browser credential creation with timeout handling
-        let credential;
-        if (platform.isDesktop) {
-            // Desktop: Enhanced timeout control for password manager integration
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), options.timeout);
-
-            try {
-                credential = await navigator.credentials.create({
-                    publicKey: options,
-                    signal: abortController.signal
-                });
-                clearTimeout(timeoutId);
-            } catch (error) {
-                clearTimeout(timeoutId);
-                throw error;
-            }
-        } else {
-            // Mobile: Direct approach for platform authenticators
-            credential = await navigator.credentials.create({
-                publicKey: options
-            });
-        }
-
-        if (!credential) {
-            throw new Error('Passkey creation was cancelled');
-        }
-
-        showStatus('Completing registration...', 'info');
-
-        // Convert credential to JSON with cross-browser compatibility
-        let credentialData;
-        if (typeof credential.toJSON === 'function') {
-            try {
-                credentialData = credential.toJSON.call(credential);
-            } catch (e) {
-                credentialData = null; // Fallback to manual conversion
-            }
-        }
-
-        if (!credentialData) {
-            // Manual conversion for older browsers
-            credentialData = {
-                id: credential.id,
-                rawId: bufferToBase64url(credential.rawId),
-                response: {
-                    attestationObject: bufferToBase64url(credential.response.attestationObject),
-                    clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
-                },
-                type: credential.type
-            };
-        }
-
-        // Complete registration
-        const registrationData = {
-            credential_response: credentialData,
-            registration_state: _options.registration_state,
-            user_data: _options.user_data
-        };
-
-        try {
-            const result = await apiRequest('/oauth2/passkey/register/complete', {
-                body: JSON.stringify(registrationData)
-            });
-
-            showStatus('Passkey created successfully! You can now sign in with it.', 'success');
-
-        } catch (e) {
-            // Clean up failed credentials if supported
-            if (PublicKeyCredential.signalUnknownCredential && options.rp) {
-                try {
-                    await PublicKeyCredential.signalUnknownCredential({
-                        rpId: options.rp.id,
-                        credentialId: credentialData.id,
-                    });
-                } catch (signalError) {
-                    // Silent cleanup failure - not critical
-                }
-            }
-            throw e;
-        }
-
-    } catch (error) {
-        let errorMessage = `Registration failed: ${error.message || error.error || 'Unknown error'}`;
-
-        // Provide user-friendly error messages
-        if (error.name === 'NotAllowedError') {
-            errorMessage = 'Registration was cancelled or failed. Please try again.';
-        } else if (error.name === 'SecurityError') {
-            errorMessage = 'Security error: Please ensure you are on a secure connection (HTTPS).';
-        }
-
-        showStatus(errorMessage, 'error');
-    } finally {
-        setLoading(registerBtn, false);
-    }
-}
 
 /**
- * Authenticate user with existing passkey
- * Supports usernameless authentication across platforms
+ * Authenticate user with existing passkey or redirect to registration
+ * Supports usernameless authentication across platforms with automatic detection
  */
 async function authenticateWithPasskey() {
     const signinBtn = document.getElementById('passkey-signin');
@@ -340,14 +149,28 @@ async function authenticateWithPasskey() {
 
     try {
         const platform = detectPlatform();
-        showStatus('Starting passkey authentication...', 'info');
+        showStatus('Checking for available passkeys...', 'info');
 
-        // Fetch passkey request options from the server
-        const _options = await apiRequest('/oauth2/passkey/auth/start', {
-            body: JSON.stringify({}) // Empty body for usernameless auth
-        });
+        // First, try to get authentication options to see if there are any passkeys
+        let _options;
+        try {
+            _options = await apiRequest('/oauth2/passkey/auth/start', {
+                body: JSON.stringify({}) // Empty body for usernameless auth
+            });
+        } catch (error) {
+            // If we can't start auth (e.g., no passkeys), redirect to registration
+            if (error.status === 404 || error.message?.includes('no passkeys') || error.error?.includes('no passkeys')) {
+                showStatus('No passkeys found. Redirecting to registration...', 'info');
+                setTimeout(() => {
+                    // Redirect to the registration form
+                    window.location.href = '/oauth2/static/passkey-register.html';
+                }, 1500);
+                return;
+            }
+            throw error;
+        }
 
-        showStatus('Choose your passkey...', 'info');
+        showStatus('Passkeys found! Choose your passkey...', 'info');
 
         // Parse authentication options with cross-browser compatibility
         let options;
@@ -513,13 +336,23 @@ async function authenticateWithPasskey() {
     } catch (error) {
         let errorMessage = `Authentication failed: ${error.message || error.error || 'Unknown error'}`;
 
-        // Provide user-friendly error messages
+        // Handle specific cases where we should redirect to registration
         if (error.name === 'NotAllowedError') {
-            errorMessage = 'Authentication was cancelled or no passkeys available. Please try again or register a new passkey.';
+            showStatus('No passkeys available or authentication cancelled. Redirecting to registration...', 'info');
+            setTimeout(() => {
+                window.location.href = '/oauth2/static/passkey-register.html';
+            }, 2000);
+            return;
         } else if (error.name === 'SecurityError') {
             errorMessage = 'Security error: Please ensure you are on a secure connection (HTTPS).';
         } else if (error.name === 'AbortError') {
             errorMessage = 'Authentication timed out. Please try again.';
+        } else if (error.status === 404 || error.message?.includes('no passkeys') || error.error?.includes('no passkeys')) {
+            showStatus('No passkeys found. Redirecting to registration...', 'info');
+            setTimeout(() => {
+                window.location.href = '/oauth2/static/passkey-register.html';
+            }, 1500);
+            return;
         }
 
         showStatus(errorMessage, 'error');
@@ -536,17 +369,15 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!window.PublicKeyCredential) {
         showStatus('WebAuthn is not supported in this browser. Please use a modern browser or form-based sign-in.', 'error');
         document.getElementById('passkey-signin').disabled = true;
-        document.getElementById('register-btn').disabled = true;
         return;
     }
 
-    // Set up event listeners
+    // Set up event listener for sign-in button
     document.getElementById('passkey-signin').addEventListener('click', authenticateWithPasskey);
-    document.getElementById('register-btn').addEventListener('click', registerPasskey);
 
     // Show platform-optimized welcome message
     const platform = detectPlatform();
     const platformType = platform.isMobile ? 'mobile device' : 'desktop';
 
-    showStatus(`Ready! Optimized for ${platformType}. Click "Sign in with passkey" to authenticate or create a new passkey below.`, 'info');
+    showStatus(`Ready! Optimized for ${platformType}. Click "Sign in with passkey" to authenticate. If you don't have a passkey, you'll be redirected to registration.`, 'info');
 });
