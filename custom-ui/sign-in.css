@@ -1,6 +1,7 @@
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background: #121212; /* Dark mode background */
+    background: #121212;
+    /* Dark mode background */
     margin: 0;
     padding: 0;
     min-height: 100vh;
@@ -17,10 +18,11 @@ body {
 }
 
 .login-box {
-    background: #1e1e1e; /* Dark card background */
+    background: #1e1e1e;
+    /* Dark card background */
     padding: 2.5rem;
     border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     text-align: center;
     border: 1px solid #333;
 }
@@ -67,56 +69,162 @@ h1 {
 .provider-btn:hover {
     transform: translateY(-2px);
     filter: brightness(110%);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
 .provider-icon {
-    display: block; /* Ensure consistent display type */
+    display: block;
+    /* Ensure consistent display type */
 }
 
-/* Provider button container styles */
-.google-btn, .apple-btn {
-    background-color: #2d2d2d; /* Medium dark gray for both buttons */
+/* Provider button base styles */
+.provider-btn {
+    background-color: #2d2d2d;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    height: 44px; /* Consistent height */
-    display: flex;
-    align-items: center;
-    position: relative;
-    overflow: hidden; /* Ensure nothing extends outside button boundaries */
+    height: 44px;
     padding: 0;
+    position: relative;
+    overflow: hidden;
 }
 
-/* Keep Apple button slightly darker as it fits their branding better */
+/* Provider-specific styling */
 .apple-btn {
     background-color: #1a1a1a;
 }
 
-/* Google icon specific styling */
+.passkey-btn {
+    cursor: pointer;
+}
+
+.passkey-btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+    transform: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
+/* Provider icon base styles */
+.provider-icon {
+    display: block;
+    flex-shrink: 0;
+    margin-left: 20px;
+}
+
+/* Provider-specific icon styling */
 .google-btn .provider-icon {
     width: 24px;
     height: 24px;
-    flex-shrink: 0;
-    margin-left: 20px; /* Left padding inside button */
 }
 
-/* Apple icon specific styling - overrides the width/height attributes from the SVG */
 .apple-btn .provider-icon {
     width: 22px !important;
     height: 22px !important;
-    transform: scale(1.8); /* Large scale increase for visibility */
-    flex-shrink: 0;
-    margin-left: 20px; /* Left padding inside button */
+    transform: scale(1.8);
     transform-origin: center;
 }
 
-/* Center the text in both buttons using flex layout */
-.provider-btn span {
+.passkey-btn .passkey-icon {
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 0;
+    padding-right: 0;
+}
+
+/* Button text styling */
+.provider-btn span:not(.provider-icon):not(.passkey-icon) {
     flex-grow: 1;
     text-align: center;
     font-weight: 500;
-    padding-right: 20px; /* Compensate for the icon space on left */
+    padding-right: 20px;
 }
 
+/* State-based styles */
+.loading {
+    pointer-events: none;
+}
+
+.passkey-btn.loading .passkey-icon {
+    animation: turnKey 2s ease-in-out infinite;
+}
+
+.passkey-btn.success {
+    background: #34A853 !important;
+    pointer-events: none;
+}
+
+.passkey-btn.success .passkey-icon {
+    animation: none;
+    transform: none;
+}
+
+.passkey-btn.success .passkey-icon::before {
+    content: "✓";
+    font-size: 18px;
+}
+
+.passkey-btn.success span:last-child {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.passkey-btn.success::after {
+    content: "Sign in successful!";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: 500;
+    font-size: 15px;
+    animation: fadeInSuccess 0.5s ease-in-out;
+}
+
+/* Animations */
+@keyframes turnKey {
+
+    0%,
+    25% {
+        transform: rotate(0deg);
+    }
+
+    10% {
+        transform: rotate(90deg);
+    }
+
+    35%,
+    50% {
+        transform: rotate(180deg);
+    }
+
+    60%,
+    75% {
+        transform: rotate(270deg);
+    }
+
+    85%,
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeInSuccess {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* Footer */
 .footer {
     margin-top: 2rem;
     padding-top: 1rem;

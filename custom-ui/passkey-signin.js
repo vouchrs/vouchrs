@@ -20,26 +20,38 @@
 
 // Utility functions
 function showStatus(message, type = 'info') {
-    const statusElement = document.getElementById('status');
-    statusElement.className = `status ${type}`;
-    statusElement.textContent = message;
-    statusElement.style.display = 'block';
+    // Since we removed the status div, just log for debugging
+    console.log(`[${type.toUpperCase()}] ${message}`);
+
+    // For critical errors, show browser alert
+    if (type === 'error') {
+        alert(message);
+    }
 }
 
 function hideStatus() {
-    document.getElementById('status').style.display = 'none';
+    // No-op since we removed the status div
+    console.log('[INFO] Status hidden');
 }
 
 function setLoading(button, loading) {
     if (loading) {
         button.disabled = true;
-        const originalText = button.textContent;
-        button.innerHTML = '<span class="spinner"></span>' + originalText;
         button.classList.add('loading');
     } else {
         button.disabled = false;
-        button.innerHTML = button.textContent.replace(/^.*?([\w\s]+)$/, '$1');
         button.classList.remove('loading');
+    }
+}
+
+function setSuccess(button, success) {
+    if (success) {
+        button.classList.remove('loading');
+        button.classList.add('success');
+        button.disabled = true;
+    } else {
+        button.classList.remove('success');
+        button.disabled = false;
     }
 }
 
@@ -313,10 +325,16 @@ async function authenticateWithPasskey() {
 
             showStatus('Authentication successful! Redirecting...', 'success');
 
-            // Redirect to original destination
+            // Show success state on button
+            setSuccess(signinBtn, true);
+
+            // Redirect to original destination with a slight delay to show success state
             setTimeout(() => {
+                // Reset button state before redirect to prevent "back button" issues
+                setSuccess(signinBtn, false);
+                setLoading(signinBtn, false);
                 window.location.href = result.redirect_url || '/';
-            }, 1000);
+            }, 500);
 
         } catch (e) {
             // Clean up unknown credentials if supported
@@ -356,7 +374,7 @@ async function authenticateWithPasskey() {
         }
 
         showStatus(errorMessage, 'error');
-    } finally {
+        // Only clear loading state on error (success state is handled separately)
         setLoading(signinBtn, false);
     }
 }
@@ -375,9 +393,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // Set up event listener for sign-in button
     document.getElementById('passkey-signin').addEventListener('click', authenticateWithPasskey);
 
-    // Show platform-optimized welcome message
+    // Console log that the system is ready
     const platform = detectPlatform();
     const platformType = platform.isMobile ? 'mobile device' : 'desktop';
-
-    showStatus(`Ready! Optimized for ${platformType}. Click "Sign in with passkey" to authenticate. If you don't have a passkey, you'll be redirected to registration.`, 'info');
+    console.log(`[INFO] Passkey system ready! Optimized for ${platformType}.`);
 });

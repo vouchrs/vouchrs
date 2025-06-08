@@ -30,26 +30,38 @@ const Safe = {
 
 // Utility functions
 function showStatus(message, type = 'info') {
-    const statusElement = document.getElementById('status');
-    statusElement.className = `status ${type}`;
-    statusElement.textContent = message;
-    statusElement.style.display = 'block';
+    // Since we removed the status div, just log for debugging
+    console.log(`[${type.toUpperCase()}] ${message}`);
+
+    // For critical errors, show browser alert
+    if (type === 'error') {
+        alert(message);
+    }
 }
 
 function hideStatus() {
-    document.getElementById('status').style.display = 'none';
+    // No-op since we removed the status div
+    console.log('[INFO] Status hidden');
 }
 
 function setLoading(button, loading) {
     if (loading) {
         button.disabled = true;
-        const originalText = button.textContent;
-        button.innerHTML = '<span class="spinner"></span>' + originalText;
         button.classList.add('loading');
     } else {
         button.disabled = false;
-        button.innerHTML = button.textContent.replace(/^.*?([\w\s]+)$/, '$1');
         button.classList.remove('loading');
+    }
+}
+
+function setSuccess(button, success) {
+    if (success) {
+        button.classList.remove('loading');
+        button.classList.add('success');
+        button.disabled = true;
+    } else {
+        button.classList.remove('success');
+        button.disabled = false;
     }
 }
 
@@ -312,10 +324,16 @@ async function registerPasskey() {
 
             showStatus('Passkey created successfully! Redirecting...', 'success');
 
-            // Redirect to the same destination as successful authentication
+            // Show success state on button
+            setSuccess(registerBtn, true);
+
+            // Redirect to the same destination as successful authentication with a slight delay to show success state
             setTimeout(() => {
+                // Reset button state before redirect to prevent "back button" issues
+                setSuccess(registerBtn, false);
+                setLoading(registerBtn, false);
                 window.location.href = result.redirect_url || '/';
-            }, 1000);
+            }, 500);
 
         } catch (e) {
             // Clean up failed credentials if supported
@@ -362,9 +380,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // Set up event listener for registration button
     document.getElementById('register-btn').addEventListener('click', registerPasskey);
 
-    // Show platform-optimized welcome message
+    // Console log that the system is ready
     const platform = detectPlatform();
     const platformType = platform.isMobile ? 'mobile device' : 'desktop';
-
-    showStatus(`Ready to create your passkey! Optimized for ${platformType}.`, 'info');
+    console.log(`[INFO] Passkey registration ready! Optimized for ${platformType}.`);
 });
