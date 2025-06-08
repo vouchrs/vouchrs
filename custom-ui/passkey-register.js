@@ -6,6 +6,7 @@
  * - Cross-platform passkey registration (Chrome, Safari, 1Password, Bitwarden, etc.)
  * - Mobile platform authenticators (TouchID, FaceID, Android Biometric)
  * - Robust error handling and timeout management
+ * - Email validation using SafeJS library
  *
  * Optimizations:
  * - Platform-specific credential handling
@@ -13,7 +14,19 @@
  * - Enhanced timeout management for different platforms
  * - Secure credential cleanup on failures
  * - User-friendly error messages
+ * - SafeJS for secure input validation
  */
+
+// SafeJS v1.0.1 - Email validation functionality (Enhanced)
+// https://github.com/Hiren2001/SafeJS - MIT License
+const Safe = {
+    validateEmail: function (email) {
+        // Enhanced email regex that supports + signs and other valid characters
+        // Supports: user+tag@domain.com, user.name@domain.com, user-name@domain.co.uk
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        return emailRegex.test(email);
+    }
+};
 
 // Utility functions
 function showStatus(message, type = 'info') {
@@ -148,7 +161,8 @@ async function registerPasskey() {
         return;
     }
 
-    if (!email.includes('@') || email.length < 5) {
+    // Use SafeJS for email validation
+    if (!Safe.validateEmail(email)) {
         showStatus('Please enter a valid email address', 'error');
         return;
     }
