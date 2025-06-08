@@ -1,6 +1,6 @@
-// One-Button Passkey Implementation
-// Based on Google Chrome Labs passkey demo patterns
-// Optimized for Android password manager compatibility
+// Universal Passkey Implementation
+// Combines the best features from both one-button and test implementations
+// Optimized for compatibility with both mobile and desktop password managers
 
 // Utility functions
 function showStatus(message, type = 'info') {
@@ -27,7 +27,7 @@ function setLoading(button, loading) {
     }
 }
 
-// Base64URL encoding/decoding helpers (needed for manual parsing fallback)
+// Base64URL encoding/decoding helpers
 function base64urlToBuffer(base64url) {
     if (!base64url || typeof base64url !== 'string') {
         throw new Error(`Invalid base64url input: ${base64url}. Expected a non-empty string.`);
@@ -83,7 +83,23 @@ async function apiRequest(endpoint, options = {}) {
     }
 }
 
-// Modern passkey registration using Chrome Labs patterns
+// Detect platform for platform-specific optimizations
+function detectPlatform() {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+    const isDesktop = !isMobile;
+    const isApple = /iphone|ipad|ipod|mac/i.test(userAgent);
+    const isAndroid = /android/i.test(userAgent);
+
+    return {
+        isMobile,
+        isDesktop,
+        isApple,
+        isAndroid
+    };
+}
+
+// Universal passkey registration that works on both mobile and desktop
 async function registerPasskey() {
     const email = document.getElementById('email').value.trim();
     const displayName = document.getElementById('displayName').value.trim();
@@ -103,6 +119,7 @@ async function registerPasskey() {
     hideStatus();
 
     try {
+        const platform = detectPlatform();
         showStatus('Starting passkey registration...', 'info');
 
         // Fetch passkey creation options from the server
@@ -115,12 +132,19 @@ async function registerPasskey() {
 
         showStatus('Creating your passkey...', 'info');
 
-        // Use the modern JSON parsing method if available
         let options;
+
+        // Try modern JSON parsing first (better for mobile)
         if (PublicKeyCredential.parseCreationOptionsFromJSON) {
-            options = PublicKeyCredential.parseCreationOptionsFromJSON(_options.creation_options);
-        } else {
-            // Fallback to manual parsing for older browsers
+            try {
+                options = PublicKeyCredential.parseCreationOptionsFromJSON(_options.creation_options);
+            } catch (e) {
+                options = null;
+            }
+        }
+
+        // Fallback to manual parsing (better for desktop)
+        if (!options) {
             options = _options.creation_options.publicKey;
             options.challenge = base64urlToBuffer(options.challenge);
             options.user.id = base64urlToBuffer(options.user.id);
@@ -132,36 +156,52 @@ async function registerPasskey() {
             }
         }
 
-        // Optimize for both desktop and mobile password managers
-        options.authenticatorSelection = {
-            // For desktop password managers: prefer cross-platform
-            authenticatorAttachment: "cross-platform", // This specifically helps desktop password managers
-            userVerification: "required",
-            requireResidentKey: true,
-            residentKey: "preferred" // Use preferred instead of required for better compatibility
-        };
+        // Platform-specific optimizations
+        if (platform.isMobile) {
+            // Mobile optimizations
+            options.authenticatorSelection = {
+                authenticatorAttachment: "platform", // Prefer built-in authenticators on mobile
+                userVerification: "required",
+                requireResidentKey: true,
+                residentKey: "preferred"
+            };
+            options.timeout = 180000; // 3 minutes for mobile (longer for biometric setup)
+        } else {
+            // Desktop optimizations
+            options.authenticatorSelection = {
+                authenticatorAttachment: "cross-platform", // Prefer password managers on desktop
+                userVerification: "required",
+                requireResidentKey: true,
+                residentKey: "preferred"
+            };
+            options.timeout = 120000; // 2 minutes for desktop
+        }
 
-        // Set reasonable timeout - shorter for desktop responsiveness
-        options.timeout = 120000; // 2 minutes for registration
-
-        // Add extensions for better desktop password manager compatibility
+        // Add extensions for better cross-platform support
         if (!options.extensions) {
             options.extensions = {};
         }
-        // Enable credential protection extension for better cross-platform support
+
+        // Enable credential protection extension
         options.extensions.credProtect = {
             credentialProtectionPolicy: "userVerificationRequired",
             enforceCredentialProtectionPolicy: false
         };
 
-        console.log('Creating credential with options:', options);
-
-        // Create the credential with enhanced desktop/mobile compatibility
-        const credential = await navigator.credentials.create({
-            publicKey: options,
-            // Add signal for better timeout handling on desktop (like in working test page)
-            signal: AbortSignal.timeout(120000) // 2 minute timeout matching the options
-        });
+        // Create the credential with platform-specific timeout handling
+        let credential;
+        if (platform.isDesktop) {
+            // Desktop: Use AbortSignal for better timeout handling
+            credential = await navigator.credentials.create({
+                publicKey: options,
+                signal: AbortSignal.timeout(options.timeout)
+            });
+        } else {
+            // Mobile: Use simpler approach
+            credential = await navigator.credentials.create({
+                publicKey: options
+            });
+        }
 
         if (!credential) {
             throw new Error('No credential was created - user may have cancelled');
@@ -169,7 +209,7 @@ async function registerPasskey() {
 
         showStatus('Completing registration...', 'info');
 
-        // Convert credential to JSON format (modern approach)
+        // Convert credential to JSON format (modern approach preferred, fallback for compatibility)
         let credentialData;
         if (credential.toJSON) {
             credentialData = credential.toJSON();
@@ -213,9 +253,8 @@ async function registerPasskey() {
                         rpId: options.rp.id,
                         credentialId: credentialData.id,
                     });
-                    console.info('Unknown credential signaled to password manager for cleanup');
                 } catch (signalError) {
-                    console.warn('Failed to signal unknown credential:', signalError);
+                    // Silent cleanup failure
                 }
             }
             throw e;
@@ -223,13 +262,21 @@ async function registerPasskey() {
 
     } catch (error) {
         console.error('Registration failed:', error);
-        showStatus(`Registration failed: ${error.message || error.error || 'Unknown error'}`, 'error');
+        let errorMessage = `Registration failed: ${error.message || error.error || 'Unknown error'}`;
+
+        if (error.name === 'NotAllowedError') {
+            errorMessage = 'Registration was cancelled or failed. Please try again.';
+        } else if (error.name === 'SecurityError') {
+            errorMessage = 'Security error: Please ensure you are on a secure connection (HTTPS).';
+        }
+
+        showStatus(errorMessage, 'error');
     } finally {
         setLoading(registerBtn, false);
     }
 }
 
-// Modern passkey authentication using Chrome Labs patterns
+// Universal passkey authentication that works on both mobile and desktop
 async function authenticateWithPasskey() {
     const signinBtn = document.getElementById('passkey-signin');
 
@@ -237,6 +284,7 @@ async function authenticateWithPasskey() {
     hideStatus();
 
     try {
+        const platform = detectPlatform();
         showStatus('Starting passkey authentication...', 'info');
 
         // Fetch passkey request options from the server
@@ -246,12 +294,10 @@ async function authenticateWithPasskey() {
 
         showStatus('Choose your passkey...', 'info');
 
-        // Use the modern JSON parsing method if available
         let options;
-        if (PublicKeyCredential.parseRequestOptionsFromJSON) {
-            options = PublicKeyCredential.parseRequestOptionsFromJSON(_options.request_options);
-        } else {
-            // Fallback to manual parsing for older browsers
+
+        // For desktop compatibility, prefer manual parsing like the working test file
+        if (platform.isDesktop) {
             options = _options.request_options.publicKey;
             options.challenge = base64urlToBuffer(options.challenge);
             if (options.allowCredentials) {
@@ -260,30 +306,77 @@ async function authenticateWithPasskey() {
                     id: base64urlToBuffer(cred.id)
                 }));
             }
+        } else {
+            // Try modern JSON parsing first for mobile
+            if (PublicKeyCredential.parseRequestOptionsFromJSON) {
+                try {
+                    options = PublicKeyCredential.parseRequestOptionsFromJSON(_options.request_options);
+                } catch (e) {
+                    options = _options.request_options.publicKey;
+                    options.challenge = base64urlToBuffer(options.challenge);
+                    if (options.allowCredentials) {
+                        options.allowCredentials = options.allowCredentials.map(cred => ({
+                            ...cred,
+                            id: base64urlToBuffer(cred.id)
+                        }));
+                    }
+                }
+            } else {
+                // Fallback to manual parsing
+                options = _options.request_options.publicKey;
+                options.challenge = base64urlToBuffer(options.challenge);
+                if (options.allowCredentials) {
+                    options.allowCredentials = options.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: base64urlToBuffer(cred.id)
+                    }));
+                }
+            }
         }
 
         // For usernameless auth, don't restrict allowCredentials
         // This allows password managers to show all available passkeys
-        delete options.allowCredentials;
+        if (options.allowCredentials) {
+            delete options.allowCredentials;
+        }
 
-        // Optimize for both desktop and mobile password managers
+        // CRITICAL: Remove authenticatorSelection for authentication
+        // This allows password managers to work on desktop
+        if (options.authenticatorSelection) {
+            delete options.authenticatorSelection;
+        }
+
+        // Set basic requirements for authentication
         options.userVerification = "required";
-        options.timeout = 120000; // 2 minutes - shorter for desktop responsiveness
 
-        // Add extensions for better desktop password manager compatibility
+        // Platform-specific timeout optimizations
+        if (platform.isMobile) {
+            options.timeout = 180000; // 3 minutes for mobile
+        } else {
+            options.timeout = 120000; // 2 minutes for desktop
+        }
+
+        // Add extensions for better compatibility
         if (!options.extensions) {
             options.extensions = {};
         }
 
-        console.log('Getting credential with options:', options);
-
-        // Get the credential with enhanced desktop/mobile compatibility
-        const credential = await navigator.credentials.get({
-            publicKey: options,
-            mediation: 'optional', // Allow password manager picker
-            // Add signal for better timeout handling on desktop (like in working test page)
-            signal: AbortSignal.timeout(120000) // 2 minute timeout
-        });
+        // Get the credential with platform-specific approach
+        let credential;
+        if (platform.isDesktop) {
+            // Desktop: Use AbortSignal and mediation for better password manager support
+            credential = await navigator.credentials.get({
+                publicKey: options,
+                mediation: 'optional', // Allow password manager picker
+                signal: AbortSignal.timeout(options.timeout)
+            });
+        } else {
+            // Mobile: Use simpler approach with mediation
+            credential = await navigator.credentials.get({
+                publicKey: options,
+                mediation: 'optional'
+            });
+        }
 
         if (!credential) {
             throw new Error('No credential was returned - user may have cancelled');
@@ -291,7 +384,7 @@ async function authenticateWithPasskey() {
 
         showStatus('Completing authentication...', 'info');
 
-        // Convert credential to JSON format (modern approach)
+        // Convert credential to JSON format (modern approach preferred, fallback for compatibility)
         let credentialData;
         if (credential.toJSON) {
             credentialData = credential.toJSON();
@@ -337,9 +430,8 @@ async function authenticateWithPasskey() {
                         rpId: options.rpId,
                         credentialId: credentialData.id,
                     });
-                    console.info('Unknown credential signaled to password manager for cleanup');
                 } catch (signalError) {
-                    console.warn('Failed to signal unknown credential:', signalError);
+                    // Silent cleanup failure
                 }
             }
             throw e;
@@ -353,6 +445,8 @@ async function authenticateWithPasskey() {
             errorMessage = 'Authentication was cancelled or no passkeys available. Please try again or register a new passkey.';
         } else if (error.name === 'SecurityError') {
             errorMessage = 'Security error: Please ensure you are on a secure connection (HTTPS).';
+        } else if (error.name === 'AbortError') {
+            errorMessage = 'Authentication timed out. Please try again.';
         }
 
         showStatus(errorMessage, 'error');
@@ -375,18 +469,22 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('passkey-signin').addEventListener('click', authenticateWithPasskey);
     document.getElementById('register-btn').addEventListener('click', registerPasskey);
 
+    // Detect platform and show initial status
+    const platform = detectPlatform();
+
     // Check for modern WebAuthn features
     const hasModernFeatures = !!(
         PublicKeyCredential.parseCreationOptionsFromJSON &&
         PublicKeyCredential.parseRequestOptionsFromJSON
     );
 
-    console.log('WebAuthn support detected:', {
-        basic: !!window.PublicKeyCredential,
-        modern: hasModernFeatures,
-        signals: !!PublicKeyCredential.signalUnknownCredential
-    });
+    // Show initial status with platform-specific messaging
+    let message = 'Ready! Click "Sign in with passkey" to authenticate or create a new passkey below.';
+    if (platform.isMobile) {
+        message += ' (Optimized for mobile device)';
+    } else {
+        message += ' (Optimized for desktop)';
+    }
 
-    // Show initial status
-    showStatus('Ready! Click "Sign in with passkey" to authenticate or create a new passkey below.', 'info');
+    showStatus(message, 'info');
 });
