@@ -221,7 +221,8 @@ pub fn complete_registration(
         base64::engine::general_purpose::URL_SAFE.encode(passkey.cred_id().as_ref());
 
     // Extract user data from the registration request
-    let user_data = if let Some(encoded_user_data) = data.get("user_data").and_then(|v| v.as_str()) {
+    let user_data = if let Some(encoded_user_data) = data.get("user_data").and_then(|v| v.as_str())
+    {
         match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
             Ok(user_data) => {
                 log::debug!("Decoded user data for registration completion: email={}, name={:?}, user_handle={}",
