@@ -1,19 +1,21 @@
-# Ultra-minimal distroless static Dockerfile
+# Ultra-minimal distroless static Dockerfile with vendored OpenSSL
 FROM rust:1.87-slim AS builder
 
 # Define build arguments for multiplatform support
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
-# Install required system dependencies for static linking
+# Install required system dependencies for static linking with vendored OpenSSL
 RUN apt-get update && apt-get install -y \
     libssl-dev \
     musl-dev \
     musl-tools \
     pkg-config \
+    perl \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
-# Set target architecture based on platform
+# Set target architecture based on platform (using musl for static linking)
 RUN case "$TARGETPLATFORM" in \
     "linux/amd64") echo "x86_64-unknown-linux-musl" > /target.txt ;; \
     "linux/arm64") echo "aarch64-unknown-linux-musl" > /target.txt ;; \
@@ -32,8 +34,10 @@ COPY Cargo.toml Cargo.lock ./
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies with the appropriate target for static linking
+# Build dependencies with static OpenSSL and musl
 ENV RUSTFLAGS="-C target-feature=+crt-static"
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_VENDOR=1
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
