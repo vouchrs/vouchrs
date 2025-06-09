@@ -179,6 +179,9 @@ const fn get_html_template() -> &'static str {
 <body>
     <div class="container">
         <div class="login-box">
+            <div class="logo-container">
+                <img src="/oauth2/static/vouchrs-logo.svg" alt="Vouchrs" class="logo">
+            </div>
             <h1>Sign In</h1>
             <p>Choose your authentication provider</p>
             <div class="button-container">
