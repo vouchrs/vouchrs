@@ -79,7 +79,7 @@ aes-gcm = { version = "0.10", default-features = false, features = [
     "aes",
     "alloc",
 ] }
-p256 = { version = "0.14.0-pre.4", default-features = false, features = [
+p256 = { version = "0.14.0-pre.5", default-features = false, features = [
     "ecdsa",
     "pem",
     "pkcs8",
