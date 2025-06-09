@@ -5,16 +5,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PasskeyUserData {
     pub user_handle: String,
-    pub email: String,
+    pub email: Option<String>,
     pub name: Option<String>,
 }
 
 impl PasskeyUserData {
     /// Create a new `PasskeyUserData`
-    pub fn new(user_handle: &str, email: &str, name: Option<&str>) -> Self {
+    pub fn new(user_handle: &str, email: Option<&str>, name: Option<&str>) -> Self {
         Self {
             user_handle: user_handle.to_string(),
-            email: email.to_string(),
+            email: email.map(ToString::to_string),
             name: name.map(ToString::to_string),
         }
     }

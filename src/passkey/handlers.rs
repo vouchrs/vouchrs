@@ -105,7 +105,7 @@ pub fn start_registration(
 
     // Create user data to associate with the registration
     let user_data =
-        crate::passkey::PasskeyUserData::new(&user_handle_str, &data.email, Some(&data.name));
+        crate::passkey::PasskeyUserData::new(&user_handle_str, Some(&data.email), Some(&data.name));
     let user_data_encoded = match user_data.encode() {
         Ok(data) => data,
         Err(e) => {
@@ -225,7 +225,7 @@ pub fn complete_registration(
     {
         match crate::passkey::PasskeyUserData::decode(encoded_user_data) {
             Ok(user_data) => {
-                log::debug!("Decoded user data for registration completion: email={}, name={:?}, user_handle={}",
+                log::debug!("Decoded user data for registration completion: email={:?}, name={:?}, user_handle={}",
                     user_data.email, user_data.name, user_data.user_handle);
                 user_data
             }
@@ -392,7 +392,7 @@ fn extract_and_validate_user_data(
                     // Convert VouchrsUserData to PasskeyUserData using the stored information
                     let user_data = crate::passkey::PasskeyUserData::new(
                         &user_handle,
-                        &stored_user_data.email,
+                        Some(&stored_user_data.email),
                         stored_user_data.name.as_deref(),
                     );
 
@@ -406,14 +406,14 @@ fn extract_and_validate_user_data(
                 }
             }
 
-            // Fallback: create minimal user data with placeholder values
+            // Fallback: create minimal user data without placeholder values
             let user_data = crate::passkey::PasskeyUserData::new(
                 &user_handle,
-                "usernameless@passkey.auth", // Placeholder email for usernameless auth
-                Some("Passkey User"),        // Placeholder name for usernameless auth
+                None, // No email for usernameless auth - let frontend handle this
+                None, // No name for usernameless auth - let frontend handle this
             );
 
-            log::info!("Usernameless authentication for user handle: {user_handle} (using placeholder values)");
+            log::info!("Usernameless authentication for user handle: {user_handle} (no placeholder values)");
             return Ok(user_data);
         }
 

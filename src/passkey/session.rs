@@ -46,7 +46,7 @@ impl std::error::Error for PasskeySessionError {}
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PasskeySessionData {
     // Common session data
-    pub user_email: String,
+    pub user_email: Option<String>,
     pub user_name: Option<String>,
     pub provider: String,
     pub provider_id: String, // Maps to user_handle
@@ -80,7 +80,7 @@ impl PasskeySessionData {
         user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
     ) -> VouchrsUserData {
         VouchrsUserData {
-            email: self.user_email.clone(),
+            email: self.user_email.clone().unwrap_or_default(),
             name: self.user_name.clone(),
             provider: self.provider.clone(),
             provider_id: self.provider_id.clone(),
@@ -112,7 +112,7 @@ impl PasskeySessionData {
 pub fn create_passkey_session(
     _auth_result: &AuthenticationResult,
     credential: &Credential,
-    user_email: &str,
+    user_email: Option<&str>,
     user_name: Option<&str>,
     session_duration: i64,
 ) -> Result<PasskeySessionData, PasskeySessionError> {
@@ -120,7 +120,7 @@ pub fn create_passkey_session(
 
     // Create passkey session
     let session = PasskeySessionData {
-        user_email: user_email.to_string(),
+        user_email: user_email.map(ToString::to_string),
         user_name: user_name.map(ToString::to_string),
         provider: "passkey".to_string(),
         provider_id: credential.counter.to_string(),
@@ -160,7 +160,7 @@ pub fn to_vouchrs_session(
 
     // Create VouchrsUserData (compatible with OAuth flows)
     let vouchrs_user_data = VouchrsUserData {
-        email: session.user_email.clone(),
+        email: session.user_email.clone().unwrap_or_default(),
         name: session.user_name.clone(),
         provider: session.provider.clone(),
         provider_id: session.provider_id.clone(),
@@ -186,7 +186,7 @@ impl PasskeySessionBuilder {
     /// Returns an error if the session duration calculation overflows or if required
     /// parameters are invalid.
     pub fn build_passkey_session(
-        user_email: String,
+        user_email: Option<String>,
         user_name: Option<String>,
         user_handle: String,
         credential_id: String,
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn test_passkey_session_creation() {
         let session_data = PasskeySessionBuilder::build_passkey_session(
-            "user@example.com".to_string(),
+            Some("user@example.com".to_string()),
             Some("John Doe".to_string()),
             "user_handle_123".to_string(),
             "credential_456".to_string(),
@@ -277,7 +277,10 @@ mod tests {
         )
         .expect("Passkey session should be created successfully");
 
-        assert_eq!(session_data.user_email, "user@example.com");
+        assert_eq!(
+            session_data.user_email,
+            Some("user@example.com".to_string())
+        );
         assert_eq!(session_data.user_name, Some("John Doe".to_string()));
         assert_eq!(session_data.provider, "passkey");
         assert_eq!(session_data.provider_id, "user_handle_123");
@@ -296,7 +299,7 @@ mod tests {
     #[test]
     fn test_passkey_session_user_data_conversion() {
         let session_data = PasskeySessionBuilder::build_passkey_session(
-            "user@example.com".to_string(),
+            Some("user@example.com".to_string()),
             Some("John Doe".to_string()),
             "user_handle_123".to_string(),
             "credential_456".to_string(),
@@ -308,6 +311,38 @@ mod tests {
 
         assert_eq!(user_data.email, "user@example.com");
         assert_eq!(user_data.name, Some("John Doe".to_string()));
+        assert_eq!(user_data.provider, "passkey");
+        assert_eq!(user_data.provider_id, "user_handle_123");
+        assert_eq!(user_data.client_ip, Some("192.168.1.1".to_string()));
+        assert_eq!(
+            user_data.session_start,
+            Some(session_data.authenticated_at.timestamp())
+        );
+    }
+
+    #[test]
+    fn test_usernameless_passkey_session_creation() {
+        // Test creating a session without email or name (usernameless authentication)
+        let session_data = PasskeySessionBuilder::build_passkey_session(
+            None, // No email
+            None, // No name
+            "user_handle_123".to_string(),
+            "credential_456".to_string(),
+            Some(168), // 7 days
+        )
+        .expect("Usernameless passkey session should be created successfully");
+
+        assert_eq!(session_data.user_email, None);
+        assert_eq!(session_data.user_name, None);
+        assert_eq!(session_data.provider, "passkey");
+        assert_eq!(session_data.provider_id, "user_handle_123");
+        assert_eq!(session_data.credential_id, "credential_456");
+        assert!(session_data.expires_at > session_data.authenticated_at);
+
+        // Test conversion to VouchrsUserData - should use empty string for email
+        let user_data = session_data.to_user_data(Some("192.168.1.1"), None);
+        assert_eq!(user_data.email, ""); // Should be empty string, not placeholder
+        assert_eq!(user_data.name, None);
         assert_eq!(user_data.provider, "passkey");
         assert_eq!(user_data.provider_id, "user_handle_123");
         assert_eq!(user_data.client_ip, Some("192.168.1.1".to_string()));
