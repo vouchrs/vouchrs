@@ -360,7 +360,7 @@ impl SessionBuilder {
     }
 
     /// Extract client information from the request
-    fn extract_client_info(
+    pub fn extract_client_info(
         req: &actix_web::HttpRequest,
     ) -> (Option<String>, crate::utils::user_agent::UserAgentInfo) {
         use crate::utils::user_agent::extract_user_agent_info;
@@ -376,7 +376,8 @@ impl SessionBuilder {
     }
 
     /// Create error response for session building failures
-    fn create_error_response(
+    #[must_use]
+    pub fn create_error_response(
         session_manager: &crate::session::SessionManager,
         error_msg: &str,
     ) -> actix_web::HttpResponse {

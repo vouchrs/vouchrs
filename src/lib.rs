@@ -10,6 +10,7 @@ pub mod handlers;
 pub mod jwt_validation;
 pub mod models;
 pub mod oauth;
+pub mod passkey;
 pub mod session;
 pub mod session_builder;
 pub mod session_validation;
@@ -22,5 +23,6 @@ pub use handlers::{
 };
 pub use models::VouchrsSession;
 pub use oauth::OAuthConfig;
+pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
 pub use session::SessionManager;
 pub use settings::VouchrsSettings;

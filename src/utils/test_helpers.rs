@@ -12,9 +12,11 @@ pub fn create_test_session() -> VouchrsSession {
     VouchrsSession {
         id_token: Some("test_id_token".to_string()),
         refresh_token: Some("test_refresh_token".to_string()),
+        credential_id: None, // OAuth doesn't use credentials
+        user_handle: None,   // OAuth doesn't use user handles
         provider: "google".to_string(),
         expires_at: Utc::now() + Duration::hours(1),
-        session_created_at: Utc::now(),
+        authenticated_at: Utc::now(), // Updated field name
     }
 }
 
@@ -83,5 +85,19 @@ pub fn create_test_settings() -> VouchrsSettings {
             session_refresh_hours: 0,
         },
         ..Default::default()
+    }
+}
+
+/// Create a test passkey session for use in unit tests
+#[must_use]
+pub fn create_test_passkey_session() -> VouchrsSession {
+    VouchrsSession {
+        id_token: None,      // Passkeys don't use OAuth tokens
+        refresh_token: None, // Passkeys don't refresh
+        credential_id: Some("test_credential_123".to_string()),
+        user_handle: Some("test_user_handle_456".to_string()),
+        provider: "passkey".to_string(),
+        expires_at: Utc::now() + Duration::hours(168), // 7 days default
+        authenticated_at: Utc::now(),
     }
 }

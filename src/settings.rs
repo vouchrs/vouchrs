@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 
+// Import PasskeySettings
+use crate::passkey::PasskeySettings;
+
 // Additional imports for environment and logging setup
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -14,6 +17,9 @@ pub struct VouchrsSettings {
     pub cookies: CookieSettings,
     pub logging: LoggingSettings,
     pub providers: Vec<ProviderSettings>,
+
+    #[serde(default)]
+    pub passkeys: PasskeySettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

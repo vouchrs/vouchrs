@@ -20,7 +20,8 @@ panic = "abort"   # Don't include stack unwinding code
 strip = true      # Strip symbols from binary
 
 [features]
-default = []
+default = ["passkeys"]
+passkeys = ["dep:ciborium", "dep:cbor-codec"]
 
 # Clippy configuration - pedantic mode with warnings as errors
 [lints.clippy]
@@ -101,6 +102,17 @@ rand = { version = "0.9", default-features = false, features = [
     "std_rng",
 ] }
 urlencoding = "2.1.3"
+
+# WebAuthn dependencies
+ciborium = { version = "0.2", optional = true }
+cbor-codec = { version = "0.7", optional = true }
+ring = "0.17.14"
+webauthn-rs = { version = "0.5.1", features = [
+    "danger-allow-state-serialisation",
+    "danger-credential-internals"
+] }
+webauthn-rs-proto = "0.5.1" # For direct access to WebAuthn protocol structures
+uuid = { version = "1.17.0", features = ["v4"] }
 
 [dev-dependencies]
 serial_test = "3.2.0"

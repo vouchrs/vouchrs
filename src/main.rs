@@ -4,7 +4,8 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use actix_cors::Cors;
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result};
+use vouchrs::passkey::complete_registration;
 use vouchrs::{
     handlers::{
         health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
@@ -82,6 +83,44 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
     .await
 }
 
+// Passkey wrapper handlers to match actix-web signatures
+async fn passkey_start_registration(
+    req: HttpRequest,
+    data: web::Json<vouchrs::passkey::RegistrationRequest>,
+    settings: web::Data<VouchrsSettings>,
+) -> Result<HttpResponse> {
+    use vouchrs::passkey::start_registration;
+    start_registration(&req, &data, &settings)
+}
+
+async fn passkey_complete_registration(
+    req: HttpRequest,
+    data: web::Json<serde_json::Value>,
+    settings: web::Data<VouchrsSettings>,
+    session_manager: web::Data<SessionManager>,
+) -> Result<HttpResponse> {
+    complete_registration(&req, &data, &settings, &session_manager)
+}
+
+async fn passkey_start_authentication(
+    req: HttpRequest,
+    data: web::Json<serde_json::Value>,
+    settings: web::Data<VouchrsSettings>,
+) -> Result<HttpResponse> {
+    use vouchrs::passkey::start_authentication;
+    start_authentication(&req, &data, &settings)
+}
+
+async fn passkey_complete_authentication(
+    req: HttpRequest,
+    data: web::Json<serde_json::Value>,
+    settings: web::Data<VouchrsSettings>,
+    session_manager: web::Data<SessionManager>,
+) -> Result<HttpResponse> {
+    use vouchrs::passkey::complete_authentication;
+    complete_authentication(&req, &data, &settings, &session_manager)
+}
+
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
         // OAuth2 endpoints
@@ -92,6 +131,23 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
         .route("/oauth2/callback", web::post().to(oauth_callback))
         .route("/oauth2/debug", web::get().to(oauth_debug))
         .route("/oauth2/userinfo", web::get().to(oauth_userinfo))
+        // Passkey endpoints
+        .route(
+            "/oauth2/passkey/register/start",
+            web::post().to(passkey_start_registration),
+        )
+        .route(
+            "/oauth2/passkey/register/complete",
+            web::post().to(passkey_complete_registration),
+        )
+        .route(
+            "/oauth2/passkey/auth/start",
+            web::post().to(passkey_start_authentication),
+        )
+        .route(
+            "/oauth2/passkey/auth/complete",
+            web::post().to(passkey_complete_authentication),
+        )
         // Static files endpoint
         .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint
