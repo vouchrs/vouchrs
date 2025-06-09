@@ -1,6 +1,6 @@
 /**
  * Universal Passkey Implementation for Vouchrs
- * Version: 2.0.0
+ * Version: 0.2.0
  *
  * Provides automatic passkey detection and authentication with fallback to registration:
  * - Automatic detection of available passkeys

@@ -1,12 +1,12 @@
 /**
  * Passkey Registration for Vouchrs
- * Version: 2.0.0
+ * Version: 0.2.0
  *
  * Provides passkey registration functionality:
  * - Cross-platform passkey registration (Chrome, Safari, 1Password, Bitwarden, etc.)
  * - Mobile platform authenticators (TouchID, FaceID, Android Biometric)
  * - Robust error handling and timeout management
- * - Email validation using SafeJS library
+ * - Built-in email validation
  *
  * Optimizations:
  * - Platform-specific credential handling
@@ -14,19 +14,12 @@
  * - Enhanced timeout management for different platforms
  * - Secure credential cleanup on failures
  * - User-friendly error messages
- * - SafeJS for secure input validation
  */
 
-// SafeJS v1.0.1 - Email validation functionality (Enhanced)
-// https://github.com/Hiren2001/SafeJS - MIT License
-const Safe = {
-    validateEmail: function (email) {
-        // Enhanced email regex that supports + signs and other valid characters
-        // Supports: user+tag@domain.com, user.name@domain.com, user-name@domain.co.uk
-        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-        return emailRegex.test(email);
-    }
-};
+// Simple email validation
+function validateEmail(email) {
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+}
 
 // Utility functions
 function showStatus(message, type = 'info') {
@@ -159,6 +152,60 @@ function detectPlatform() {
 }
 
 /**
+ * Create credential with desktop fallback mechanism
+ * @param {Object} options - Credential creation options
+ * @returns {Promise<PublicKeyCredential>} Created credential
+ */
+async function createCredentialWithFallback(options) {
+    // Try cross-platform first
+    try {
+        showStatus('Trying external authenticators (password managers, security keys)...', 'info');
+        options.authenticatorSelection = {
+            authenticatorAttachment: "cross-platform",
+            userVerification: "discouraged",
+            requireResidentKey: false,
+            residentKey: "discouraged"
+        };
+        options.timeout = 30000;
+
+        const credential = await navigator.credentials.create({
+            publicKey: options,
+            signal: AbortSignal.timeout(options.timeout)
+        });
+
+        showStatus('External authenticator connected successfully!', 'info');
+        return credential;
+    } catch (error) {
+        // Check if recoverable error
+        const isRecoverable = ['NotAllowedError', 'AbortError', 'NotSupportedError'].includes(error.name) ||
+            error.message?.includes('cancelled') ||
+            error.message?.includes('timeout');
+
+        if (!isRecoverable) throw error;
+
+        // Fallback to platform authenticators
+        showStatus('Trying built-in authenticators (Windows Hello, Touch ID, etc.)...', 'info');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        options.authenticatorSelection = {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+            requireResidentKey: true,
+            residentKey: "preferred"
+        };
+        options.timeout = 120000;
+
+        const credential = await navigator.credentials.create({
+            publicKey: options,
+            signal: AbortSignal.timeout(options.timeout)
+        });
+
+        showStatus('Built-in authenticator activated successfully!', 'info');
+        return credential;
+    }
+}
+
+/**
  * Register a new passkey for the user
  * Handles both mobile and desktop platforms with appropriate optimizations
  */
@@ -173,8 +220,8 @@ async function registerPasskey() {
         return;
     }
 
-    // Use SafeJS for email validation
-    if (!Safe.validateEmail(email)) {
+    // Use simple email validation
+    if (!validateEmail(email)) {
         showStatus('Please enter a valid email address', 'error');
         return;
     }
@@ -201,18 +248,16 @@ async function registerPasskey() {
 
         showStatus('Creating your passkey...', 'info');
 
+        // Parse options with fallback
         let options;
-
-        // Try modern JSON parsing first (better for mobile)
         if (PublicKeyCredential.parseCreationOptionsFromJSON) {
             try {
                 options = PublicKeyCredential.parseCreationOptionsFromJSON(_options.creation_options);
-            } catch (e) {
+            } catch {
                 options = null;
             }
         }
 
-        // Fallback to manual parsing (better for desktop)
         if (!options) {
             options = _options.creation_options.publicKey;
             options.challenge = base64urlToBuffer(options.challenge);
@@ -225,60 +270,30 @@ async function registerPasskey() {
             }
         }
 
-        // Platform-specific authenticator preferences
+        // Add extensions for better cross-platform support
+        options.extensions = options.extensions || {};
+        options.extensions.credProtect = {
+            credentialProtectionPolicy: "userVerificationRequired",
+            enforceCredentialProtectionPolicy: false
+        };
+
+        // Create passkey with platform-specific options
+        let credential;
+
         if (platform.isMobile) {
-            // Mobile: Prefer built-in platform authenticators (TouchID, FaceID, etc.)
+            // Mobile: Use platform authenticators
             options.authenticatorSelection = {
                 authenticatorAttachment: "platform",
                 userVerification: "required",
                 requireResidentKey: true,
                 residentKey: "preferred"
             };
-            options.timeout = 180000; // 3 minutes for mobile biometric setup
+            options.timeout = 180000; // 3 minutes
+
+            credential = await navigator.credentials.create({ publicKey: options });
         } else {
-            // Desktop: Prefer cross-platform authenticators (password managers)
-            options.authenticatorSelection = {
-                authenticatorAttachment: "cross-platform",
-                userVerification: "required",
-                requireResidentKey: true,
-                residentKey: "preferred"
-            };
-            options.timeout = 120000; // 2 minutes for desktop
-        }
-
-        // Add extensions for better cross-platform support
-        if (!options.extensions) {
-            options.extensions = {};
-        }
-
-        // Enable credential protection extension
-        options.extensions.credProtect = {
-            credentialProtectionPolicy: "userVerificationRequired",
-            enforceCredentialProtectionPolicy: false
-        };
-
-        // Cross-browser credential creation with timeout handling
-        let credential;
-        if (platform.isDesktop) {
-            // Desktop: Enhanced timeout control for password manager integration
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), options.timeout);
-
-            try {
-                credential = await navigator.credentials.create({
-                    publicKey: options,
-                    signal: abortController.signal
-                });
-                clearTimeout(timeoutId);
-            } catch (error) {
-                clearTimeout(timeoutId);
-                throw error;
-            }
-        } else {
-            // Mobile: Direct approach for platform authenticators
-            credential = await navigator.credentials.create({
-                publicKey: options
-            });
+            // Desktop: Try cross-platform first, then platform
+            credential = await createCredentialWithFallback(options);
         }
 
         if (!credential) {
@@ -287,28 +302,16 @@ async function registerPasskey() {
 
         showStatus('Completing registration...', 'info');
 
-        // Convert credential to JSON with cross-browser compatibility
-        let credentialData;
-        if (typeof credential.toJSON === 'function') {
-            try {
-                credentialData = credential.toJSON.call(credential);
-            } catch (e) {
-                credentialData = null; // Fallback to manual conversion
-            }
-        }
-
-        if (!credentialData) {
-            // Manual conversion for older browsers
-            credentialData = {
-                id: credential.id,
-                rawId: bufferToBase64url(credential.rawId),
-                response: {
-                    attestationObject: bufferToBase64url(credential.response.attestationObject),
-                    clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
-                },
-                type: credential.type
-            };
-        }
+        // Convert credential to JSON
+        const credentialData = credential.toJSON?.() || {
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            response: {
+                attestationObject: bufferToBase64url(credential.response.attestationObject),
+                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
+            },
+            type: credential.type
+        };
 
         // Complete registration
         const registrationData = {
@@ -324,40 +327,44 @@ async function registerPasskey() {
 
             showStatus('Passkey created successfully! Redirecting...', 'success');
 
-            // Show success state on button
+            // Clear redirect tracking and show success
+            sessionStorage?.removeItem('redirectCount');
+            sessionStorage?.removeItem('hasTriedAutoAuth');
             setSuccess(registerBtn, true);
 
-            // Redirect to the same destination as successful authentication with a slight delay to show success state
+            // Redirect after showing success
             setTimeout(() => {
-                // Reset button state before redirect to prevent "back button" issues
                 setSuccess(registerBtn, false);
                 setLoading(registerBtn, false);
                 window.location.href = result.redirect_url || '/';
             }, 500);
 
         } catch (e) {
-            // Clean up failed credentials if supported
-            if (PublicKeyCredential.signalUnknownCredential && options.rp) {
-                try {
-                    await PublicKeyCredential.signalUnknownCredential({
-                        rpId: options.rp.id,
-                        credentialId: credentialData.id,
-                    });
-                } catch (signalError) {
-                    // Silent cleanup failure - not critical
-                }
-            }
+            // Clean up failed credentials
+            try {
+                await PublicKeyCredential.signalUnknownCredential?.({
+                    rpId: options.rp?.id,
+                    credentialId: credentialData.id,
+                });
+            } catch { /* Silent cleanup failure */ }
             throw e;
         }
 
     } catch (error) {
+        const platform = detectPlatform();
         let errorMessage = `Registration failed: ${error.message || error.error || 'Unknown error'}`;
 
         // Provide user-friendly error messages
         if (error.name === 'NotAllowedError') {
-            errorMessage = 'Registration was cancelled or failed. Please try again.';
+            errorMessage = platform.isDesktop
+                ? 'Registration was cancelled. Both external and built-in authenticators were tried. Please try again.'
+                : 'Registration was cancelled or failed. Please try again.';
         } else if (error.name === 'SecurityError') {
             errorMessage = 'Security error: Please ensure you are on a secure connection (HTTPS).';
+        } else if (error.name === 'NotSupportedError') {
+            errorMessage = platform.isDesktop
+                ? 'No compatible authenticators found. Please ensure you have Windows Hello, Touch ID, or a compatible security key available.'
+                : 'Biometric authentication not available. Please check your device settings.';
         }
 
         showStatus(errorMessage, 'error');
@@ -380,7 +387,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Set up event listener for registration button
     document.getElementById('register-btn').addEventListener('click', registerPasskey);
 
-    // Console log that the system is ready
+    // Log readiness
     const platform = detectPlatform();
     const platformType = platform.isMobile ? 'mobile device' : 'desktop';
     console.log(`[INFO] Passkey registration ready! Optimized for ${platformType}.`);
