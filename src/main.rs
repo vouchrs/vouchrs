@@ -9,7 +9,7 @@ use vouchrs::passkey::complete_registration;
 use vouchrs::{
     handlers::{
         health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
-        proxy_upstream, serve_static,
+        proxy_upstream, serve_static, initialize_static_files,
     },
     oauth::OAuthConfig,
     session::SessionManager,
@@ -29,6 +29,10 @@ async fn main() -> std::io::Result<()> {
         .initialize_from_settings(&settings)
         .await
         .map_err(|e| std::io::Error::other(format!("Failed to initialize OAuth providers: {e}")))?;
+
+    // Initialize static files from templates
+    initialize_static_files(&settings)
+        .map_err(|e| std::io::Error::other(format!("Failed to initialize static files: {e}")))?;
 
     println!("✓ Using stateless sessions with encrypted cookies");
     start_server(oauth_config, settings).await

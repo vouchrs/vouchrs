@@ -24,7 +24,8 @@ upstream_url = "http://localhost:3000"
 [static_files]
 # Directory containing static assets (HTML, CSS, JS, images)
 # Environment variable: STATIC_FOLDER_PATH
-assets_folder = "custom-ui"
+# Uncomment to use custom folder, otherwise uses default "./static"
+#assets_folder = "custom-ui"
 
 [session]
 # Session cookie expiration in hours (how long browser keeps the cookie)

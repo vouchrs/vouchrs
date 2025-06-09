@@ -65,6 +65,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --target $TARGET --locked && \
     cp /app/target/$TARGET/release/vouchrs /app/vouchrs
 
+# Copy the static files that were built
+RUN TARGET=$(cat /target.txt) && \
+    if [ -d "/app/target/$TARGET/release/static" ]; then \
+    cp -r /app/target/$TARGET/release/static /app/static; \
+    elif [ -d "src/static" ]; then \
+    cp -r src/static /app/static; \
+    fi
+
 # Runtime stage - distroless static (smallest possible)
 FROM gcr.io/distroless/static-debian12:18d48b0eeb51dfb9769b782a97fc868470b7c3c5
 
@@ -77,14 +85,15 @@ COPY --from=builder /app/vouchrs /app/vouchrs
 # Copy default configuration
 COPY --from=builder /app/Settings.toml /app/Settings.toml
 
+# Copy static files from builder stage with proper ownership for nonroot user
+# This allows the application to write generated HTML files to the static directory
+COPY --from=builder --chown=nonroot:nonroot /app/static /app/static
+
 # Use non-root user
 USER nonroot:nonroot
 
 # Expose port
 EXPOSE 8080
-
-# Set environment variables
-ENV STATIC_FOLDER_PATH=/app/static
 
 # Set the secrets directory where Settings.toml will be loaded with higher priority than default
 # Settings are loaded with the following precedence:
