@@ -4,8 +4,8 @@
 
 | Endpoint | Method | Purpose | Parameters |
 |----------|---------|---------|------------|
-| `/oauth2/sign_in` | GET | Display sign-in page or initiate OAuth flow | `provider` (google/apple), `rd` (optional) |
-| `/oauth2/callback` | GET/POST | OAuth callback handler | Auto-handled by OAuth providers |
+| `/auth/sign_in` | GET | Display sign-in page or initiate OAuth flow | `provider` (google/apple), `rd` (optional) |
+| `/auth/oauth2/callback` | GET/POST | OAuth callback handler | Auto-handled by OAuth providers |
 | `/oauth2/sign_out` | GET/POST | Sign out user and clear session | `rd` (optional) |
 
 ## Health Check
@@ -18,19 +18,19 @@
 
 ### Initiate Google OAuth
 ```bash
-curl "http://localhost:8080/oauth2/sign_in?provider=google"
+curl "http://localhost:8080/auth/sign_in?provider=google"
 # Returns: Redirect to Google OAuth authorization URL
 ```
 
 ### Initiate Apple OAuth
 ```bash
-curl "http://localhost:8080/oauth2/sign_in?provider=apple"
+curl "http://localhost:8080/auth/sign_in?provider=apple"
 # Returns: Redirect to Apple OAuth authorization URL
 ```
 
 ### Sign In with Redirect
 ```bash
-curl "http://localhost:8080/oauth2/sign_in?provider=google&rd=https://example.com/dashboard"
+curl "http://localhost:8080/auth/sign_in?provider=google&rd=https://example.com/dashboard"
 # After successful auth, redirects to: https://example.com/dashboard
 ```
 
@@ -63,7 +63,7 @@ curl "http://localhost:8080/oauth2/sign_out?rd=https://example.com/home"
 ### JavaScript Frontend
 ```javascript
 // Initiate Google OAuth
-window.location.href = '/oauth2/sign_in?provider=google&rd=' + 
+window.location.href = '/auth/sign_in?provider=google&rd=' +
   encodeURIComponent(window.location.href);
 
 // Check authentication status
@@ -71,7 +71,7 @@ fetch('/api/user')
   .then(response => {
     if (response.status === 401) {
       // Not authenticated, redirect to sign-in
-      window.location.href = '/oauth2/sign_in?provider=google';
+      window.location.href = '/auth/sign_in?provider=google';
     }
     return response.json();
   });

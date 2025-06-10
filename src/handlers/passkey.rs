@@ -88,9 +88,7 @@ pub async fn start_registration(
             };
 
             Ok(HttpResponse::Ok().json(json!({
-                "creation_options": {
-                    "publicKey": result.options
-                },
+                "creation_options": result.options,
                 "registration_state": result.state,
                 "user_data": encoded_user_data,
                 "user_handle": result.user_handle
@@ -161,9 +159,7 @@ pub async fn start_authentication(
 
     match service.start_authentication() {
         Ok(result) => Ok(HttpResponse::Ok().json(json!({
-            "request_options": {
-                "publicKey": result.options
-            },
+            "request_options": result.options,
             "authentication_state": result.state,
             "user_data": null
         }))),

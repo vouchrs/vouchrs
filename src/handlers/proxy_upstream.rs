@@ -81,7 +81,7 @@ pub async fn proxy_upstream(
 fn handle_unauthorized_response(req: &HttpRequest, settings: &VouchrsSettings) -> HttpResponse {
     if is_browser_request(req) {
         // Redirect browser requests to sign-in page
-        let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
+        let sign_in_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
         HttpResponse::Found()
             .insert_header(("Location", sign_in_url.clone()))
             .json(serde_json::json!({
@@ -243,7 +243,7 @@ fn extract_session_from_request(
     let handle_auth_error = |_message: &str| {
         if is_browser_request(req) {
             // For browser requests, redirect to sign-in page
-            let sign_in_url = "/oauth2/sign_in";
+            let sign_in_url = "/auth/sign_in";
             HttpResponse::Found()
                 .insert_header(("Location", sign_in_url))
                 .finish()
@@ -353,18 +353,18 @@ mod tests {
 
         // Test that the redirect URL is properly constructed
         let expected_redirect_url =
-            format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
+            format!("{}/auth/sign_in", settings.application.redirect_base_url);
         assert_eq!(
             expected_redirect_url,
-            "http://localhost:8080/oauth2/sign_in"
+            "http://localhost:8080/auth/sign_in"
         );
     }
 
     #[test]
     fn test_sign_in_url_generation() {
         let settings = create_test_settings();
-        let expected_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-        assert_eq!(expected_url, "http://localhost:8080/oauth2/sign_in");
+        let expected_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
+        assert_eq!(expected_url, "http://localhost:8080/auth/sign_in");
     }
 
     #[tokio::test]

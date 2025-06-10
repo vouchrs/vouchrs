@@ -38,7 +38,7 @@ pub fn create_error_response(
     let clear_cookie = session_manager.create_expired_cookie();
     HttpResponse::Found()
         .cookie(clear_cookie)
-        .append_header(("Location", "/auth/oauth2/sign_in?error=session_build_error"))
+        .append_header(("Location", "/auth/sign_in?error=session_build_error"))
         .finish()
 }
 

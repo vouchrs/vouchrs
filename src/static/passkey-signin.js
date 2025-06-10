@@ -211,7 +211,7 @@ async function authenticateWithPasskey() {
             // Mobile: Try modern JSON parsing first, fallback to manual
             if (PublicKeyCredential.parseRequestOptionsFromJSON) {
                 try {
-                    options = PublicKeyCredential.parseRequestOptionsFromJSON(_options.request_options.publicKey);
+                    options = PublicKeyCredential.parseRequestOptionsFromJSON(_options.request_options);
                 } catch (e) {
                     // Fallback to manual parsing
                     options = _options.request_options.publicKey;

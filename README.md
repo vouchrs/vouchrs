@@ -32,7 +32,7 @@ A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts a
    REDIRECT_BASE_URL=https://your-domain.com
    ```
 
-   > **Note**: The `REDIRECT_BASE_URL` should be just your base domain. Vouchrs automatically appends `/oauth2/callback` for OAuth provider configurations.
+   > **Note**: The `REDIRECT_BASE_URL` should be just your base domain. Vouchrs automatically appends `/auth/oauth2/callback` for OAuth provider configurations.
 
 2. **Run with Docker:**
    ```bash
@@ -147,7 +147,7 @@ console.log(`SESSION_SECRET=${crypto.randomBytes(32).toString('base64')}`);
 
 ⚠️ **Important**: If no `SESSION_SECRET` is provided, Vouchrs auto-generates one on startup (all existing sessions will be invalidated on restart).
 
-#### Provider Credentials  
+#### Provider Credentials
 | Variable | Required For | Description |
 |----------|-------------|-------------|
 | `GOOGLE_CLIENT_ID` | Google | Google OAuth client ID |
@@ -180,8 +180,8 @@ The service will start on `http://localhost:8080`.
 
 | Endpoint | Method | Purpose |
 |----------|---------|---------|
-| `/oauth2/sign_in` | GET | Display sign-in page or initiate OAuth flow |
-| `/oauth2/callback` | GET/POST | OAuth callback handler (Google=GET, Apple=POST) |
+| `/auth/sign_in` | GET | Display sign-in page or initiate OAuth flow |
+| `/auth/oauth2/callback` | GET/POST | OAuth callback handler (Google=GET, Apple=POST) |
 | `/oauth2/sign_out` | GET/POST | Sign out user and clear session |
 | `/oauth2/userinfo` | GET | Get user data from encrypted cookie (JSON) |
 | `/oauth2/debug` | GET | Debug endpoint with session and user data |
@@ -223,9 +223,9 @@ The sign-in page automatically generates buttons for all enabled providers. When
 
 ## Authentication Flow
 
-1. **User visits protected resource** → Redirected to `/oauth2/sign_in`
+1. **User visits protected resource** → Redirected to `/auth/sign_in`
 2. **User selects provider** → Redirected to OAuth provider (Google/Apple)
-3. **User authorizes** → Provider redirects to `/oauth2/callback`
+3. **User authorizes** → Provider redirects to `/auth/oauth2/callback`
 4. **Token exchange** → User info retrieved and encrypted session created
 5. **Session storage** → Two encrypted cookies created:
    - `vouchrs_session`: OAuth tokens for provider communication

@@ -252,7 +252,7 @@ async function registerPasskey() {
         let options;
         if (PublicKeyCredential.parseCreationOptionsFromJSON) {
             try {
-                options = PublicKeyCredential.parseCreationOptionsFromJSON.call(PublicKeyCredential, _options.creation_options.publicKey);
+                options = PublicKeyCredential.parseCreationOptionsFromJSON.call(PublicKeyCredential, _options.creation_options);
             } catch {
                 options = null;
             }

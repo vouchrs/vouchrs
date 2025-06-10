@@ -239,7 +239,7 @@ impl OAuthConfig {
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
         // Pre-compute encoded redirect URI with callback path for performance optimization
-        let redirect_uri_with_callback = format!("{redirect_base_url}/oauth2/callback");
+        let redirect_uri_with_callback = format!("{redirect_base_url}/auth/oauth2/callback");
         let encoded_redirect_uri = urlencoding::encode(&redirect_uri_with_callback).to_string();
 
         Self {
@@ -474,9 +474,9 @@ impl OAuthConfig {
         runtime_provider: &RuntimeProvider,
     ) -> Result<HashMap<String, String>, String> {
         // Pre-allocate redirect URI string to avoid format! allocation
-        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
+        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 20);
         redirect_uri.push_str(&self.redirect_base_url);
-        redirect_uri.push_str("/oauth2/callback");
+        redirect_uri.push_str("/auth/oauth2/callback");
 
         let mut params = HashMap::new();
 

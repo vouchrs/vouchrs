@@ -86,7 +86,7 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
         // OAuth2 endpoints
-        .route("/auth/oauth2/sign_in", web::get().to(oauth_sign_in))
+        .route("/auth/sign_in", web::get().to(oauth_sign_in))
         .route("/auth/oauth2/sign_out", web::get().to(oauth_sign_out))
         .route("/auth/oauth2/sign_out", web::post().to(oauth_sign_out))
         .route("/auth/oauth2/callback", web::get().to(oauth_callback))
@@ -130,7 +130,7 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
     println!("Session Backend: {session_backend}");
     println!();
     println!("OAuth2 endpoints:");
-    println!("  GET  /auth/oauth2/sign_in  - Login/logout page");
+    println!("  GET  /auth/sign_in  - Login/logout page");
     println!("  GET|POST /auth/oauth2/sign_out - Clear session");
     println!("  GET|POST /auth/oauth2/callback - OAuth callback (POST for Apple form_post)");
     println!();

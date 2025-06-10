@@ -3,7 +3,7 @@ use crate::settings::VouchrsSettings;
 use actix_web::{web, HttpResponse, Result};
 use std::fs;
 
-/// Initialize static fi            r#"<a href="/auth/oauth2/sign_in?provider={}" class="provider-button {}">"#es - generate sign-in.html in the generated content folder
+/// Initialize static files - generate sign-in.html in the generated content folder
 ///
 /// HTML content is always generated unless the assets path has been explicitly set.
 /// This allows Docker users to mount custom static content without having it overwritten.
@@ -122,7 +122,7 @@ fn generate_sign_in_html(settings: &VouchrsSettings) -> String {
 
     // Conditionally include passkey JavaScript
     let passkey_script = if settings.passkeys.enabled {
-        r#"<script src="/auth/oauth2/static/passkey-signin.js"></script>"#
+        r#"<script src="/auth/static/passkey-signin.js"></script>"#
     } else {
         ""
     };
@@ -153,7 +153,7 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
 
         // Create button without inline style - CSS handles the colors
         buttons.push(format!(
-            r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}">
+            r#"<a href="/auth/sign_in?provider={}" class="provider-button {}">
                     <span>Continue with {}</span>
                 </a>"#,
             provider.name, provider_class, display_name
@@ -181,13 +181,13 @@ const fn get_html_template() -> &'static str {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In - {{brand_name}}</title>
-    <link rel="stylesheet" href="/oauth2/static/sign-in.css">
+    <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 <body>
     <div class="container">
         <div class="login-box">
             <div class="logo-container">
-                <img src="/oauth2/static/vouchrs-logo.svg" alt="Vouchrs" class="logo">
+                <img src="/auth/static/vouchrs-logo.svg" alt="Vouchrs" class="logo">
             </div>
             <h1>Sign In</h1>
             <p>Choose your authentication provider</p>
