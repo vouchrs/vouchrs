@@ -37,6 +37,7 @@
 					"--edition",
 					"2021"
 				],
+				"rust-analyzer.rustfmt.enable": true,
 				"editor.formatOnSave": true,
 				"editor.formatOnPaste": true,
 				"[rust]": {
