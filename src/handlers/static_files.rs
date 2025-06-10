@@ -56,7 +56,10 @@ pub async fn serve_static(
     let filename = path.into_inner();
 
     // Try generated content folder first (for HTML files)
-    let generated_file_path = format!("{}/{}", settings.static_files.generated_content_folder, filename);
+    let generated_file_path = format!(
+        "{}/{}",
+        settings.static_files.generated_content_folder, filename
+    );
 
     // Then try assets folder (for CSS, JS, images)
     let assets_file_path = format!("{}/{}", settings.static_files.assets_folder, filename);
@@ -89,12 +92,10 @@ pub async fn serve_static(
 
             Ok(HttpResponse::Ok().content_type(content_type).body(contents))
         }
-        Err(_) => {
-            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "read_error",
-                "message": "Failed to read file"
-            })))
-        }
+        Err(_) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": "read_error",
+            "message": "Failed to read file"
+        }))),
     }
 }
 
@@ -104,7 +105,10 @@ pub async fn serve_static(
 /// Panics if the sign-in HTML file is not found. Call `initialize_static_files()` first.
 #[must_use]
 pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
-    let html_path = format!("{}/sign-in.html", settings.static_files.generated_content_folder);
+    let html_path = format!(
+        "{}/sign-in.html",
+        settings.static_files.generated_content_folder
+    );
     std::fs::read_to_string(&html_path).unwrap_or_else(|_| {
         // This should not happen if initialization was successful
         panic!("Sign-in HTML file not found at {html_path}. Call initialize_static_files() first.")
@@ -138,7 +142,9 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
 
     // Generate OAuth provider buttons
     for provider in settings.get_enabled_providers() {
-        let display_name = provider.display_name.as_ref()
+        let display_name = provider
+            .display_name
+            .as_ref()
             .unwrap_or(&provider.name)
             .clone();
 
@@ -159,7 +165,8 @@ fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
         buttons.push(
             r#"<button id="passkey-signin" class="provider-button provider-passkey">
                     <span>🔑 Continue with Passkey</span>
-                </button>"#.to_string()
+                </button>"#
+                .to_string(),
         );
     }
 

@@ -8,8 +8,8 @@ use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpSer
 use vouchrs::passkey::complete_registration;
 use vouchrs::{
     handlers::{
-        health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
-        proxy_upstream, serve_static, initialize_static_files,
+        health, initialize_static_files, oauth_callback, oauth_debug, oauth_sign_in,
+        oauth_sign_out, oauth_userinfo, proxy_upstream, serve_static,
     },
     oauth::OAuthConfig,
     session::SessionManager,

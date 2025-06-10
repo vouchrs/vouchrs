@@ -158,7 +158,6 @@ fn default_cache_duration() -> u64 {
     3600
 }
 
-
 impl Default for JwtValidationConfig {
     fn default() -> Self {
         Self {
@@ -220,7 +219,11 @@ impl StaticFilesSettings {
         }
 
         // Fallback: try target/debug/static (for development)
-        let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
         let target_static = format!("target/{profile}/static");
         if std::path::Path::new(&target_static).exists() {
             return target_static;
@@ -341,12 +344,10 @@ impl VouchrsSettings {
             let toml_content = fs::read_to_string(&default_config_path)?;
 
             // Check if assets_folder is explicitly set in TOML (not commented out)
-            let assets_folder_explicitly_set = toml_content
-                .lines()
-                .any(|line| {
-                    let trimmed = line.trim();
-                    trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
-                });
+            let assets_folder_explicitly_set = toml_content.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
+            });
 
             settings = basic_toml::from_str(&toml_content)?;
             settings.static_files.assets_folder_explicitly_set = assets_folder_explicitly_set;
@@ -364,12 +365,10 @@ impl VouchrsSettings {
                 let secrets_toml_content = fs::read_to_string(&secrets_path)?;
 
                 // Check if assets_folder is explicitly set in secrets TOML (not commented out)
-                let assets_folder_explicitly_set = secrets_toml_content
-                    .lines()
-                    .any(|line| {
-                        let trimmed = line.trim();
-                        trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
-                    });
+                let assets_folder_explicitly_set = secrets_toml_content.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
+                });
 
                 let secrets_settings: Self = basic_toml::from_str(&secrets_toml_content)?;
 
