@@ -5,9 +5,6 @@ pub mod debug;
 pub mod proxy_upstream;
 pub mod static_files;
 
-#[cfg(test)]
-mod tests;
-
 // Re-export the main handler functions
 pub use auth::{oauth_sign_in, oauth_sign_out};
 pub use callback::oauth_callback;

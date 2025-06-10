@@ -7,13 +7,13 @@
 mod settings;
 pub use settings::PasskeySettings;
 
+// Service layer
+mod service;
+pub use service::*;
+
 // Handlers
 mod handlers;
 pub use handlers::*;
-
-// Session management
-mod session;
-pub use session::*;
 
 // User store for stateless operations
 mod user_store;

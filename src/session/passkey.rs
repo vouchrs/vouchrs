@@ -42,7 +42,6 @@ impl std::fmt::Display for PasskeySessionError {
 impl std::error::Error for PasskeySessionError {}
 
 /// Complete session data structure for passkey authentication
-/// Equivalent to `CompleteSessionData` but for `WebAuthn` flows
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PasskeySessionData {
     // Common session data
@@ -72,7 +71,7 @@ impl PasskeySessionData {
         }
     }
 
-    /// Convert to `VouchrsUserData` (identical to OAuth output)
+    /// Convert to `VouchrsUserData` for session cookies
     #[must_use]
     pub fn to_user_data(
         &self,
@@ -147,7 +146,7 @@ pub fn to_vouchrs_session(
     client_ip: Option<&str>,
     user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
 ) -> (VouchrsSession, VouchrsUserData) {
-    // Create VouchrsSession (compatible with OAuth flows)
+    // Create VouchrsSession for cookie storage
     let vouchrs_session = VouchrsSession {
         id_token: None,
         refresh_token: None,
@@ -158,7 +157,7 @@ pub fn to_vouchrs_session(
         authenticated_at: session.authenticated_at,
     };
 
-    // Create VouchrsUserData (compatible with OAuth flows)
+    // Create VouchrsUserData for cookie storage
     let vouchrs_user_data = VouchrsUserData {
         email: session.user_email.clone().unwrap_or_default(),
         name: session.user_name.clone(),
@@ -179,7 +178,7 @@ pub fn to_vouchrs_session(
 pub struct PasskeySessionBuilder;
 
 impl PasskeySessionBuilder {
-    /// Create passkey session with same output format as OAuth
+    /// Create passkey session data structure
     ///
     /// # Errors
     ///
@@ -212,7 +211,7 @@ impl PasskeySessionBuilder {
         })
     }
 
-    /// Finalize passkey session with identical cookie output to OAuth
+    /// Finalize passkey session and create response with cookies
     #[must_use]
     pub fn finalize_passkey_session(
         req: &actix_web::HttpRequest,
@@ -222,15 +221,14 @@ impl PasskeySessionBuilder {
     ) -> actix_web::HttpResponse {
         use crate::utils::redirect_validator::validate_post_auth_redirect;
 
-        // Extract client information (reuses OAuth logic)
-        let (client_ip, user_agent_info) =
-            crate::session_builder::SessionBuilder::extract_client_info(req);
+        // Extract client information from the request
+        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
 
         // Convert to standard session format
         let session = passkey_session.to_session();
         let user_data = passkey_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
 
-        // Create cookies using existing session manager
+        // Create session cookies
         match (
             session_manager.create_session_cookie(&session),
             session_manager.create_user_cookie(&user_data),
@@ -254,7 +252,7 @@ impl PasskeySessionBuilder {
                     vec![session_cookie, user_cookie],
                 )
             }
-            _ => crate::session_builder::SessionBuilder::create_error_response(
+            _ => crate::session::utils::create_error_response(
                 session_manager,
                 "Failed to create session cookies",
             ),

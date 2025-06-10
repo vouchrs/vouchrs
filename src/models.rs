@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod auth;
+
 #[derive(Serialize, Deserialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -60,57 +62,6 @@ impl VouchrsSession {
     #[must_use]
     pub fn is_oauth_session(&self) -> bool {
         self.id_token.is_some() || self.refresh_token.is_some()
-    }
-}
-
-/// Complete session data structure used during OAuth flow
-/// Contains both user data and token data before splitting into separate cookies
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CompleteSessionData {
-    pub user_email: String,
-    pub user_name: Option<String>,
-    pub provider: String,
-    pub provider_id: String,
-    pub id_token: Option<String>,
-    pub refresh_token: Option<String>,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-}
-
-impl CompleteSessionData {
-    /// Extract token data as `VouchrsSession`
-    #[must_use]
-    pub fn to_session(&self) -> VouchrsSession {
-        VouchrsSession {
-            id_token: self.id_token.clone(),
-            refresh_token: self.refresh_token.clone(),
-            credential_id: None, // OAuth doesn't use credentials
-            user_handle: None,   // OAuth doesn't use user handles
-            provider: self.provider.clone(),
-            expires_at: self.expires_at,
-            authenticated_at: self.created_at, // Maps created_at to authenticated_at
-        }
-    }
-
-    /// Extract user data as `VouchrsUserData` with additional context
-    #[must_use]
-    pub fn to_user_data(
-        &self,
-        client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
-    ) -> VouchrsUserData {
-        VouchrsUserData {
-            email: self.user_email.clone(),
-            name: self.user_name.clone(),
-            provider: self.provider.clone(),
-            provider_id: self.provider_id.clone(),
-            client_ip: client_ip.map(std::string::ToString::to_string),
-            user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-            platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-            lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-            mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-            session_start: Some(self.created_at.timestamp()), // Convert created_at to Unix timestamp
-        }
     }
 }
 

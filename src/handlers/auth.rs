@@ -1,8 +1,9 @@
 // Authentication handlers: sign-in and sign-out
-use crate::oauth::{OAuthConfig, OAuthState};
+use crate::oauth::OAuthConfig;
+use crate::oauth::OAuthState;
+use crate::session::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
-use crate::utils::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{encrypt_data, generate_csrf_token};
 use crate::utils::response_builder::{redirect_with_cookie, success_redirect_with_cookies};
 use actix_web::{web, HttpRequest, HttpResponse, Result};

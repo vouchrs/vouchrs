@@ -1,10 +1,10 @@
 // OAuth callback handler
-use crate::oauth::{get_state_from_callback, OAuthCallback, OAuthConfig, OAuthState};
+use crate::oauth::OAuthConfig;
+use crate::oauth::{get_state_from_callback, OAuthCallback, OAuthState};
 use crate::session::SessionManager;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
-use crate::session_builder::{AuthenticationData, SessionBuilder};
 use crate::utils::apple::process_apple_callback;
 
 // SessionFinalizeParams struct removed - parameters passed directly to simplify code
@@ -22,7 +22,7 @@ pub async fn oauth_callback(
     query: web::Query<OAuthCallback>,
     form: Option<web::Form<OAuthCallback>>,
     req: HttpRequest,
-    oauth_config: web::Data<OAuthConfig>,
+    _oauth_config: web::Data<OAuthConfig>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract callback data from either query params or form
@@ -43,73 +43,32 @@ pub async fn oauth_callback(
         Err(response) => return Ok(response),
     };
 
-    // Exchange code for OAuth tokens
-    let token_result = oauth_config
-        .exchange_code_for_tokens(&oauth_state.provider, &code)
-        .await;
-
-    let (id_token, refresh_token, expires_at, apple_user_info) = match token_result {
-        Ok(result) => result,
-        Err(e) => {
-            error!("Failed to exchange code for user info: {e}");
-            let clear_cookie = session_manager.create_expired_cookie();
-            return Ok(HttpResponse::Found()
-                .cookie(clear_cookie)
-                .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
-                .finish());
-        }
-    };
-
     info!(
-        "=== OAuth Token Exchange Success for {} ===",
+        "=== OAuth Callback Processing for {} ===",
         oauth_state.provider
     );
-    // Expires at, refresh token, and id token are now on VouchrSession or passed separately.
-    if oauth_state.provider == "apple" {
-        info!("=== Apple User Info Analysis ===");
-        info!("Apple user info present: {}", apple_user_info.is_some());
 
-        if let Some(user_info) = apple_user_info.as_ref() {
-            info!("Apple user info email: {:?}", user_info.email);
-            info!(
-                "Apple user info name: \"{} {}\"",
-                user_info.name.first_name.as_deref().unwrap_or(""),
-                user_info.name.last_name.as_deref().unwrap_or("")
-            );
-            info!(
-                "Apple user info first_name: {:?}",
-                user_info.name.first_name
-            );
-            info!("Apple user info last_name: {:?}", user_info.name.last_name);
+    // Process additional Apple user info if available from the callback form
+    let processed_apple_info = process_apple_callback(&callback_data, None);
 
-            // Log raw JSON serialization for complete debugging
-            if let Ok(user_info_json) = serde_json::to_string_pretty(user_info) {
-                info!("Apple user info JSON:\n{user_info_json}");
-            }
-        } else {
-            warn!("Apple OAuth completed but no user info was returned in the token response");
-            warn!("This may happen on subsequent logins or if user info was not requested");
+    // Delegate to SessionManager for unified authentication handling
+    // The OAuth service will handle token exchange and Apple user info extraction
+    match session_manager.handle_oauth_callback(
+        &req,
+        &oauth_state.provider,
+        &code,
+        &oauth_state,
+        processed_apple_info,
+    ).await {
+        Ok(response) => {
+            info!("OAuth callback processing successful for {}", oauth_state.provider);
+            Ok(response)
+        },
+        Err(error_response) => {
+            error!("OAuth callback processing failed for {}", oauth_state.provider);
+            Ok(error_response)
         }
     }
-    info!("=== End OAuth Token Analysis ===");
-
-    // Process additional Apple user info if available
-    let processed_apple_info = process_apple_callback(&callback_data, apple_user_info);
-
-    // Build and complete the session using the SessionBuilder
-    // Create authentication data object
-    let auth_data =
-        AuthenticationData::new(&oauth_state.provider, id_token, refresh_token, expires_at)
-            .with_apple_info(processed_apple_info);
-
-    let result = SessionBuilder::finalize_session(
-        &req,
-        &session_manager,
-        &auth_data,
-        oauth_state.redirect_url,
-    );
-
-    Ok(result)
 }
 
 /// Extract callback data from either query parameters or form submission

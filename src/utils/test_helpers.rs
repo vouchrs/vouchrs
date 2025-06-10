@@ -80,9 +80,12 @@ pub fn create_test_settings() -> VouchrsSettings {
         },
         session: SessionSettings {
             session_duration_hours: 24,
-            session_secret: "test-secret-key".to_string(),
+            session_secret: generate_test_session_secret(),
             session_expiration_hours: 1,
             session_refresh_hours: 0,
+        },
+        cookies: crate::settings::CookieSettings {
+            secure: false, // Set to false for testing
         },
         ..Default::default()
     }

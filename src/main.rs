@@ -7,6 +7,7 @@ use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result};
 use vouchrs::passkey::complete_registration;
 use vouchrs::{
+    authentication::{AuthenticationConfig, AuthenticationServiceFactory},
     handlers::{
         health, initialize_static_files, oauth_callback, oauth_debug, oauth_sign_in,
         oauth_sign_out, oauth_userinfo, proxy_upstream, serve_static,
@@ -49,14 +50,10 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
     let bind_address = settings.get_bind_address();
     print_startup_info(&bind_address, "Stateless", &settings);
 
-    // Initialize session manager with encryption key from settings
-    let session_manager = SessionManager::new(
-        settings.session.session_secret.as_bytes(),
-        settings.cookies.secure,
-        settings.session.session_duration_hours,
-        settings.session.session_expiration_hours,
-        settings.session.session_refresh_hours,
-    );
+    // Initialize session manager with authentication services using factory
+    let auth_config = AuthenticationConfig::from_settings(&settings);
+    let session_manager =
+        AuthenticationServiceFactory::create_complete_session_manager(&settings, &auth_config);
 
     // Configure CORS for SPAs
     let cors_origins = settings.get_cors_origins();
@@ -100,10 +97,9 @@ async fn passkey_start_registration(
 async fn passkey_complete_registration(
     req: HttpRequest,
     data: web::Json<serde_json::Value>,
-    settings: web::Data<VouchrsSettings>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    complete_registration(&req, &data, &settings, &session_manager)
+    complete_registration(&req, &data, &session_manager)
 }
 
 async fn passkey_start_authentication(
@@ -118,11 +114,10 @@ async fn passkey_start_authentication(
 async fn passkey_complete_authentication(
     req: HttpRequest,
     data: web::Json<serde_json::Value>,
-    settings: web::Data<VouchrsSettings>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     use vouchrs::passkey::complete_authentication;
-    complete_authentication(&req, &data, &settings, &session_manager)
+    complete_authentication(&req, &data, &session_manager)
 }
 
 fn configure_services(cfg: &mut web::ServiceConfig) {

@@ -6,23 +6,27 @@
 /// Version of the vouchrs application
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod authentication;
 pub mod handlers;
-pub mod jwt_validation;
 pub mod models;
 pub mod oauth;
 pub mod passkey;
 pub mod session;
-pub mod session_builder;
-pub mod session_validation;
 pub mod settings;
 pub mod utils;
 
 /// Re-export commonly used items
+pub use authentication::AuthenticationServiceFactory;
 pub use handlers::{
     health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,
 };
 pub use models::VouchrsSession;
 pub use oauth::OAuthConfig;
-pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
+pub use oauth::{
+    check_and_refresh_tokens, fetch_discovery_document, fetch_jwks, get_state_from_callback,
+    JwtValidationError, JwtValidator, OAuthAuthenticationService, OAuthAuthenticationServiceImpl,
+    OAuthCallback, OAuthState, OidcDiscoveryDocument,
+};
 pub use session::SessionManager;
+pub use session::{PasskeySessionBuilder, PasskeySessionData};
 pub use settings::VouchrsSettings;

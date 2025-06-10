@@ -1,13 +1,14 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
-use crate::session_validation::{calculate_client_context_hash, validate_client_context};
+use crate::session::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
+use crate::session::validation::{calculate_client_context_hash, validate_client_context};
 use crate::utils::cached_responses::RESPONSES;
-use crate::utils::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{decrypt_data, derive_encryption_key, encrypt_data};
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::Serialize;
+use std::sync::Arc;
 
 // Custom error wrapper for ResponseError implementation
 #[derive(Debug)]
@@ -45,6 +46,9 @@ pub struct SessionManager {
     session_duration_hours: u64,
     session_expiration_hours: u64,
     session_refresh_hours: u64,
+    // Authentication services (optional - can be None if disabled)
+    oauth_service: Option<Arc<dyn crate::oauth::OAuthAuthenticationService + Send + Sync>>,
+    passkey_service: Option<Arc<dyn crate::passkey::PasskeyAuthenticationService + Send + Sync>>,
 }
 
 impl SessionManager {
@@ -65,6 +69,8 @@ impl SessionManager {
             session_duration_hours,
             session_expiration_hours,
             session_refresh_hours,
+            oauth_service: None,
+            passkey_service: None,
         }
     }
 
@@ -74,7 +80,7 @@ impl SessionManager {
         &self.encryption_key
     }
 
-    /// Create an encrypted session cookie from `VouchrsSession` (token data only)
+    /// Create an encrypted session cookie from `VouchrsSession`
     ///
     /// # Errors
     ///
@@ -170,7 +176,7 @@ impl SessionManager {
     /// Create an expired cookie to clear the session
     #[must_use]
     pub fn create_expired_cookie(&self) -> Cookie<'static> {
-        crate::utils::cookie::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
+        crate::session::cookie::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
     }
 
     /// Create a temporary cookie for storing OAuth state during the OAuth flow
@@ -182,7 +188,7 @@ impl SessionManager {
         &self,
         oauth_state: &OAuthState,
     ) -> Result<Cookie<'static>> {
-        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
+        let cookie_name = crate::session::cookie::OAUTH_STATE_COOKIE;
         let options = CookieOptions {
             same_site: actix_web::cookie::SameSite::Lax,
             max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
@@ -210,11 +216,11 @@ impl SessionManager {
         &self,
         req: &HttpRequest,
     ) -> Result<Option<OAuthState>> {
-        let cookie_name = crate::utils::cookie::OAUTH_STATE_COOKIE;
+        let cookie_name = crate::session::cookie::OAUTH_STATE_COOKIE;
         log::info!("Looking for temporary state cookie '{cookie_name}'");
 
         // Log all cookies in the request for debugging
-        crate::utils::cookie::log_cookies(req);
+        crate::session::cookie::log_cookies(req);
 
         req.cookie(cookie_name).map_or_else(
             || {
@@ -394,6 +400,10 @@ impl SessionManager {
 
     /// Validate session for security (client context + expiration awareness)
     ///
+    /// **IMPORTANT**: This method should only be used for sensitive operations that require
+    /// session hijacking protection (e.g., passkey registration, account changes).
+    /// For regular proxy requests, use `decrypt_and_validate_session` instead.
+    ///
     /// # Arguments
     /// * `user_data` - The stored user data containing original client context
     /// * `req` - The current HTTP request to validate against
@@ -436,6 +446,406 @@ impl SessionManager {
         platform: Option<&str>,
     ) -> String {
         calculate_client_context_hash(client_ip, user_agent, platform)
+    }
+
+    /// Builder pattern for configuring OAuth service
+    #[must_use]
+    pub fn with_oauth_service(
+        mut self,
+        service: Arc<dyn crate::oauth::OAuthAuthenticationService + Send + Sync>,
+    ) -> Self {
+        self.oauth_service = Some(service);
+        self
+    }
+
+    /// Builder pattern for configuring Passkey service
+    #[must_use]
+    pub fn with_passkey_service(
+        mut self,
+        service: Arc<dyn crate::passkey::PasskeyAuthenticationService + Send + Sync>,
+    ) -> Self {
+        self.passkey_service = Some(service);
+        self
+    }
+
+    /// Check if OAuth service is available
+    #[must_use]
+    pub fn has_oauth_service(&self) -> bool {
+        self.oauth_service.is_some()
+    }
+
+    /// Check if Passkey service is available
+    #[must_use]
+    pub fn has_passkey_service(&self) -> bool {
+        self.passkey_service.is_some()
+    }
+
+    /// Handle OAuth authentication flow
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - OAuth service is not available
+    /// - OAuth callback processing fails
+    /// - Session creation fails
+    pub async fn handle_oauth_callback(
+        &self,
+        req: &HttpRequest,
+        provider: &str,
+        authorization_code: &str,
+        oauth_state: &crate::oauth::OAuthState,
+        apple_user_info: Option<crate::utils::apple::AppleUserInfo>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if let Some(ref oauth_service) = self.oauth_service {
+            let result = oauth_service
+                .process_oauth_callback(provider, authorization_code, oauth_state, apple_user_info)
+                .await
+                .map_err(|e| {
+                    log::error!("OAuth callback processing failed: {e}");
+                    Self::create_service_error_response("OAuth authentication failed")
+                })?;
+
+            self.create_session_response(
+                req,
+                &result.session,
+                &result.user_data,
+                result.redirect_url,
+            )
+        } else {
+            Err(Self::create_service_unavailable_response("OAuth"))
+        }
+    }
+
+    /// Handle passkey registration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Passkey service is not available
+    /// - Registration processing fails
+    /// - Session creation fails
+    pub fn handle_passkey_registration(
+        &self,
+        req: &HttpRequest,
+        registration_data: crate::passkey::PasskeyRegistrationData,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if let Some(ref passkey_service) = self.passkey_service {
+            let result = passkey_service
+                .complete_registration(req, registration_data)
+                .map_err(|e| {
+                    log::error!("Passkey registration failed: {e}");
+                    Self::create_service_error_response("Passkey registration failed")
+                })?;
+
+            self.create_session_response(
+                req,
+                &result.session,
+                &result.user_data,
+                result.redirect_url,
+            )
+        } else {
+            Err(Self::create_service_unavailable_response("Passkey"))
+        }
+    }
+
+    /// Handle passkey registration with JSON response
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Passkey service is not available
+    /// - Registration processing fails
+    /// - Session creation fails
+    pub fn handle_passkey_registration_json(
+        &self,
+        req: &HttpRequest,
+        registration_data: crate::passkey::PasskeyRegistrationData,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if let Some(ref passkey_service) = self.passkey_service {
+            let result = passkey_service
+                .complete_registration(req, registration_data)
+                .map_err(|e| {
+                    log::error!("Passkey registration failed: {e}");
+                    Self::create_service_error_response("Passkey registration failed")
+                })?;
+
+            self.create_json_session_response(
+                req,
+                &result.session,
+                &result.user_data,
+                result.redirect_url,
+            )
+        } else {
+            Err(Self::create_service_unavailable_response("Passkey"))
+        }
+    }
+
+    /// Handle passkey authentication
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Passkey service is not available
+    /// - Authentication processing fails
+    /// - Session creation fails
+    pub fn handle_passkey_authentication(
+        &self,
+        req: &HttpRequest,
+        authentication_data: crate::passkey::PasskeyAuthenticationData,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if let Some(ref passkey_service) = self.passkey_service {
+            let result = passkey_service
+                .complete_authentication(req, authentication_data)
+                .map_err(|e| {
+                    log::error!("Passkey authentication failed: {e}");
+                    Self::create_service_error_response("Passkey authentication failed")
+                })?;
+
+            self.create_session_response(
+                req,
+                &result.session,
+                &result.user_data,
+                result.redirect_url,
+            )
+        } else {
+            Err(Self::create_service_unavailable_response("Passkey"))
+        }
+    }
+
+    /// Handle passkey authentication with JSON response
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Passkey service is not available
+    /// - Authentication processing fails
+    /// - Session creation fails
+    pub fn handle_passkey_authentication_json(
+        &self,
+        req: &HttpRequest,
+        authentication_data: crate::passkey::PasskeyAuthenticationData,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if let Some(ref passkey_service) = self.passkey_service {
+            let result = passkey_service
+                .complete_authentication(req, authentication_data)
+                .map_err(|e| {
+                    log::error!("Passkey authentication failed: {e}");
+                    Self::create_service_error_response("Passkey authentication failed")
+                })?;
+
+            self.create_json_session_response(
+                req,
+                &result.session,
+                &result.user_data,
+                result.redirect_url,
+            )
+        } else {
+            Err(Self::create_service_unavailable_response("Passkey"))
+        }
+    }
+
+    // =============================================================================
+    // Unified Authentication Methods using AuthenticationResult
+    // =============================================================================
+
+    /// Handle authentication using the unified `AuthenticationResult` type
+    ///
+    /// This method provides a unified interface for handling authentication results
+    /// from any authentication service (OAuth, Passkey, etc.)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session cookie creation fails
+    pub fn handle_authentication_result(
+        &self,
+        req: &HttpRequest,
+        auth_result: crate::models::auth::AuthenticationResult,
+    ) -> Result<HttpResponse, HttpResponse> {
+        self.create_session_response(
+            req,
+            &auth_result.session,
+            &auth_result.user_data,
+            auth_result.redirect_url,
+        )
+    }
+
+    /// Handle authentication using the unified `AuthenticationResult` type with JSON response
+    ///
+    /// This method provides a unified interface for handling authentication results
+    /// from any authentication service (OAuth, Passkey, etc.) with JSON response
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session cookie creation fails
+    pub fn handle_authentication_result_json(
+        &self,
+        req: &HttpRequest,
+        auth_result: crate::models::auth::AuthenticationResult,
+    ) -> Result<HttpResponse, HttpResponse> {
+        self.create_json_session_response(
+            req,
+            &auth_result.session,
+            &auth_result.user_data,
+            auth_result.redirect_url,
+        )
+    }
+
+    /// Create session response from authentication result with cookies
+    ///
+    /// This method handles the conversion of authentication results to HTTP responses
+    /// with appropriate session cookies and redirects
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session cookie creation fails
+    pub fn create_authentication_response(
+        &self,
+        req: &HttpRequest,
+        auth_result: crate::models::auth::AuthenticationResult,
+        as_json: bool,
+    ) -> Result<HttpResponse, HttpResponse> {
+        if as_json {
+            self.create_json_session_response(
+                req,
+                &auth_result.session,
+                &auth_result.user_data,
+                auth_result.redirect_url,
+            )
+        } else {
+            self.create_session_response(
+                req,
+                &auth_result.session,
+                &auth_result.user_data,
+                auth_result.redirect_url,
+            )
+        }
+    }
+
+    /// Common session response creation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session cookie creation fails
+    fn create_session_response(
+        &self,
+        _req: &HttpRequest,
+        session: &VouchrsSession,
+        user_data: &VouchrsUserData,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Create session cookies
+        let session_cookie = self.create_session_cookie(session).map_err(|e| {
+            log::error!("Failed to create session cookie: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
+
+        let user_cookie = self.create_user_cookie(user_data).map_err(|e| {
+            log::error!("Failed to create user cookie: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
+
+        // Handle redirect and create response
+        let final_redirect_url = redirect_url.unwrap_or_else(|| "/".to_string());
+
+        // Create response directly to avoid lifetime issues
+        let mut response_builder = HttpResponse::Found();
+        response_builder.append_header(("Location", final_redirect_url));
+        response_builder.cookie(session_cookie);
+        response_builder.cookie(user_cookie);
+
+        Ok(response_builder.finish())
+    }
+
+    /// Create JSON session response for AJAX endpoints
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session cookie creation fails
+    fn create_json_session_response(
+        &self,
+        _req: &HttpRequest,
+        session: &VouchrsSession,
+        user_data: &VouchrsUserData,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Create session cookies
+        let session_cookie = self.create_session_cookie(session).map_err(|e| {
+            log::error!("Failed to create session cookie: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
+
+        let user_cookie = self.create_user_cookie(user_data).map_err(|e| {
+            log::error!("Failed to create user cookie: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
+
+        // Return JSON response with cookies
+        let final_redirect_url = redirect_url.unwrap_or_else(|| "/".to_string());
+
+        Ok(HttpResponse::Ok()
+            .cookie(session_cookie)
+            .cookie(user_cookie)
+            .json(serde_json::json!({
+                "success": true,
+                "message": "Authentication successful",
+                "redirect_url": final_redirect_url
+            })))
+    }
+
+    // =============================================================================
+    // Conversion Utilities for Authentication Results
+    // =============================================================================
+
+    /// Convert OAuth session result to common `AuthenticationResult`
+    ///
+    /// This method provides a bridge between the OAuth-specific result type
+    /// and the unified authentication result type.
+    #[must_use]
+    pub fn oauth_to_auth_result(
+        oauth_result: crate::oauth::OAuthSessionResult,
+    ) -> crate::models::auth::AuthenticationResult {
+        oauth_result.into_auth_result()
+    }
+
+    /// Convert Passkey session result to common `AuthenticationResult`
+    ///
+    /// This method provides a bridge between the Passkey-specific result type
+    /// and the unified authentication result type.
+    #[must_use]
+    pub fn passkey_to_auth_result(
+        passkey_result: crate::passkey::PasskeySessionResult,
+    ) -> crate::models::auth::AuthenticationResult {
+        passkey_result.into_auth_result()
+    }
+
+    /// Create `AuthenticationResult` directly from session and user data
+    ///
+    /// This method allows creating authentication results directly from
+    /// session and user data, useful for custom authentication flows.
+    #[must_use]
+    pub fn create_auth_result(
+        session: VouchrsSession,
+        user_data: VouchrsUserData,
+        redirect_url: Option<String>,
+    ) -> crate::models::auth::AuthenticationResult {
+        crate::models::auth::AuthenticationResult::new(session, user_data, redirect_url)
+    }
+
+    /// Create service unavailable response
+    fn create_service_unavailable_response(service_name: &str) -> HttpResponse {
+        log::error!("{service_name} service is not available");
+        HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "service_unavailable",
+            "message": format!("{service_name} authentication is not enabled")
+        }))
+    }
+
+    /// Create service error response
+    fn create_service_error_response(message: &str) -> HttpResponse {
+        HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": "authentication_failed",
+            "message": message
+        }))
     }
 
     /// Generic method to create a cookie with encrypted data

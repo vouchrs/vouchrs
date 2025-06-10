@@ -5,11 +5,12 @@ use std::collections::HashMap;
 
 use crate::{
     models::VouchrsSession,
-    oauth::{check_and_refresh_tokens, OAuthConfig},
+    oauth::check_and_refresh_tokens,
+    oauth::OAuthConfig,
+    session::cookie::{filter_vouchrs_cookies, COOKIE_NAME},
     session::SessionManager,
     settings::VouchrsSettings,
     utils::cached_responses::RESPONSES,
-    utils::cookie::filter_vouchrs_cookies,
     utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
     utils::user_agent::is_browser_request,
 };
@@ -226,8 +227,6 @@ async fn execute_upstream_request(
     })
 }
 
-// Functions have been moved to ResponseBuilder
-
 /// Extract and validate session from encrypted cookie with session hijacking prevention
 ///
 /// # Errors
@@ -256,7 +255,7 @@ fn extract_session_from_request(
 
     // Extract session cookie
     let cookie = req
-        .cookie("vouchrs_session")
+        .cookie(COOKIE_NAME)
         .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
 
     // Decrypt and validate session
@@ -266,45 +265,10 @@ fn extract_session_from_request(
             handle_auth_error("Session is invalid or expired. Please authenticate again.")
         })?;
 
-    // Extract user data for client context validation
-    match session_manager.get_user_data_from_request(req) {
-        Ok(Some(user_data)) => {
-            // Validate session security (client context + expiration awareness)
-            if let Ok(is_valid_and_not_expired) =
-                session_manager.validate_session_security(&user_data, req)
-            {
-                if is_valid_and_not_expired {
-                    // Session is valid and not expired
-                    Ok(session)
-                } else {
-                    // Session is valid but expired - could be refreshed
-                    log::info!("Session is expired but client context is valid for user: {} - allowing for potential token refresh", user_data.email);
-                    Ok(session)
-                }
-            } else {
-                // Client context validation failed - session hijacking detected
-                log::warn!(
-                    "Session hijacking detected: client context validation failed for user: {}",
-                    user_data.email
-                );
-                Err(handle_auth_error(
-                    "Session security validation failed. Please authenticate again.",
-                ))
-            }
-        }
-        Ok(None) => {
-            log::warn!("No user data found for session validation");
-            Err(handle_auth_error(
-                "User data not found. Please authenticate again.",
-            ))
-        }
-        Err(e) => {
-            log::error!("Failed to extract user data for session validation: {e}");
-            Err(handle_auth_error(
-                "Session validation failed. Please authenticate again.",
-            ))
-        }
-    }
+    // For proxy requests, we only need basic session validation
+    // Client context validation (session hijacking detection) should only be used
+    // for sensitive operations like passkey registration, not regular proxy requests
+    Ok(session)
 }
 
 /// Forward request headers to upstream, filtering out restricted headers
