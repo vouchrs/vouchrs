@@ -354,10 +354,7 @@ mod tests {
         // Test that the redirect URL is properly constructed
         let expected_redirect_url =
             format!("{}/auth/sign_in", settings.application.redirect_base_url);
-        assert_eq!(
-            expected_redirect_url,
-            "http://localhost:8080/auth/sign_in"
-        );
+        assert_eq!(expected_redirect_url, "http://localhost:8080/auth/sign_in");
     }
 
     #[test]

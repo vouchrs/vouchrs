@@ -59,10 +59,7 @@ pub async fn oauth_sign_in(
                         create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
                     return Ok(HttpResponse::Found()
                         .cookie(clear_cookie)
-                        .append_header((
-                            "Location",
-                            "/auth/sign_in?error=state_encryption_failed",
-                        ))
+                        .append_header(("Location", "/auth/sign_in?error=state_encryption_failed"))
                         .finish());
                 }
             };
@@ -98,8 +95,7 @@ pub async fn oauth_sign_in(
         }
         Some(provider) => {
             let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
-            let error_url =
-                format!("/auth/sign_in?error=unsupported_provider&provider={provider}");
+            let error_url = format!("/auth/sign_in?error=unsupported_provider&provider={provider}");
             Ok(redirect_with_cookie(&error_url, Some(clear_cookie)))
         }
         None => {
