@@ -252,7 +252,7 @@ async function registerPasskey() {
         let options;
         if (PublicKeyCredential.parseCreationOptionsFromJSON) {
             try {
-                options = PublicKeyCredential.parseCreationOptionsFromJSON(_options.creation_options);
+                options = PublicKeyCredential.parseCreationOptionsFromJSON.call(PublicKeyCredential, _options.creation_options.publicKey);
             } catch {
                 options = null;
             }
@@ -303,15 +303,27 @@ async function registerPasskey() {
         showStatus('Completing registration...', 'info');
 
         // Convert credential to JSON
-        const credentialData = credential.toJSON?.() || {
-            id: credential.id,
-            rawId: bufferToBase64url(credential.rawId),
-            response: {
-                attestationObject: bufferToBase64url(credential.response.attestationObject),
-                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
-            },
-            type: credential.type
-        };
+        let credentialData;
+        try {
+            // Call toJSON with proper context to avoid "Illegal invocation" error
+            credentialData = credential.toJSON ? credential.toJSON.call(credential) : null;
+        } catch (error) {
+            console.warn('toJSON method failed, falling back to manual conversion:', error);
+            credentialData = null;
+        }
+
+        // Fallback to manual conversion if toJSON is not available or fails
+        if (!credentialData) {
+            credentialData = {
+                id: credential.id,
+                rawId: bufferToBase64url(credential.rawId),
+                response: {
+                    attestationObject: bufferToBase64url(credential.response.attestationObject),
+                    clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
+                },
+                type: credential.type
+            };
+        }
 
         // Complete registration
         const registrationData = {
@@ -342,10 +354,12 @@ async function registerPasskey() {
         } catch (e) {
             // Clean up failed credentials
             try {
-                await PublicKeyCredential.signalUnknownCredential?.({
-                    rpId: options.rp?.id,
-                    credentialId: credentialData.id,
-                });
+                if (PublicKeyCredential.signalUnknownCredential) {
+                    await PublicKeyCredential.signalUnknownCredential.call(PublicKeyCredential, {
+                        rpId: options.rp?.id,
+                        credentialId: credentialData.id,
+                    });
+                }
             } catch { /* Silent cleanup failure */ }
             throw e;
         }

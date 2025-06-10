@@ -3,7 +3,9 @@
  * Version: 0.2.0
  *
  * Provides automatic passkey detection and authentication with fallback to registration:
- * - Automatic detection of available passkeys
+ * - Automatic detection of available             if (PublicKeyCredential.parseRequestOptionsFromJSON) {
+                try {
+                    options = PublicKeyCredential.parseRequestOptionsFromJSON.call(PublicKeyCredential, _options.request_options.publicKey);skeys
  * - Cross-platform passkey authentication (Chrome, Safari, 1Password, Bitwarden, etc.)
  * - Mobile platform authenticators (TouchID, FaceID, Android Biometric)
  * - Usernameless authentication flows
@@ -201,7 +203,7 @@ async function authenticateWithPasskey() {
             // Mobile: Try modern JSON parsing first, fallback to manual
             if (PublicKeyCredential.parseRequestOptionsFromJSON) {
                 try {
-                    options = PublicKeyCredential.parseRequestOptionsFromJSON(_options.request_options);
+                    options = PublicKeyCredential.parseRequestOptionsFromJSON.call(PublicKeyCredential, _options.request_options);
                 } catch (e) {
                     // Fallback to manual parsing
                     options = _options.request_options.publicKey;
@@ -340,7 +342,7 @@ async function authenticateWithPasskey() {
             // Clean up unknown credentials if supported
             if (e.status === 404 && PublicKeyCredential.signalUnknownCredential && options.rpId) {
                 try {
-                    await PublicKeyCredential.signalUnknownCredential({
+                    await PublicKeyCredential.signalUnknownCredential.call(PublicKeyCredential, {
                         rpId: options.rpId,
                         credentialId: credentialData.id,
                     });
