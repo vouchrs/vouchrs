@@ -53,19 +53,28 @@ pub async fn oauth_callback(
 
     // Delegate to SessionManager for unified authentication handling
     // The OAuth service will handle token exchange and Apple user info extraction
-    match session_manager.handle_oauth_callback(
-        &req,
-        &oauth_state.provider,
-        &code,
-        &oauth_state,
-        processed_apple_info,
-    ).await {
+    match session_manager
+        .handle_oauth_callback(
+            &req,
+            &oauth_state.provider,
+            &code,
+            &oauth_state,
+            processed_apple_info,
+        )
+        .await
+    {
         Ok(response) => {
-            info!("OAuth callback processing successful for {}", oauth_state.provider);
+            info!(
+                "OAuth callback processing successful for {}",
+                oauth_state.provider
+            );
             Ok(response)
-        },
+        }
         Err(error_response) => {
-            error!("OAuth callback processing failed for {}", oauth_state.provider);
+            error!(
+                "OAuth callback processing failed for {}",
+                oauth_state.provider
+            );
             Ok(error_response)
         }
     }

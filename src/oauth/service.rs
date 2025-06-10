@@ -169,7 +169,8 @@ impl OAuthAuthenticationService for OAuthAuthenticationServiceImpl {
             authorization_code,
             oauth_state,
             apple_user_info,
-        ).await
+        )
+        .await
     }
 
     async fn initiate_oauth_flow(

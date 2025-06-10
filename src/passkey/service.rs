@@ -235,10 +235,9 @@ impl PasskeyAuthenticationServiceImpl {
     /// 3. Implement timestamp validation to ensure challenges aren't too old
     /// 4. Implement one-time use validation to prevent replay attacks
     fn validate_authentication_state(
-        &self,
         _state: &PasskeyAuthentication,
         _webauthn: &Webauthn,
-    ) -> Result<(), PasskeyError> {
+    ) {
         log::info!("Validating authentication state for stateless passkey flow");
 
         // TODO: Implement enhanced state validation:
@@ -249,17 +248,15 @@ impl PasskeyAuthenticationServiceImpl {
 
         // For now, we perform basic validation
         // In a production system, this should be much more robust
-        Ok(())
     }
 
     /// Validate registration state to prevent replay attacks and ensure request legitimacy
     ///
     /// Similar to authentication state validation but for registration flows
     fn validate_registration_state(
-        &self,
         _state: &PasskeyRegistration,
         _webauthn: &Webauthn,
-    ) -> Result<(), PasskeyError> {
+    ) {
         log::info!("Validating registration state for stateless passkey flow");
 
         // TODO: Implement enhanced state validation:
@@ -270,7 +267,6 @@ impl PasskeyAuthenticationServiceImpl {
 
         // For now, we perform basic validation
         // In a production system, this should be much more robust
-        Ok(())
     }
 }
 
@@ -293,12 +289,7 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
         let webauthn = self.create_webauthn()?;
 
         // We validate that the state is legitimate and the challenge matches.
-        if let Err(e) = self.validate_registration_state(&registration_data.registration_state, &webauthn) {
-            log::error!("Registration state validation failed: {e}");
-            return Err(PasskeyError::RegistrationFailed(
-                "Invalid registration state".to_string()
-            ));
-        }
+        Self::validate_registration_state(&registration_data.registration_state, &webauthn);
 
         // Extract credential_id from the client response
         let credential_id = base64::engine::general_purpose::URL_SAFE
@@ -318,7 +309,8 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
         .map_err(|e| PasskeyError::SessionError(format!("Failed to create session: {e}")))?;
 
         Ok(Self::create_session_result(req, &passkey_session, None))
-    }    fn complete_authentication(
+    }
+    fn complete_authentication(
         &self,
         req: &HttpRequest,
         authentication_data: PasskeyAuthenticationData,
@@ -338,12 +330,7 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
         // We still need to validate the challenge and state, but we can't complete the full
         // authentication because we don't have stored credentials. Instead, we validate
         // that the state is legitimate and the challenge matches.
-        if let Err(e) = self.validate_authentication_state(&authentication_data.authentication_state, &webauthn) {
-            log::error!("Authentication state validation failed: {e}");
-            return Err(PasskeyError::AuthenticationFailed(
-                "Invalid authentication state".to_string()
-            ));
-        }
+        Self::validate_authentication_state(&authentication_data.authentication_state, &webauthn);
 
         // Extract credential_id from the client response
         let credential_id = base64::engine::general_purpose::URL_SAFE
@@ -436,11 +423,9 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
 
         // For stateless usernameless authentication, use empty credentials slice
         // This allows any registered passkey for this RP to be used
-        let (options, state) = webauthn
-            .start_passkey_authentication(&[])
-            .map_err(|e| {
-                PasskeyError::AuthenticationFailed(format!("Failed to start authentication: {e}"))
-            })?;
+        let (options, state) = webauthn.start_passkey_authentication(&[]).map_err(|e| {
+            PasskeyError::AuthenticationFailed(format!("Failed to start authentication: {e}"))
+        })?;
 
         Ok(PasskeyAuthenticationStart { options, state })
     }
