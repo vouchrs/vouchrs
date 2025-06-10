@@ -5,7 +5,6 @@
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result};
-use vouchrs::passkey::complete_registration;
 use vouchrs::{
     authentication::{AuthenticationConfig, AuthenticationServiceFactory},
     handlers::{
@@ -87,10 +86,10 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
 // Passkey wrapper handlers to match actix-web signatures
 async fn passkey_start_registration(
     req: HttpRequest,
-    data: web::Json<vouchrs::passkey::RegistrationRequest>,
+    data: web::Json<vouchrs::handlers::passkey::RegistrationRequest>,
     settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
-    use vouchrs::passkey::start_registration;
+    use vouchrs::handlers::start_registration;
     start_registration(&req, &data, &settings)
 }
 
@@ -99,6 +98,7 @@ async fn passkey_complete_registration(
     data: web::Json<serde_json::Value>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
+    use vouchrs::handlers::complete_registration;
     complete_registration(&req, &data, &session_manager)
 }
 
@@ -107,7 +107,7 @@ async fn passkey_start_authentication(
     data: web::Json<serde_json::Value>,
     settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
-    use vouchrs::passkey::start_authentication;
+    use vouchrs::handlers::start_authentication;
     start_authentication(&req, &data, &settings)
 }
 
@@ -116,7 +116,7 @@ async fn passkey_complete_authentication(
     data: web::Json<serde_json::Value>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    use vouchrs::passkey::complete_authentication;
+    use vouchrs::handlers::complete_authentication;
     complete_authentication(&req, &data, &session_manager)
 }
 

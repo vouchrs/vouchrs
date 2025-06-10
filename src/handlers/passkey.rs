@@ -1,7 +1,7 @@
-//! Simplified `WebAuthn` request handlers using `PasskeyAuthenticationService`
+//! Passkey request handlers
 //!
-//! This module provides HTTP handlers that delegate to the `PasskeyAuthenticationService`
-//! for cleaner separation of concerns.
+//! This module provides HTTP handlers for passkey authentication operations,
+//! delegating to the `PasskeyAuthenticationService` for cleaner separation of concerns.
 
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use base64::Engine;

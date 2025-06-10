@@ -11,10 +11,6 @@ pub use settings::PasskeySettings;
 mod service;
 pub use service::*;
 
-// Handlers
-mod handlers;
-pub use handlers::*;
-
 // User store for stateless operations
 mod user_store;
 pub use user_store::PasskeyUserData;
