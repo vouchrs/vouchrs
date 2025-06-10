@@ -61,7 +61,7 @@ pub async fn oauth_sign_in(
                         .cookie(clear_cookie)
                         .append_header((
                             "Location",
-                            "/oauth2/sign_in?error=state_encryption_failed",
+                            "/auth/oauth2/sign_in?error=state_encryption_failed",
                         ))
                         .finish());
                 }
@@ -90,7 +90,7 @@ pub async fn oauth_sign_in(
                     let error_clear_cookie =
                         create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
                     Ok(redirect_with_cookie(
-                        "/oauth2/sign_in?error=oauth_config",
+                        "/auth/oauth2/sign_in?error=oauth_config",
                         Some(error_clear_cookie),
                     ))
                 }
@@ -99,7 +99,7 @@ pub async fn oauth_sign_in(
         Some(provider) => {
             let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
             let error_url =
-                format!("/oauth2/sign_in?error=unsupported_provider&provider={provider}");
+                format!("/auth/oauth2/sign_in?error=unsupported_provider&provider={provider}");
             Ok(redirect_with_cookie(&error_url, Some(clear_cookie)))
         }
         None => {
@@ -148,7 +148,7 @@ pub async fn oauth_sign_out(
 
     // Default: redirect to login page
     Ok(success_redirect_with_cookies(
-        "/oauth2/sign_in",
+        "/auth/oauth2/sign_in",
         vec![clear_session_cookie, clear_user_cookie],
     ))
 }
@@ -252,7 +252,7 @@ fn validate_callback(
         let clear_cookie = session_manager.create_expired_cookie();
         return Err(HttpResponse::Found()
             .cookie(clear_cookie)
-            .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+            .append_header(("Location", "/auth/oauth2/sign_in?error=auth_failed"))
             .finish());
     }
 
@@ -264,7 +264,7 @@ fn validate_callback(
         let clear_cookie = session_manager.create_expired_cookie();
         return Err(HttpResponse::Found()
             .cookie(clear_cookie)
-            .append_header(("Location", "/oauth2/sign_in?error=auth_failed"))
+            .append_header(("Location", "/auth/oauth2/sign_in?error=auth_failed"))
             .finish());
     };
 
@@ -276,7 +276,7 @@ fn validate_callback(
         let clear_cookie = session_manager.create_expired_cookie();
         return Err(HttpResponse::Found()
             .cookie(clear_cookie)
-            .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
+            .append_header(("Location", "/auth/oauth2/sign_in?error=oauth_state_error"))
             .finish());
     };
 
@@ -291,7 +291,7 @@ fn validate_callback(
             let clear_cookie = session_manager.create_expired_cookie();
             Err(HttpResponse::Found()
                 .cookie(clear_cookie)
-                .append_header(("Location", "/oauth2/sign_in?error=oauth_state_error"))
+                .append_header(("Location", "/auth/oauth2/sign_in?error=oauth_state_error"))
                 .finish())
         }
     }

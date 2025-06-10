@@ -239,7 +239,7 @@ async function registerPasskey() {
         showStatus('Starting passkey registration...', 'info');
 
         // Fetch passkey creation options from the server
-        const _options = await apiRequest('/oauth2/passkey/register/start', {
+        const _options = await apiRequest('/auth/passkey/register/start', {
             body: JSON.stringify({
                 name: displayName,
                 email: email
@@ -333,7 +333,7 @@ async function registerPasskey() {
         };
 
         try {
-            const result = await apiRequest('/oauth2/passkey/register/complete', {
+            const result = await apiRequest('/auth/passkey/register/complete', {
                 body: JSON.stringify(registrationData)
             });
 

@@ -4,15 +4,15 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use actix_cors::Cors;
-use actix_web::{middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use vouchrs::{
     authentication::{AuthenticationConfig, AuthenticationServiceFactory},
     handlers::{
-        health, initialize_static_files, oauth_callback, oauth_debug, oauth_sign_in,
-        oauth_sign_out, oauth_userinfo, proxy_upstream, serve_static,
+        complete_authentication, complete_registration, health, initialize_static_files,
+        oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo, proxy_upstream,
+        serve_static, start_authentication, start_registration,
     },
     oauth::OAuthConfig,
-    session::SessionManager,
     settings::VouchrsSettings,
 };
 
@@ -83,72 +83,32 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
     .await
 }
 
-// Passkey wrapper handlers to match actix-web signatures
-async fn passkey_start_registration(
-    req: HttpRequest,
-    data: web::Json<vouchrs::handlers::passkey::RegistrationRequest>,
-    settings: web::Data<VouchrsSettings>,
-) -> Result<HttpResponse> {
-    use vouchrs::handlers::start_registration;
-    start_registration(&req, &data, &settings)
-}
-
-async fn passkey_complete_registration(
-    req: HttpRequest,
-    data: web::Json<serde_json::Value>,
-    session_manager: web::Data<SessionManager>,
-) -> Result<HttpResponse> {
-    use vouchrs::handlers::complete_registration;
-    complete_registration(&req, &data, &session_manager)
-}
-
-async fn passkey_start_authentication(
-    req: HttpRequest,
-    data: web::Json<serde_json::Value>,
-    settings: web::Data<VouchrsSettings>,
-) -> Result<HttpResponse> {
-    use vouchrs::handlers::start_authentication;
-    start_authentication(&req, &data, &settings)
-}
-
-async fn passkey_complete_authentication(
-    req: HttpRequest,
-    data: web::Json<serde_json::Value>,
-    session_manager: web::Data<SessionManager>,
-) -> Result<HttpResponse> {
-    use vouchrs::handlers::complete_authentication;
-    complete_authentication(&req, &data, &session_manager)
-}
-
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
         // OAuth2 endpoints
-        .route("/oauth2/sign_in", web::get().to(oauth_sign_in))
-        .route("/oauth2/sign_out", web::get().to(oauth_sign_out))
-        .route("/oauth2/sign_out", web::post().to(oauth_sign_out))
-        .route("/oauth2/callback", web::get().to(oauth_callback))
-        .route("/oauth2/callback", web::post().to(oauth_callback))
-        .route("/oauth2/debug", web::get().to(oauth_debug))
-        .route("/oauth2/userinfo", web::get().to(oauth_userinfo))
+        .route("/auth/oauth2/sign_in", web::get().to(oauth_sign_in))
+        .route("/auth/oauth2/sign_out", web::get().to(oauth_sign_out))
+        .route("/auth/oauth2/sign_out", web::post().to(oauth_sign_out))
+        .route("/auth/oauth2/callback", web::get().to(oauth_callback))
+        .route("/auth/oauth2/callback", web::post().to(oauth_callback))
+        .route("/auth/oauth2/debug", web::get().to(oauth_debug))
+        .route("/auth/oauth2/userinfo", web::get().to(oauth_userinfo))
         // Passkey endpoints
         .route(
-            "/oauth2/passkey/register/start",
-            web::post().to(passkey_start_registration),
+            "/auth/passkey/register/start",
+            web::post().to(start_registration),
         )
         .route(
-            "/oauth2/passkey/register/complete",
-            web::post().to(passkey_complete_registration),
+            "/auth/passkey/register/complete",
+            web::post().to(complete_registration),
         )
+        .route("/auth/passkey/auth/start", web::post().to(start_authentication))
         .route(
-            "/oauth2/passkey/auth/start",
-            web::post().to(passkey_start_authentication),
-        )
-        .route(
-            "/oauth2/passkey/auth/complete",
-            web::post().to(passkey_complete_authentication),
+            "/auth/passkey/auth/complete",
+            web::post().to(complete_authentication),
         )
         // Static files endpoint
-        .route("/oauth2/static/{filename:.*}", web::get().to(serve_static))
+        .route("/auth/static/{filename:.*}", web::get().to(serve_static))
         // Health endpoint
         .route("/ping", web::get().to(health))
         // Catch-all proxy for any other path - provider determined from session
@@ -156,7 +116,7 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
             web::route()
                 .guard(actix_web::guard::fn_guard(|req| {
                     let path = req.head().uri.path();
-                    !path.starts_with("/oauth2") && !path.starts_with("/ping")
+                    !path.starts_with("/auth") && !path.starts_with("/ping")
                 }))
                 .to(proxy_upstream),
         );
@@ -167,20 +127,26 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
     println!("Session Backend: {session_backend}");
     println!();
     println!("OAuth2 endpoints:");
-    println!("  GET  /oauth2/sign_in  - Login/logout page");
-    println!("  GET|POST /oauth2/sign_out - Clear session");
-    println!("  GET|POST /oauth2/callback - OAuth callback (POST for Apple form_post)");
+    println!("  GET  /auth/oauth2/sign_in  - Login/logout page");
+    println!("  GET|POST /auth/oauth2/sign_out - Clear session");
+    println!("  GET|POST /auth/oauth2/callback - OAuth callback (POST for Apple form_post)");
+    println!();
+    println!("Passkey endpoints:");
+    println!("  POST /auth/passkey/register/start - Start passkey registration");
+    println!("  POST /auth/passkey/register/complete - Complete passkey registration");
+    println!("  POST /auth/passkey/auth/start - Start passkey authentication");
+    println!("  POST /auth/passkey/auth/complete - Complete passkey authentication");
     println!();
     println!("OAuth callback URL for identity providers:");
     println!(
-        "  {}/oauth2/callback",
+        "  {}/auth/oauth2/callback",
         settings.application.redirect_base_url
     );
     println!();
     if session_backend == "Stateless" {
         println!("Sidecar Proxy endpoints (with automatic OAuth token injection):");
         println!("  ALL {{any path}}                   - Proxy to upstream service as-is");
-        println!("                                    (except /oauth2/* and /health)");
+        println!("                                    (except /auth/* and /ping)");
         println!(
             "                                    Upstream URL: {}",
             settings.proxy.upstream_url
@@ -189,7 +155,7 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
     }
     println!("System endpoints:");
     println!("  GET  /ping            - Health check");
-    println!("  GET  /oauth2/static/* - Static files (HTML, CSS, JS, images)");
+    println!("  GET  /auth/oauth2/static/* - Static files (HTML, CSS, JS, images)");
     println!(
         "  Static files folder: {}",
         settings.static_files.assets_folder

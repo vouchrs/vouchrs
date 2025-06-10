@@ -58,10 +58,10 @@ fn error_to_response(error: PasskeyError) -> HttpResponse {
 /// - The service is not available (passkeys disabled)
 /// - Request validation fails
 /// - `WebAuthn` registration initialization fails
-pub fn start_registration(
-    _req: &HttpRequest,
-    data: &web::Json<RegistrationRequest>,
-    settings: &web::Data<VouchrsSettings>,
+pub async fn start_registration(
+    _req: HttpRequest,
+    data: web::Json<RegistrationRequest>,
+    settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
     let service = PasskeyAuthenticationServiceImpl::new(settings.as_ref().clone());
 
@@ -109,25 +109,25 @@ pub fn start_registration(
 /// - Registration data is invalid
 /// - `WebAuthn` registration fails
 /// - Session creation fails
-pub fn complete_registration(
-    req: &HttpRequest,
-    data: &web::Json<serde_json::Value>,
-    session_manager: &web::Data<SessionManager>,
+pub async fn complete_registration(
+    req: HttpRequest,
+    data: web::Json<serde_json::Value>,
+    session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract credential response
-    let credential_response = match extract_credential_response(data) {
+    let credential_response = match extract_credential_response(&data) {
         Ok(response) => response,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract registration state
-    let registration_state = match extract_registration_state(data) {
+    let registration_state = match extract_registration_state(&data) {
         Ok(state) => state,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract user data
-    let user_data = match extract_user_data_for_registration(data) {
+    let user_data = match extract_user_data_for_registration(&data) {
         Ok(data) => data,
         Err(error_response) => return Ok(error_response),
     };
@@ -139,7 +139,7 @@ pub fn complete_registration(
     };
 
     // Delegate to SessionManager for unified session handling
-    match session_manager.handle_passkey_registration_json(req, registration_data) {
+    match session_manager.handle_passkey_registration_json(&req, registration_data) {
         Ok(response) => Ok(response),
         Err(error_response) => Ok(error_response),
     }
@@ -152,10 +152,10 @@ pub fn complete_registration(
 /// Returns an error if:
 /// - The service is not available (passkeys disabled)
 /// - `WebAuthn` authentication initialization fails
-pub fn start_authentication(
-    _req: &HttpRequest,
-    _data: &web::Json<serde_json::Value>,
-    settings: &web::Data<VouchrsSettings>,
+pub async fn start_authentication(
+    _req: HttpRequest,
+    _data: web::Json<serde_json::Value>,
+    settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
     let service = PasskeyAuthenticationServiceImpl::new(settings.as_ref().clone());
 
@@ -180,26 +180,26 @@ pub fn start_authentication(
 /// - Authentication data is invalid
 /// - `WebAuthn` authentication fails
 /// - Session creation fails
-pub fn complete_authentication(
-    req: &HttpRequest,
-    data: &web::Json<serde_json::Value>,
-    session_manager: &web::Data<SessionManager>,
+pub async fn complete_authentication(
+    req: HttpRequest,
+    data: web::Json<serde_json::Value>,
+    session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract credential response
-    let credential_response = match extract_authentication_credential_response(data) {
+    let credential_response = match extract_authentication_credential_response(&data) {
         Ok(response) => response,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract authentication state
-    let authentication_state = match extract_authentication_state(data) {
+    let authentication_state = match extract_authentication_state(&data) {
         Ok(state) => state,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract user data (optional for usernameless auth)
     let user_data =
-        extract_user_data_for_authentication(data, &credential_response, req, session_manager);
+        extract_user_data_for_authentication(&data, &credential_response, &req, &session_manager);
 
     let authentication_data = PasskeyAuthenticationData {
         credential_response,
@@ -208,7 +208,7 @@ pub fn complete_authentication(
     };
 
     // Delegate to SessionManager for unified session handling
-    match session_manager.handle_passkey_authentication_json(req, authentication_data) {
+    match session_manager.handle_passkey_authentication_json(&req, authentication_data) {
         Ok(response) => Ok(response),
         Err(error_response) => Ok(error_response),
     }

@@ -3,9 +3,7 @@
  * Version: 0.2.0
  *
  * Provides automatic passkey detection and authentication with fallback to registration:
- * - Automatic detection of available             if (PublicKeyCredential.parseRequestOptionsFromJSON) {
-                try {
-                    options = PublicKeyCredential.parseRequestOptionsFromJSON.call(PublicKeyCredential, _options.request_options.publicKey);skeys
+ * - Automatic detection of available passkeys
  * - Cross-platform passkey authentication (Chrome, Safari, 1Password, Bitwarden, etc.)
  * - Mobile platform authenticators (TouchID, FaceID, Android Biometric)
  * - Usernameless authentication flows
@@ -168,7 +166,7 @@ async function authenticateWithPasskey() {
         // First, try to get authentication options to see if there are any passkeys
         let _options;
         try {
-            _options = await apiRequest('/oauth2/passkey/auth/start', {
+            _options = await apiRequest('/auth/passkey/auth/start', {
                 body: JSON.stringify({}) // Empty body for usernameless auth
             });
         } catch (error) {
@@ -177,7 +175,7 @@ async function authenticateWithPasskey() {
                 showStatus('No passkeys found. Redirecting to registration...', 'info');
                 setTimeout(() => {
                     // Redirect to the registration form
-                    window.location.href = '/oauth2/static/passkey-register.html';
+                    window.location.href = '/auth/static/passkey-register.html';
                 }, 1500);
                 return;
             }
@@ -321,7 +319,7 @@ async function authenticateWithPasskey() {
         };
 
         try {
-            const result = await apiRequest('/oauth2/passkey/auth/complete', {
+            const result = await apiRequest('/auth/passkey/auth/complete', {
                 body: JSON.stringify(authenticationData)
             });
 
@@ -360,7 +358,7 @@ async function authenticateWithPasskey() {
         if (error.name === 'NotAllowedError') {
             showStatus('No passkeys available or authentication cancelled. Redirecting to registration...', 'info');
             setTimeout(() => {
-                window.location.href = '/oauth2/static/passkey-register.html';
+                window.location.href = '/auth/static/passkey-register.html';
             }, 2000);
             return;
         } else if (error.name === 'SecurityError') {
@@ -370,7 +368,7 @@ async function authenticateWithPasskey() {
         } else if (error.status === 404 || error.message?.includes('no passkeys') || error.error?.includes('no passkeys')) {
             showStatus('No passkeys found. Redirecting to registration...', 'info');
             setTimeout(() => {
-                window.location.href = '/oauth2/static/passkey-register.html';
+                window.location.href = '/auth/static/passkey-register.html';
             }, 1500);
             return;
         }

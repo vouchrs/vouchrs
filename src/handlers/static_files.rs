@@ -3,7 +3,7 @@ use crate::settings::VouchrsSettings;
 use actix_web::{web, HttpResponse, Result};
 use std::fs;
 
-/// Initialize static files - generate sign-in.html in the generated content folder
+/// Initialize static fi            r#"<a href="/auth/oauth2/sign_in?provider={}" class="provider-button {}">"#es - generate sign-in.html in the generated content folder
 ///
 /// HTML content is always generated unless the assets path has been explicitly set.
 /// This allows Docker users to mount custom static content without having it overwritten.
@@ -122,7 +122,7 @@ fn generate_sign_in_html(settings: &VouchrsSettings) -> String {
 
     // Conditionally include passkey JavaScript
     let passkey_script = if settings.passkeys.enabled {
-        r#"<script src="/oauth2/static/passkey-signin.js"></script>"#
+        r#"<script src="/auth/oauth2/static/passkey-signin.js"></script>"#
     } else {
         ""
     };
