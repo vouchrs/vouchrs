@@ -102,7 +102,10 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
             "/auth/passkey/register/complete",
             web::post().to(complete_registration),
         )
-        .route("/auth/passkey/auth/start", web::post().to(start_authentication))
+        .route(
+            "/auth/passkey/auth/start",
+            web::post().to(start_authentication),
+        )
         .route(
             "/auth/passkey/auth/complete",
             web::post().to(complete_authentication),
