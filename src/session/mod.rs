@@ -21,5 +21,5 @@ pub mod validation;
 pub use cookie::{CookieOptions, COOKIE_NAME, OAUTH_STATE_COOKIE, USER_COOKIE_NAME};
 pub use manager::{SessionError, SessionManager};
 pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
-pub use utils::{create_error_response, extract_client_info};
+pub use utils::{create_error_response, extract_client_info, get_state_from_callback};
 pub use validation::{calculate_client_context_hash, validate_client_context};

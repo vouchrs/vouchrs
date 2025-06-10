@@ -234,10 +234,7 @@ impl PasskeyAuthenticationServiceImpl {
     /// 2. Bind state to client IP address
     /// 3. Implement timestamp validation to ensure challenges aren't too old
     /// 4. Implement one-time use validation to prevent replay attacks
-    fn validate_authentication_state(
-        _state: &PasskeyAuthentication,
-        _webauthn: &Webauthn,
-    ) {
+    fn validate_authentication_state(_state: &PasskeyAuthentication, _webauthn: &Webauthn) {
         log::info!("Validating authentication state for stateless passkey flow");
 
         // TODO: Implement enhanced state validation:
@@ -253,10 +250,7 @@ impl PasskeyAuthenticationServiceImpl {
     /// Validate registration state to prevent replay attacks and ensure request legitimacy
     ///
     /// Similar to authentication state validation but for registration flows
-    fn validate_registration_state(
-        _state: &PasskeyRegistration,
-        _webauthn: &Webauthn,
-    ) {
+    fn validate_registration_state(_state: &PasskeyRegistration, _webauthn: &Webauthn) {
         log::info!("Validating registration state for stateless passkey flow");
 
         // TODO: Implement enhanced state validation:

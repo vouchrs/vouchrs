@@ -1,7 +1,7 @@
 // OAuth callback handler
 use crate::oauth::OAuthConfig;
-use crate::oauth::{get_state_from_callback, OAuthCallback, OAuthState};
-use crate::session::SessionManager;
+use crate::oauth::{OAuthCallback, OAuthState};
+use crate::session::{get_state_from_callback, SessionManager};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 

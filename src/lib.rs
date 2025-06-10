@@ -23,10 +23,10 @@ pub use handlers::{
 pub use models::VouchrsSession;
 pub use oauth::OAuthConfig;
 pub use oauth::{
-    check_and_refresh_tokens, fetch_discovery_document, fetch_jwks, get_state_from_callback,
-    JwtValidationError, JwtValidator, OAuthAuthenticationService, OAuthAuthenticationServiceImpl,
-    OAuthCallback, OAuthState, OidcDiscoveryDocument,
+    check_and_refresh_tokens, fetch_discovery_document, fetch_jwks, JwtValidationError,
+    JwtValidator, OAuthAuthenticationService, OAuthAuthenticationServiceImpl, OAuthCallback,
+    OAuthState, OidcDiscoveryDocument,
 };
 pub use session::SessionManager;
-pub use session::{PasskeySessionBuilder, PasskeySessionData};
+pub use session::{get_state_from_callback, PasskeySessionBuilder, PasskeySessionData};
 pub use settings::VouchrsSettings;
