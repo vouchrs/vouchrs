@@ -324,7 +324,6 @@ async function authenticateWithPasskey() {
         // Prepare authentication request
         const authenticationData = {
             credential_response: credentialData,
-            authentication_state: _options.authentication_state,
             user_data: _options.user_data || null // Support both traditional and usernameless auth
         };
 

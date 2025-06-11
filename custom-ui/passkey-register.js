@@ -328,7 +328,6 @@ async function registerPasskey() {
         // Complete registration
         const registrationData = {
             credential_response: credentialData,
-            registration_state: _options.registration_state,
             user_data: _options.user_data
         };
 
