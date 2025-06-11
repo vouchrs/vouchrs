@@ -41,6 +41,9 @@ pub struct VouchrsSession {
     pub provider: String,
     pub expires_at: DateTime<Utc>,
     pub authenticated_at: DateTime<Utc>, // Unified from session_created_at
+
+    // Optional client IP binding for additional security
+    pub client_ip: Option<String>,
 }
 
 impl VouchrsSession {
@@ -81,6 +84,7 @@ mod tests {
             provider: "google".to_string(),
             expires_at: Utc::now() + chrono::Duration::hours(1),
             authenticated_at: Utc::now(),
+            client_ip: None,
         };
 
         assert!(oauth_session.is_oauth_session());
@@ -95,6 +99,7 @@ mod tests {
             provider: "passkey".to_string(),
             expires_at: Utc::now() + chrono::Duration::hours(168),
             authenticated_at: Utc::now(),
+            client_ip: None,
         };
 
         assert!(passkey_session.is_passkey_session());
@@ -109,6 +114,7 @@ mod tests {
             provider: "github".to_string(),
             expires_at: Utc::now() + chrono::Duration::hours(1),
             authenticated_at: Utc::now(),
+            client_ip: None,
         };
 
         assert!(id_only_session.is_oauth_session());

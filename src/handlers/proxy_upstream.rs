@@ -99,6 +99,7 @@ fn update_session_cookie_if_needed(
     response_builder: &mut actix_web::HttpResponseBuilder,
     session_manager: &SessionManager,
     session: &VouchrsSession,
+    req: &HttpRequest,
     tokens_were_refreshed: bool,
 ) {
     if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
@@ -109,7 +110,14 @@ fn update_session_cookie_if_needed(
         };
         log::debug!("Updating session cookie because {reason}");
 
-        match session_manager.create_session_cookie(session) {
+        // Use IP binding if enabled for cookie updates
+        let cookie_result = if session_manager.is_session_ip_binding_enabled() {
+            session_manager.create_session_cookie_with_context(session, req)
+        } else {
+            session_manager.create_session_cookie(session)
+        };
+
+        match cookie_result {
             Ok(updated_cookie) => {
                 log::info!(
                     "Setting updated session cookie for user on provider: {} (reason: {reason})",
@@ -159,6 +167,7 @@ async fn forward_upstream_response(
         &mut response_builder,
         session_manager,
         session,
+        req,
         tokens_were_refreshed,
     );
 
@@ -244,7 +253,7 @@ fn extract_session_from_request(
 
     // Decrypt and validate session
     let session = session_manager
-        .decrypt_and_validate_session(cookie.value())
+        .decrypt_and_validate_session_with_ip(cookie.value(), req)
         .map_err(|_| {
             handle_auth_error("Session is invalid or expired. Please authenticate again.")
         })?;

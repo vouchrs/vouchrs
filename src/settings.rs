@@ -67,6 +67,10 @@ pub struct SessionSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CookieSettings {
     pub secure: bool,
+    /// Bind session cookies to client IP address for additional security
+    /// When enabled, session cookies are tied to the originating IP address
+    #[serde(default)]
+    pub bind_session_to_ip: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,7 +252,8 @@ impl Default for SessionSettings {
 impl Default for CookieSettings {
     fn default() -> Self {
         Self {
-            secure: true, // Default to secure cookies
+            secure: true,              // Default to secure cookies
+            bind_session_to_ip: false, // Default to disabled for compatibility
         }
     }
 }

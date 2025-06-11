@@ -111,6 +111,7 @@ impl IdTokenProcessor {
             provider: normalized_provider.clone(),
             expires_at,
             authenticated_at,
+            client_ip: client_ip.map(std::string::ToString::to_string),
         };
 
         // Create VouchrsUserData directly

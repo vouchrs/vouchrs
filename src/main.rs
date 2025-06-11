@@ -182,6 +182,7 @@ fn create_session_manager(settings: &VouchrsSettings) -> SessionManager {
     let mut session_manager = SessionManager::new(
         settings.session.session_secret.as_bytes(),
         settings.cookies.secure,
+        settings.cookies.bind_session_to_ip,
         settings.session.session_duration_hours,
         settings.session.session_expiration_hours,
         settings.session.session_refresh_hours,

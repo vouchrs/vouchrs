@@ -43,6 +43,7 @@ impl ResponseError for SessionError {
 pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
+    bind_session_to_ip: bool,
     session_duration_hours: u64,
     session_expiration_hours: u64,
     session_refresh_hours: u64,
@@ -57,6 +58,7 @@ impl SessionManager {
     pub fn new(
         key: &[u8],
         cookie_secure: bool,
+        bind_session_to_ip: bool,
         session_duration_hours: u64,
         session_expiration_hours: u64,
         session_refresh_hours: u64,
@@ -66,6 +68,7 @@ impl SessionManager {
         Self {
             encryption_key,
             cookie_secure,
+            bind_session_to_ip,
             session_duration_hours,
             session_expiration_hours,
             session_refresh_hours,
@@ -107,6 +110,7 @@ impl SessionManager {
     /// - Session cookie is not found
     /// - Decryption fails
     /// - Session has expired AND no refresh token is available
+    /// - IP binding validation fails
     pub fn extract_session(&self, req: &HttpRequest) -> Result<VouchrsSession> {
         let cookie_value = req
             .cookie(COOKIE_NAME)
@@ -115,6 +119,11 @@ impl SessionManager {
             .to_string();
 
         let session: VouchrsSession = decrypt_data(&cookie_value, &self.encryption_key)?;
+
+        // Validate IP binding if enabled
+        if !self.validate_session_ip_binding(&session, req) {
+            return Err(anyhow!("Session IP validation failed"));
+        }
 
         // Check if tokens are expired
         if session.expires_at <= Utc::now() {
@@ -147,6 +156,12 @@ impl SessionManager {
     #[must_use]
     pub fn is_cookie_refresh_enabled(&self) -> bool {
         self.session_refresh_hours > 0
+    }
+
+    /// Check if session IP binding is enabled
+    #[must_use]
+    pub const fn is_session_ip_binding_enabled(&self) -> bool {
+        self.bind_session_to_ip
     }
 
     /// Create a refreshed session cookie with extended expiration
@@ -252,6 +267,12 @@ impl SessionManager {
         if let Some(cookie) = req.cookie(COOKIE_NAME) {
             match decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key) {
                 Ok(session) => {
+                    // Validate IP binding if enabled
+                    if !self.validate_session_ip_binding(&session, req) {
+                        log::warn!("Session IP validation failed during extraction");
+                        return Ok(None);
+                    }
+
                     // Check if session has expired
                     if session.expires_at <= Utc::now() {
                         // If session is expired but has a refresh token, return it for token refresh
@@ -289,6 +310,39 @@ impl SessionManager {
     /// - Session has expired AND no refresh token is available
     pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
         let session: VouchrsSession = decrypt_data(cookie_value, &self.encryption_key)?;
+
+        // Check if session has expired
+        if session.expires_at <= Utc::now() {
+            // If session is expired but has a refresh token, allow it through for token refresh
+            if session.refresh_token.is_some() {
+                log::info!("Session is expired but has refresh token - allowing for token refresh");
+                return Ok(session);
+            }
+            return Err(anyhow!("Session expired and no refresh token available"));
+        }
+
+        Ok(session)
+    }
+
+    /// Decrypt and validate session from cookie value with IP binding validation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Decryption fails
+    /// - Session has expired AND no refresh token is available
+    /// - IP binding validation fails
+    pub fn decrypt_and_validate_session_with_ip(
+        &self,
+        cookie_value: &str,
+        req: &HttpRequest,
+    ) -> Result<VouchrsSession> {
+        let session: VouchrsSession = decrypt_data(cookie_value, &self.encryption_key)?;
+
+        // Validate IP binding if enabled
+        if !self.validate_session_ip_binding(&session, req) {
+            return Err(anyhow!("Session IP validation failed"));
+        }
 
         // Check if session has expired
         if session.expires_at <= Utc::now() {
@@ -773,34 +827,6 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error if session cookie creation fails
-    pub fn create_authentication_response(
-        &self,
-        req: &HttpRequest,
-        auth_result: crate::models::auth::AuthenticationResult,
-        as_json: bool,
-    ) -> Result<HttpResponse, HttpResponse> {
-        if as_json {
-            self.create_json_session_response(
-                req,
-                &auth_result.session,
-                &auth_result.user_data,
-                auth_result.redirect_url,
-            )
-        } else {
-            self.create_session_response(
-                req,
-                &auth_result.session,
-                &auth_result.user_data,
-                auth_result.redirect_url,
-            )
-        }
-    }
-
-    /// Common session response creation
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if session cookie creation fails
     fn create_session_response(
         &self,
         req: &HttpRequest,
@@ -808,8 +834,13 @@ impl SessionManager {
         user_data: &VouchrsUserData,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
-        // Create session cookies
-        let session_cookie = self.create_session_cookie(session).map_err(|e| {
+        // Create session cookies - use IP binding if enabled
+        let session_cookie = if self.bind_session_to_ip {
+            self.create_session_cookie_with_context(session, req)
+        } else {
+            self.create_session_cookie(session)
+        }
+        .map_err(|e| {
             log::error!("Failed to create session cookie: {e}");
             Self::create_service_error_response("Session creation failed")
         })?;
@@ -845,8 +876,13 @@ impl SessionManager {
         user_data: &VouchrsUserData,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
-        // Create session cookies
-        let session_cookie = self.create_session_cookie(session).map_err(|e| {
+        // Create session cookies - use IP binding if enabled
+        let session_cookie = if self.bind_session_to_ip {
+            self.create_session_cookie_with_context(session, req)
+        } else {
+            self.create_session_cookie(session)
+        }
+        .map_err(|e| {
             log::error!("Failed to create session cookie: {e}");
             Self::create_service_error_response("Session creation failed")
         })?;
@@ -951,12 +987,94 @@ impl SessionManager {
             .max_age(options.max_age)
             .finish())
     }
+
+    /// Create an encrypted session cookie with optional client IP binding
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encryption fails
+    pub fn create_session_cookie_with_context(
+        &self,
+        session: &VouchrsSession,
+        req: &HttpRequest,
+    ) -> Result<Cookie> {
+        if self.bind_session_to_ip {
+            // Extract client IP for IP binding
+            let (client_ip, _) = crate::session::utils::extract_client_info(req);
+
+            // Create a session copy with bound IP
+            let mut bound_session = session.clone();
+            bound_session.client_ip = client_ip;
+
+            log::debug!(
+                "Creating session cookie with IP binding: {:?}",
+                bound_session.client_ip
+            );
+
+            self.create_cookie(
+                COOKIE_NAME.to_string(),
+                Some(&bound_session),
+                CookieOptions {
+                    same_site: actix_web::cookie::SameSite::Lax,
+                    max_age: actix_web::cookie::time::Duration::hours(
+                        i64::try_from(self.session_duration_hours).unwrap_or(24),
+                    ),
+                    ..Default::default()
+                },
+            )
+        } else {
+            // Use existing method for no IP binding
+            self.create_session_cookie(session)
+        }
+    }
+
+    /// Validate session IP binding against current request
+    ///
+    /// # Arguments
+    /// * `session` - The session to validate
+    /// * `req` - The current HTTP request
+    ///
+    /// Returns true if IP binding is disabled or if IPs match
+    #[must_use]
+    pub fn validate_session_ip_binding(&self, session: &VouchrsSession, req: &HttpRequest) -> bool {
+        if !self.bind_session_to_ip {
+            // IP binding is disabled, always valid
+            return true;
+        }
+
+        // Extract current client IP
+        let (current_ip, _) = crate::session::utils::extract_client_info(req);
+
+        match (&session.client_ip, current_ip) {
+            (Some(session_ip), Some(current_ip)) => {
+                let is_valid = session_ip == &current_ip;
+                if !is_valid {
+                    log::warn!(
+                        "Session IP mismatch: session IP '{session_ip}' != current IP '{current_ip}'"
+                    );
+                }
+                is_valid
+            }
+            (Some(session_ip), None) => {
+                log::warn!("Session has bound IP '{session_ip}' but current request has no IP");
+                false
+            }
+            (None, Some(current_ip)) => {
+                log::warn!("Session has no bound IP but current request has IP '{current_ip}'");
+                false
+            }
+            (None, None) => {
+                // Both are None, this is valid (though unusual)
+                true
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{RequestBuilder, TestFixtures};
+    use crate::testing::{constants::TEST_JWT_KEY, RequestBuilder, TestFixtures};
     use chrono::Duration;
     use serde_json::json;
 
@@ -1221,5 +1339,216 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("no refresh token available"));
+    }
+
+    #[test]
+    fn test_ip_binding_validation() {
+        // Test with IP binding enabled
+        let manager = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            true, // bind_session_to_ip = true
+            24,
+            1,
+            0,
+        );
+
+        let session_with_ip = VouchrsSession {
+            id_token: Some("test_token".to_string()),
+            refresh_token: Some("refresh_token".to_string()),
+            credential_id: None,
+            user_handle: None,
+            provider: "google".to_string(),
+            expires_at: Utc::now() + Duration::hours(1),
+            authenticated_at: Utc::now(),
+            client_ip: Some("192.168.1.1".to_string()),
+        };
+
+        let session_without_ip = VouchrsSession {
+            id_token: Some("test_token".to_string()),
+            refresh_token: Some("refresh_token".to_string()),
+            credential_id: None,
+            user_handle: None,
+            provider: "google".to_string(),
+            expires_at: Utc::now() + Duration::hours(1),
+            authenticated_at: Utc::now(),
+            client_ip: None,
+        };
+
+        // Create mock requests with different IPs
+        let req_with_matching_ip = RequestBuilder::new()
+            .uri("/")
+            .browser_headers()
+            .with_client_ip("192.168.1.1")
+            .build();
+        let req_with_different_ip = RequestBuilder::new()
+            .uri("/")
+            .browser_headers()
+            .with_client_ip("192.168.1.2")
+            .build();
+        let req_without_ip = RequestBuilder::browser("/");
+
+        // Test IP binding validation
+        assert!(manager.validate_session_ip_binding(&session_with_ip, &req_with_matching_ip));
+        assert!(!manager.validate_session_ip_binding(&session_with_ip, &req_with_different_ip));
+        assert!(!manager.validate_session_ip_binding(&session_with_ip, &req_without_ip));
+
+        // Session without IP should fail when binding is enabled
+        assert!(!manager.validate_session_ip_binding(&session_without_ip, &req_with_matching_ip));
+
+        // Test with IP binding disabled
+        let manager_no_binding = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            false, // bind_session_to_ip = false
+            24,
+            1,
+            0,
+        );
+
+        // All combinations should pass when IP binding is disabled
+        assert!(
+            manager_no_binding.validate_session_ip_binding(&session_with_ip, &req_with_matching_ip)
+        );
+        assert!(manager_no_binding
+            .validate_session_ip_binding(&session_with_ip, &req_with_different_ip));
+        assert!(manager_no_binding.validate_session_ip_binding(&session_with_ip, &req_without_ip));
+        assert!(manager_no_binding
+            .validate_session_ip_binding(&session_without_ip, &req_with_matching_ip));
+    }
+
+    #[test]
+    fn test_session_cookie_creation_with_ip_binding() {
+        // Test with IP binding enabled
+        let manager = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            true, // bind_session_to_ip = true
+            24,
+            1,
+            0,
+        );
+
+        let session = TestFixtures::oauth_session();
+        let req = RequestBuilder::new()
+            .uri("/")
+            .browser_headers()
+            .with_client_ip("192.168.1.1")
+            .build();
+
+        // Create session cookie with IP binding
+        let cookie = manager
+            .create_session_cookie_with_context(&session, &req)
+            .unwrap();
+        assert_eq!(cookie.name(), COOKIE_NAME);
+        assert!(!cookie.value().is_empty());
+
+        // Decrypt and verify IP was bound
+        let decrypted: VouchrsSession =
+            crate::utils::crypto::decrypt_data(cookie.value(), manager.encryption_key()).unwrap();
+        assert_eq!(decrypted.client_ip, Some("192.168.1.1".to_string()));
+        assert_eq!(decrypted.provider, session.provider);
+
+        // Test without IP binding
+        let manager_no_binding = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            false, // bind_session_to_ip = false
+            24,
+            1,
+            0,
+        );
+
+        let cookie_no_binding = manager_no_binding
+            .create_session_cookie_with_context(&session, &req)
+            .unwrap();
+        let decrypted_no_binding: VouchrsSession = crate::utils::crypto::decrypt_data(
+            cookie_no_binding.value(),
+            manager_no_binding.encryption_key(),
+        )
+        .unwrap();
+        assert_eq!(decrypted_no_binding.client_ip, None);
+    }
+
+    #[test]
+    fn test_session_extraction_with_ip_validation() {
+        let manager = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            true, // bind_session_to_ip = true
+            24,
+            1,
+            0,
+        );
+
+        // Create a session with IP binding
+        let session = VouchrsSession {
+            id_token: Some("test_token".to_string()),
+            refresh_token: Some("refresh_token".to_string()),
+            credential_id: None,
+            user_handle: None,
+            provider: "google".to_string(),
+            expires_at: Utc::now() + Duration::hours(1),
+            authenticated_at: Utc::now(),
+            client_ip: Some("192.168.1.1".to_string()),
+        };
+
+        // Create encrypted cookie
+        let cookie_value =
+            crate::utils::crypto::encrypt_data(&session, manager.encryption_key()).unwrap();
+
+        let req_matching_ip = RequestBuilder::new()
+            .uri("/")
+            .browser_headers()
+            .with_client_ip("192.168.1.1")
+            .with_cookie_header(&format!("vouchrs_session={}", cookie_value))
+            .build();
+
+        let req_different_ip = RequestBuilder::new()
+            .uri("/")
+            .browser_headers()
+            .with_client_ip("192.168.1.2")
+            .with_cookie_header(&format!("vouchrs_session={}", cookie_value))
+            .build();
+
+        // Extraction should succeed with matching IP
+        let extracted_session = manager.extract_session(&req_matching_ip);
+        assert!(extracted_session.is_ok());
+        assert_eq!(
+            extracted_session.unwrap().client_ip,
+            Some("192.168.1.1".to_string())
+        );
+
+        // Extraction should fail with different IP
+        let extraction_result = manager.extract_session(&req_different_ip);
+        assert!(extraction_result.is_err());
+        assert!(extraction_result
+            .unwrap_err()
+            .to_string()
+            .contains("IP validation failed"));
+    }
+
+    #[test]
+    fn test_ip_binding_getter() {
+        let manager_with_binding = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            true, // bind_session_to_ip = true
+            24,
+            1,
+            0,
+        );
+
+        let manager_without_binding = SessionManager::new(
+            TEST_JWT_KEY,
+            false,
+            false, // bind_session_to_ip = false
+            24,
+            1,
+            0,
+        );
+
+        assert!(manager_with_binding.is_session_ip_binding_enabled());
+        assert!(!manager_without_binding.is_session_ip_binding_enabled());
     }
 }

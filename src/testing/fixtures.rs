@@ -32,6 +32,7 @@ impl TestFixtures {
             provider: "google".to_string(),
             expires_at: Utc::now() + Duration::hours(1),
             authenticated_at: Utc::now(),
+            client_ip: None, // Test sessions don't have IP binding by default
         }
     }
 
@@ -46,6 +47,7 @@ impl TestFixtures {
             provider: "passkey".to_string(),
             expires_at: Utc::now() + Duration::hours(168), // 7 days
             authenticated_at: Utc::now(),
+            client_ip: None, // Test sessions don't have IP binding by default
         }
     }
 
@@ -73,14 +75,14 @@ impl TestFixtures {
     #[must_use]
     pub fn session_manager() -> SessionManager {
         let secret = Self::generate_test_secret();
-        SessionManager::new(secret.as_bytes(), false, 24, 1, 0)
+        SessionManager::new(secret.as_bytes(), false, false, 24, 1, 0)
     }
 
     /// Create a session manager with custom refresh hours
     #[must_use]
     pub fn session_manager_with_refresh(refresh_hours: u64) -> SessionManager {
         let secret = Self::generate_test_secret();
-        SessionManager::new(secret.as_bytes(), false, 24, 1, refresh_hours)
+        SessionManager::new(secret.as_bytes(), false, false, 24, 1, refresh_hours)
     }
 
     /// Create a session manager from provided settings
@@ -89,6 +91,7 @@ impl TestFixtures {
         SessionManager::new(
             settings.session.session_secret.as_bytes(),
             false,
+            false, // Default to disabled for tests
             settings.session.session_duration_hours,
             settings.session.session_expiration_hours,
             0,
@@ -115,7 +118,8 @@ impl TestFixtures {
                 session_refresh_hours: 0,
             },
             cookies: crate::settings::CookieSettings {
-                secure: false, // Set to false for testing
+                secure: false,             // Set to false for testing
+                bind_session_to_ip: false, // Default to disabled for tests
             },
             ..Default::default()
         }
@@ -208,7 +212,7 @@ impl TestFixtures {
     /// Create a session manager with consistent secret for predictable testing
     #[must_use]
     pub fn consistent_session_manager() -> SessionManager {
-        SessionManager::new(TEST_JWT_KEY, false, 24, 1, 0)
+        SessionManager::new(TEST_JWT_KEY, false, false, 24, 1, 0)
     }
 }
 

@@ -114,6 +114,7 @@ impl TestSessionBuilder {
             provider: self.provider,
             expires_at: Utc::now() + Duration::hours(self.expires_in_hours),
             authenticated_at: Utc::now() - Duration::minutes(self.authenticated_ago_minutes),
+            client_ip: None, // Test sessions don't have IP binding by default
         }
     }
 }
@@ -320,6 +321,7 @@ impl TestSessionManagerBuilder {
         SessionManager::new(
             &self.secret,
             self.cookie_secure,
+            false, // bind_session_to_ip disabled by default for tests
             self.session_duration_hours,
             self.session_expiration_hours,
             self.session_refresh_hours,
@@ -423,6 +425,7 @@ impl TestSettingsBuilder {
             },
             cookies: crate::settings::CookieSettings {
                 secure: self.cookie_secure,
+                bind_session_to_ip: false, // Default to disabled for test settings
             },
             ..Default::default()
         }

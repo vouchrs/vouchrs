@@ -68,6 +68,7 @@ impl PasskeySessionData {
             provider: self.provider.clone(),
             expires_at: self.expires_at,
             authenticated_at: self.authenticated_at,
+            client_ip: None, // Will be set during session creation based on configuration
         }
     }
 
@@ -155,6 +156,7 @@ pub fn to_vouchrs_session(
         provider: session.provider.clone(),
         expires_at: session.expires_at,
         authenticated_at: session.authenticated_at,
+        client_ip: client_ip.map(std::string::ToString::to_string),
     };
 
     // Create VouchrsUserData for cookie storage
@@ -228,9 +230,13 @@ impl PasskeySessionBuilder {
         let session = passkey_session.to_session();
         let user_data = passkey_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
 
-        // Create session cookies
+        // Create session cookies - use IP binding if enabled
         match (
-            session_manager.create_session_cookie(&session),
+            if session_manager.is_session_ip_binding_enabled() {
+                session_manager.create_session_cookie_with_context(&session, req)
+            } else {
+                session_manager.create_session_cookie(&session)
+            },
             session_manager.create_user_cookie_with_persistence(req, &user_data),
         ) {
             (Ok(session_cookie), Ok(user_cookie)) => {

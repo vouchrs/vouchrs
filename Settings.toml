@@ -68,6 +68,11 @@ audience = "https://api.example.com"
 # Environment variable: COOKIE_SECURE
 secure = false
 
+# Bind session cookies to client IP address for additional security
+# When enabled, session cookies are tied to the originating IP address
+# Environment variable: BIND_SESSION_TO_IP
+bind_session_to_ip = false
+
 [logging]
 # Logging level: error, warn, info, debug, trace
 # Environment variable: RUST_LOG

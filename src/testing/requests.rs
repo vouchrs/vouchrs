@@ -136,6 +136,13 @@ impl RequestBuilder {
         self
     }
 
+    /// Set client IP for testing purposes
+    /// This adds the necessary headers that would be used to extract client IP
+    #[must_use]
+    pub fn with_client_ip(self, ip: &str) -> Self {
+        self.header("X-Forwarded-For", ip).header("X-Real-IP", ip)
+    }
+
     /// Build the final `HttpRequest`
     #[must_use]
     pub fn build(self) -> HttpRequest {

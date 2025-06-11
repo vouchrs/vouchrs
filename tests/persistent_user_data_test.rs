@@ -9,6 +9,7 @@ async fn test_persistent_user_data_preservation() {
     let test_key = b"test-encryption-key-32-bytes-min";
     let session_manager = SessionManager::new(
         test_key, false, // cookie_secure
+        false, // bind_session_to_ip
         24,    // session_duration_hours
         24,    // session_expiration_hours
         0,     // session_refresh_hours
@@ -86,7 +87,7 @@ async fn test_persistent_user_data_preservation() {
 #[actix_web::test]
 async fn test_no_persistence_different_provider_id() {
     let test_key = b"test-encryption-key-32-bytes-min";
-    let session_manager = SessionManager::new(test_key, false, 24, 24, 0);
+    let session_manager = SessionManager::new(test_key, false, false, 24, 24, 0);
 
     // Create initial user data with a different provider_id
     let initial_user_data = VouchrsUserData {
@@ -149,7 +150,7 @@ async fn test_no_persistence_different_provider_id() {
 #[actix_web::test]
 async fn test_new_values_override_existing() {
     let test_key = b"test-encryption-key-32-bytes-min";
-    let session_manager = SessionManager::new(test_key, false, 24, 24, 0);
+    let session_manager = SessionManager::new(test_key, false, false, 24, 24, 0);
 
     // Create initial user data
     let initial_user_data = VouchrsUserData {
