@@ -77,15 +77,15 @@ enabled = true
 
 # Relying Party ID (usually your domain)
 # Environment variable: PASSKEYS_RP_ID
-rp_id = "play.dev.filmfeud.app"
+rp_id = "demo.dev.vouchrs.app"
 
 # Relying Party name (displayed to users during registration)
 # Environment variable: PASSKEYS_RP_NAME
-rp_name = "Film Feud Dev"
+rp_name = "vouchrs demo"
 
 # Relying Party origin (must match the origin where passkeys are used)
 # Environment variable: PASSKEYS_RP_ORIGIN
-rp_origin = "https://play.dev.filmfeud.app"
+rp_origin = "https://demo.dev.vouchrs.app"
 
 # Operation timeout in seconds
 # Environment variable: PASSKEYS_TIMEOUT_SECONDS
