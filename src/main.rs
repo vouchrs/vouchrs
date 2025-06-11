@@ -85,14 +85,15 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
 
 fn configure_services(cfg: &mut web::ServiceConfig) {
     cfg
-        // OAuth2 endpoints
+        // Common authentication endpoints
         .route("/auth/sign_in", web::get().to(oauth_sign_in))
+        .route("/auth/debug", web::get().to(oauth_debug))
+        .route("/auth/userinfo", web::get().to(oauth_userinfo))
+        // OAuth2 endpoints
         .route("/auth/oauth2/sign_out", web::get().to(oauth_sign_out))
         .route("/auth/oauth2/sign_out", web::post().to(oauth_sign_out))
         .route("/auth/oauth2/callback", web::get().to(oauth_callback))
         .route("/auth/oauth2/callback", web::post().to(oauth_callback))
-        .route("/auth/oauth2/debug", web::get().to(oauth_debug))
-        .route("/auth/oauth2/userinfo", web::get().to(oauth_userinfo))
         // Passkey endpoints
         .route(
             "/auth/passkey/register/start",
