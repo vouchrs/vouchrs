@@ -65,9 +65,10 @@ pub async fn serve_static(
     let assets_file_path = format!("{}/{}", settings.static_files.assets_folder, filename);
 
     // If assets folder was explicitly set, prefer it over generated content folder
-    let file_path = if settings.static_files.assets_folder_explicitly_set 
-        && std::path::Path::new(&assets_file_path).exists() {
-        println!("✅ Using custom static file from {}", assets_file_path);
+    let file_path = if settings.static_files.assets_folder_explicitly_set
+        && std::path::Path::new(&assets_file_path).exists()
+    {
+        println!("✅ Using custom static file from {assets_file_path}");
         assets_file_path
     } else if std::path::Path::new(&generated_file_path).exists() {
         generated_file_path
@@ -111,12 +112,9 @@ pub async fn serve_static(
 pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
     // If assets folder was explicitly set, check for custom sign-in.html first
     if settings.static_files.assets_folder_explicitly_set {
-        let custom_html_path = format!(
-            "{}/sign-in.html",
-            settings.static_files.assets_folder
-        );
+        let custom_html_path = format!("{}/sign-in.html", settings.static_files.assets_folder);
         if let Ok(custom_html) = std::fs::read_to_string(&custom_html_path) {
-            println!("✅ Using custom sign-in.html from {}", custom_html_path);
+            println!("✅ Using custom sign-in.html from {custom_html_path}");
             return custom_html;
         }
     }
