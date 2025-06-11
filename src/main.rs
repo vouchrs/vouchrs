@@ -5,14 +5,16 @@
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
+use std::sync::Arc;
 use vouchrs::{
-    authentication::{AuthenticationConfig, AuthenticationServiceFactory},
     handlers::{
         complete_authentication, complete_registration, health, initialize_static_files,
         oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo, proxy_upstream,
         serve_static, start_authentication, start_registration,
     },
-    oauth::OAuthConfig,
+    oauth::{OAuthAuthenticationServiceImpl, OAuthConfig},
+    passkey::PasskeyAuthenticationServiceImpl,
+    session::SessionManager,
     settings::VouchrsSettings,
 };
 
@@ -49,10 +51,8 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
     let bind_address = settings.get_bind_address();
     print_startup_info(&bind_address, "Stateless", &settings);
 
-    // Initialize session manager with authentication services using factory
-    let auth_config = AuthenticationConfig::from_settings(&settings);
-    let session_manager =
-        AuthenticationServiceFactory::create_complete_session_manager(&settings, &auth_config);
+    // Initialize session manager with authentication services
+    let session_manager = create_session_manager(&settings);
 
     // Configure CORS for SPAs
     let cors_origins = settings.get_cors_origins();
@@ -163,4 +163,45 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
         "  Static files folder: {}",
         settings.static_files.assets_folder
     );
+}
+
+/// Create a session manager with authentication services based on settings
+///
+/// This function replaces the complex factory pattern with a simple, direct approach.
+/// It creates a `SessionManager` and conditionally adds OAuth and Passkey services
+/// based on the application settings.
+///
+/// # Arguments
+/// * `settings` - The application settings containing authentication configuration
+///
+/// # Returns
+/// A configured `SessionManager` with appropriate authentication services enabled
+fn create_session_manager(settings: &VouchrsSettings) -> SessionManager {
+    // Create base session manager
+    let mut session_manager = SessionManager::new(
+        settings.session.session_secret.as_bytes(),
+        settings.cookies.secure,
+        settings.session.session_duration_hours,
+        settings.session.session_expiration_hours,
+        settings.session.session_refresh_hours,
+    );
+
+    // Add OAuth service if providers are enabled
+    if !settings.get_enabled_providers().is_empty() {
+        let oauth_service = Arc::new(OAuthAuthenticationServiceImpl::new(settings.clone()));
+        session_manager = session_manager.with_oauth_service(oauth_service);
+        log::info!(
+            "✅ OAuth authentication enabled with {} providers",
+            settings.get_enabled_providers().len()
+        );
+    }
+
+    // Add Passkey service if enabled
+    if settings.passkeys.enabled {
+        let passkey_service = Arc::new(PasskeyAuthenticationServiceImpl::new(settings.clone()));
+        session_manager = session_manager.with_passkey_service(passkey_service);
+        log::info!("✅ Passkey authentication enabled");
+    }
+
+    session_manager
 }
