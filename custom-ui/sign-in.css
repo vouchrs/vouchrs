@@ -72,11 +72,6 @@ h1 {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
-.provider-icon {
-    display: block;
-    /* Ensure consistent display type */
-}
-
 /* Provider button base styles */
 .provider-btn {
     background-color: #2d2d2d;
