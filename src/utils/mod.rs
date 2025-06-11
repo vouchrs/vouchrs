@@ -1,8 +1,7 @@
 pub mod apple;
-pub mod cached_responses;
 pub mod crypto;
 pub mod redirect_validator;
-pub mod response_builder;
+pub mod responses;
 pub mod user_agent;
 
 // Make test utilities available for both unit tests and integration tests

@@ -2,8 +2,8 @@ use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
 use crate::session::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::validation::{calculate_client_context_hash, validate_client_context};
-use crate::utils::cached_responses::RESPONSES;
 use crate::utils::crypto::{decrypt_data, derive_encryption_key, encrypt_data};
+use crate::utils::responses::ResponseBuilder;
 use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -31,9 +31,9 @@ impl ResponseError for SessionError {
         let error_msg = self.0.to_string();
 
         if error_msg.contains("Session expired") || error_msg.contains("Session not found") {
-            RESPONSES.unauthorized()
+            ResponseBuilder::unauthorized().build()
         } else {
-            RESPONSES.server_error()
+            ResponseBuilder::internal_server_error().build()
         }
     }
 }

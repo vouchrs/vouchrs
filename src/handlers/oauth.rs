@@ -5,7 +5,7 @@ use crate::session::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAM
 use crate::session::{get_state_from_callback, SessionManager};
 use crate::settings::VouchrsSettings;
 use crate::utils::crypto::{encrypt_data, generate_csrf_token};
-use crate::utils::response_builder::{redirect_with_cookie, success_redirect_with_cookies};
+use crate::utils::responses::{redirect_with_cookie, success_redirect_with_cookies};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 

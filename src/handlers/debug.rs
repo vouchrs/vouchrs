@@ -1,6 +1,6 @@
 // Debug handler for sessions
 use crate::session::SessionManager;
-use crate::utils::cached_responses::RESPONSES;
+use crate::utils::responses::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
@@ -19,7 +19,7 @@ pub async fn oauth_userinfo(
     req.cookie(USER_COOKIE_NAME).map_or_else(
         || {
             debug!("Userinfo endpoint: No vouchrs_user cookie found");
-            Ok(RESPONSES.unauthorized())
+            Ok(ResponseBuilder::unauthorized().build())
         },
         |cookie| match crate::utils::crypto::decrypt_data::<crate::models::VouchrsUserData>(
             cookie.value(),
@@ -36,7 +36,7 @@ pub async fn oauth_userinfo(
             }
             Err(e) => {
                 error!("Userinfo endpoint: Error decrypting user cookie: {e}");
-                Ok(RESPONSES.unauthorized())
+                Ok(ResponseBuilder::unauthorized().build())
             }
         },
     )
@@ -91,11 +91,11 @@ pub async fn oauth_debug(
         }
         Ok(None) => {
             debug!("Debug endpoint: No valid session found");
-            Ok(RESPONSES.unauthorized())
+            Ok(ResponseBuilder::unauthorized().build())
         }
         Err(e) => {
             error!("Debug endpoint: Error retrieving session: {e}");
-            Ok(RESPONSES.unauthorized())
+            Ok(ResponseBuilder::unauthorized().build())
         }
     }
 }

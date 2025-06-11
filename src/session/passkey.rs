@@ -247,10 +247,12 @@ impl PasskeySessionBuilder {
                     "/".to_string()
                 };
 
-                crate::utils::response_builder::success_redirect_with_cookies(
-                    &validated_redirect,
-                    vec![session_cookie, user_cookie],
-                )
+                // Manual HttpResponse construction (best approach for lifetime safety)
+                actix_web::HttpResponse::Found()
+                    .append_header(("Location", validated_redirect))
+                    .cookie(session_cookie)
+                    .cookie(user_cookie)
+                    .finish()
             }
             _ => crate::session::utils::create_error_response(
                 session_manager,

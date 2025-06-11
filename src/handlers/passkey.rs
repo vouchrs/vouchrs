@@ -16,6 +16,7 @@ use crate::passkey::{
 };
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
+use crate::utils::responses::ResponseBuilder;
 
 /// Registration request (HTTP endpoint format)
 #[derive(Deserialize)]
@@ -27,26 +28,19 @@ pub struct RegistrationRequest {
 /// Convert `PasskeyError` to HTTP response
 fn error_to_response(error: PasskeyError) -> HttpResponse {
     match error {
-        PasskeyError::ServiceUnavailable(msg) => HttpResponse::ServiceUnavailable().json(json!({
-            "error": "service_unavailable",
-            "message": msg
-        })),
-        PasskeyError::InvalidRequest(msg) => HttpResponse::BadRequest().json(json!({
-            "error": "invalid_request",
-            "message": msg
-        })),
-        PasskeyError::AuthenticationFailed(msg) => HttpResponse::Unauthorized().json(json!({
-            "error": "authentication_failed",
-            "message": msg
-        })),
-        PasskeyError::RegistrationFailed(msg) => HttpResponse::BadRequest().json(json!({
-            "error": "registration_failed",
-            "message": msg
-        })),
-        _ => HttpResponse::InternalServerError().json(json!({
-            "error": "internal_error",
-            "message": "An internal error occurred"
-        })),
+        PasskeyError::ServiceUnavailable(_msg) => {
+            ResponseBuilder::service_unavailable_with_details("Passkey service")
+        }
+        PasskeyError::InvalidRequest(msg) => ResponseBuilder::bad_request()
+            .with_error_code("invalid_request")
+            .with_message(&msg)
+            .build(),
+        PasskeyError::AuthenticationFailed(msg) => ResponseBuilder::authentication_failed(&msg),
+        PasskeyError::RegistrationFailed(msg) => ResponseBuilder::registration_failed(&msg),
+        _ => ResponseBuilder::internal_server_error()
+            .with_error_code("internal_error")
+            .with_message("An internal error occurred")
+            .build(),
     }
 }
 
@@ -80,10 +74,7 @@ pub async fn start_registration(
                 Ok(data) => data,
                 Err(e) => {
                     log::error!("Failed to encode user data: {e}");
-                    return Ok(HttpResponse::InternalServerError().json(json!({
-                        "error": "encoding_failed",
-                        "message": "Failed to encode user data"
-                    })));
+                    return Ok(ResponseBuilder::encoding_failed("user data"));
                 }
             };
 
@@ -215,76 +206,52 @@ pub async fn complete_authentication(
 fn extract_credential_response(
     data: &web::Json<serde_json::Value>,
 ) -> Result<webauthn_rs_proto::RegisterPublicKeyCredential, HttpResponse> {
-    let credential = data.get("credential_response").ok_or_else(|| {
-        HttpResponse::BadRequest().json(json!({
-            "error": "missing_credential",
-            "message": "Missing credential in request"
-        }))
-    })?;
+    let credential = data
+        .get("credential_response")
+        .ok_or_else(ResponseBuilder::missing_credential)?;
 
     serde_json::from_value(credential.clone()).map_err(|e| {
         log::error!("Failed to parse credential: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_credential",
-            "message": "Invalid credential format"
-        }))
+        ResponseBuilder::invalid_credential("Invalid credential format")
     })
 }
 
 fn extract_authentication_credential_response(
     data: &web::Json<serde_json::Value>,
 ) -> Result<webauthn_rs_proto::PublicKeyCredential, HttpResponse> {
-    let credential = data.get("credential_response").ok_or_else(|| {
-        HttpResponse::BadRequest().json(json!({
-            "error": "missing_credential",
-            "message": "Missing credential in request"
-        }))
-    })?;
+    let credential = data
+        .get("credential_response")
+        .ok_or_else(ResponseBuilder::missing_credential)?;
 
     serde_json::from_value(credential.clone()).map_err(|e| {
         log::error!("Failed to parse credential: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_credential",
-            "message": "Invalid credential format"
-        }))
+        ResponseBuilder::invalid_credential("Invalid credential format")
     })
 }
 
 fn extract_registration_state(
     data: &web::Json<serde_json::Value>,
 ) -> Result<PasskeyRegistration, HttpResponse> {
-    let state = data.get("registration_state").ok_or_else(|| {
-        HttpResponse::BadRequest().json(json!({
-            "error": "missing_state",
-            "message": "Missing registration state"
-        }))
-    })?;
+    let state = data
+        .get("registration_state")
+        .ok_or_else(ResponseBuilder::missing_state)?;
 
     serde_json::from_value(state.clone()).map_err(|e| {
         log::error!("Failed to parse registration state: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_state",
-            "message": "Invalid registration state"
-        }))
+        ResponseBuilder::invalid_state("Invalid registration state")
     })
 }
 
 fn extract_authentication_state(
     data: &web::Json<serde_json::Value>,
 ) -> Result<PasskeyAuthentication, HttpResponse> {
-    let state = data.get("authentication_state").ok_or_else(|| {
-        HttpResponse::BadRequest().json(json!({
-            "error": "missing_state",
-            "message": "Missing authentication state"
-        }))
-    })?;
+    let state = data
+        .get("authentication_state")
+        .ok_or_else(ResponseBuilder::missing_state)?;
 
     serde_json::from_value(state.clone()).map_err(|e| {
         log::error!("Failed to parse authentication state: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_state",
-            "message": "Invalid authentication state"
-        }))
+        ResponseBuilder::invalid_state("Invalid authentication state")
     })
 }
 
@@ -294,19 +261,11 @@ fn extract_user_data_for_registration(
     let encoded_user_data = data
         .get("user_data")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            HttpResponse::BadRequest().json(json!({
-                "error": "missing_user_data",
-                "message": "User data is required for registration"
-            }))
-        })?;
+        .ok_or_else(ResponseBuilder::missing_user_data)?;
 
     PasskeyUserData::decode(encoded_user_data).map_err(|e| {
         log::error!("Failed to decode user data: {e}");
-        HttpResponse::BadRequest().json(json!({
-            "error": "invalid_user_data",
-            "message": "Failed to decode user data"
-        }))
+        ResponseBuilder::invalid_user_data("Failed to decode user data")
     })
 }
 

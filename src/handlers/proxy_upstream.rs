@@ -10,8 +10,9 @@ use crate::{
     session::cookie::{filter_vouchrs_cookies, COOKIE_NAME},
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::cached_responses::RESPONSES,
-    utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
+    utils::responses::{
+        build_upstream_url, convert_http_method, is_hop_by_hop_header, ResponseBuilder,
+    },
     utils::user_agent::is_browser_request,
 };
 
@@ -91,7 +92,7 @@ fn handle_unauthorized_response(req: &HttpRequest, settings: &VouchrsSettings) -
             }))
     } else {
         // For non-browser requests, return 401 with JSON error
-        RESPONSES.unauthorized()
+        ResponseBuilder::unauthorized().build()
     }
 }
 
@@ -223,7 +224,7 @@ async fn execute_upstream_request(
     // Execute the request
     request_builder.send().await.map_err(|_err| {
         // Return a bad gateway error response for upstream connection failures
-        RESPONSES.bad_gateway()
+        ResponseBuilder::bad_gateway().build()
     })
 }
 
@@ -249,7 +250,7 @@ fn extract_session_from_request(
                 .finish()
         } else {
             // For non-browser requests, return JSON error
-            RESPONSES.unauthorized()
+            ResponseBuilder::unauthorized().build()
         }
     };
 
@@ -326,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_hop_by_hop_headers() {
-        use crate::utils::response_builder::is_hop_by_hop_header;
+        use crate::utils::responses::is_hop_by_hop_header;
         assert!(is_hop_by_hop_header("connection"));
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("content-type"));
