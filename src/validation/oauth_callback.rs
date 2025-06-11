@@ -189,6 +189,7 @@ impl CallbackDataExtractor {
 mod tests {
     use super::*;
     use crate::oauth::OAuthCallback;
+    use crate::testing::TestFixtures;
 
     fn create_test_callback(
         code: Option<String>,
@@ -204,13 +205,7 @@ mod tests {
     }
 
     fn create_test_session_manager() -> SessionManager {
-        SessionManager::new(
-            b"test_key_32_bytes_long_for_test_",
-            false, // cookie_secure
-            24,    // session_duration_hours
-            24,    // session_expiration_hours
-            24,    // session_refresh_hours
-        )
+        TestFixtures::session_manager()
     }
 
     #[test]

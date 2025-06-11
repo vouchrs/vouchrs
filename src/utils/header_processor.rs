@@ -212,7 +212,7 @@ pub fn forward_response_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_request_builder::TestRequestBuilder;
+    use crate::testing::RequestBuilder;
     use reqwest::Client;
 
     #[test]
@@ -241,7 +241,7 @@ mod tests {
         // Create a mock HTTP request with cookies including vouchrs session
         let cookies =
             "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
-        let req = TestRequestBuilder::with_cookies(cookies);
+        let req = RequestBuilder::with_cookies(cookies);
 
         // Create a reqwest RequestBuilder and apply header forwarding
         let client = Client::new();

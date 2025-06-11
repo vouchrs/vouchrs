@@ -1,9 +1,6 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::models::VouchrsUserData;
-use vouchrs::utils::test_helpers::{
-    create_request_with_cookie, create_test_session, create_test_session_manager_from_settings,
-    create_test_settings,
-};
+use vouchrs::testing::fixtures::TestFixtures;
 use vouchrs::utils::user_agent::UserAgentInfo;
 
 /// Helper function to create test user data with optional context
@@ -32,9 +29,9 @@ fn create_test_user_data(
 #[test]
 fn test_user_cookie_contains_required_fields() {
     // Create a session with proper provider_id set
-    let session = create_test_session();
+    let session = TestFixtures::oauth_session();
 
-    let settings = create_test_settings();
+    let settings = TestFixtures::settings();
 
     // Create user agent info with platform
     let user_agent_info = UserAgentInfo {
@@ -79,7 +76,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_data.mobile, 0, "Mobile flag should be set");
 
     // Test user cookie encryption/decryption
-    let session_manager = create_test_session_manager_from_settings(&settings);
+    let session_manager = TestFixtures::session_manager_from_settings(&settings);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");
@@ -94,7 +91,7 @@ fn test_user_cookie_contains_required_fields() {
     assert_eq!(user_cookie.path(), Some("/"));
 
     // Test that we can decrypt the user data back using a mock request
-    let test_req = create_request_with_cookie(user_cookie.clone());
+    let test_req = TestFixtures::request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
         .get_user_data_from_request(&test_req)
@@ -111,9 +108,9 @@ fn test_user_cookie_contains_required_fields() {
 #[test]
 fn test_minimal_user_data() {
     // Test creating user data with minimal information
-    let session = create_test_session();
+    let session = TestFixtures::oauth_session();
 
-    let settings = create_test_settings();
+    let settings = TestFixtures::settings();
 
     // Create user data without user agent info or client IP
     let user_data = create_test_user_data(
@@ -138,13 +135,13 @@ fn test_minimal_user_data() {
     assert_eq!(user_data.mobile, 0, "Mobile should default to 0");
 
     // Test encryption/decryption with minimal data
-    let session_manager = create_test_session_manager_from_settings(&settings);
+    let session_manager = TestFixtures::session_manager_from_settings(&settings);
     let user_cookie = session_manager
         .create_user_cookie(&user_data)
         .expect("Should create user cookie");
 
     // Test that we can decrypt the user data back using a mock request
-    let test_req = create_request_with_cookie(user_cookie.clone());
+    let test_req = TestFixtures::request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
         .get_user_data_from_request(&test_req)

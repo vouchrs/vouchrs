@@ -20,6 +20,10 @@ pub mod settings;
 pub mod utils;
 pub mod validation;
 
+// Unified testing infrastructure (available for both unit and integration tests)
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+
 /// Re-export commonly used items
 pub use handlers::{
     health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,

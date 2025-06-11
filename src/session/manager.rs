@@ -877,13 +877,14 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_helpers::{create_test_session, create_test_session_manager};
+    use crate::testing::{RequestBuilder, TestFixtures};
     use chrono::Duration;
+    use serde_json::json;
 
     #[test]
     fn test_token_encryption_decryption() {
-        let manager = create_test_session_manager();
-        let session = create_test_session();
+        let manager = TestFixtures::session_manager();
+        let session = TestFixtures::oauth_session();
 
         // Test encryption with generic method
         let encrypted = encrypt_data(&session, manager.encryption_key()).unwrap();
@@ -899,9 +900,9 @@ mod tests {
 
     #[test]
     fn test_needs_token_refresh() {
-        let manager = create_test_session_manager();
+        let manager = TestFixtures::session_manager();
         // Session with token expiring in 10 minutes (should NOT need refresh)
-        let mut session = create_test_session();
+        let mut session = TestFixtures::oauth_session();
         session.expires_at = Utc::now() + Duration::minutes(10);
         assert!(!manager.needs_token_refresh(&session));
         // Session with token expiring in 2 minutes (should need refresh)
@@ -914,8 +915,8 @@ mod tests {
 
     #[test]
     fn test_create_session_cookie() {
-        let manager = create_test_session_manager();
-        let session = create_test_session();
+        let manager = TestFixtures::session_manager();
+        let session = TestFixtures::oauth_session();
 
         // Test session cookie creation via SessionManager
         let cookie = manager.create_session_cookie(&session).unwrap();
@@ -931,11 +932,10 @@ mod tests {
 
     #[test]
     fn test_cookie_refresh() {
-        let session = create_test_session();
+        let session = TestFixtures::oauth_session();
 
         // Test with refresh enabled (2 hours)
-        let manager_with_refresh =
-            crate::utils::test_helpers::create_test_session_manager_with_refresh(2);
+        let manager_with_refresh = TestFixtures::session_manager_with_refresh(2);
         assert!(manager_with_refresh.is_cookie_refresh_enabled());
 
         // Create normal and refreshed cookies
@@ -953,7 +953,7 @@ mod tests {
         assert!(!refreshed_cookie.value().is_empty());
 
         // Test with refresh disabled (default)
-        let manager_no_refresh = create_test_session_manager(); // Uses 0 refresh hours
+        let manager_no_refresh = TestFixtures::session_manager(); // Uses 0 refresh hours
         assert!(!manager_no_refresh.is_cookie_refresh_enabled());
 
         // Refreshed cookie should behave same as normal when disabled
@@ -966,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_client_context_hashing() {
-        let manager = create_test_session_manager();
+        let manager = TestFixtures::session_manager();
 
         // Test hashing with different values
         let hash1 = manager.calculate_client_context_hash(
@@ -996,10 +996,9 @@ mod tests {
 
     #[test]
     fn test_session_expiration_validation() {
-        use crate::utils::test_request_builder::TestRequestBuilder;
-        let manager = create_test_session_manager();
+        let manager = TestFixtures::session_manager();
 
-        let req = TestRequestBuilder::browser_request();
+        let req = RequestBuilder::browser("/");
 
         // Create user data with recent session start (should be valid)
         let recent_user_data = VouchrsUserData {
@@ -1009,9 +1008,9 @@ mod tests {
             provider_id: "123456789".to_string(),
             client_ip: None, // Test request has no IP
             user_agent: Some(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36".to_string(),
             ),
-            platform: Some("Windows".to_string()),
+            platform: Some("macOS".to_string()),
             lang: Some("en-US".to_string()),
             mobile: 0,
             session_start: Some(Utc::now().timestamp()), // Recent session
@@ -1031,9 +1030,9 @@ mod tests {
             provider_id: "123456789".to_string(),
             client_ip: None, // Test request has no IP
             user_agent: Some(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36".to_string(),
             ),
-            platform: Some("Windows".to_string()),
+            platform: Some("macOS".to_string()),
             lang: Some("en-US".to_string()),
             mobile: 0,
             session_start: Some((Utc::now() - chrono::Duration::hours(2)).timestamp()), // 2 hours ago (expired)
@@ -1049,14 +1048,12 @@ mod tests {
 
     #[test]
     fn test_session_hijacking_prevention() {
-        use crate::utils::test_request_builder::TestRequestBuilder;
-
-        let manager = create_test_session_manager();
+        let manager = TestFixtures::session_manager();
 
         // Test different request types to simulate hijacking attempts
-        let browser_req = TestRequestBuilder::browser_request();
-        let mobile_req = TestRequestBuilder::mobile_browser_request();
-        let api_req = TestRequestBuilder::api_request();
+        let browser_req = RequestBuilder::browser("/");
+        let mobile_req = RequestBuilder::mobile("/");
+        let api_req = RequestBuilder::api_post("/test", json!({}));
 
         // Valid user data for browser request
         let browser_user_data = VouchrsUserData {
@@ -1066,9 +1063,9 @@ mod tests {
             provider_id: "123456789".to_string(),
             client_ip: None, // Test requests have no IP
             user_agent: Some(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36".to_string(),
             ),
-            platform: Some("Windows".to_string()),
+            platform: Some("macOS".to_string()),
             lang: Some("en-US".to_string()),
             mobile: 0,
             session_start: Some(Utc::now().timestamp()),
@@ -1081,10 +1078,7 @@ mod tests {
             provider: "google".to_string(),
             provider_id: "123456789".to_string(),
             client_ip: None,
-            user_agent: Some(
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15"
-                    .to_string(),
-            ),
+            user_agent: Some("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)".to_string()),
             platform: Some("iOS".to_string()),
             lang: Some("en-US".to_string()),
             mobile: 1,
@@ -1112,10 +1106,10 @@ mod tests {
 
     #[test]
     fn test_expired_session_with_refresh_token() {
-        let manager = create_test_session_manager();
+        let manager = TestFixtures::session_manager();
 
         // Create an expired session with a refresh token
-        let mut expired_session = create_test_session();
+        let mut expired_session = TestFixtures::oauth_session();
         expired_session.expires_at = Utc::now() - chrono::Duration::hours(1); // Expired 1 hour ago
         expired_session.refresh_token = Some("valid_refresh_token".to_string());
 
@@ -1129,7 +1123,7 @@ mod tests {
         );
 
         // Create an expired session without a refresh token
-        let mut expired_session_no_refresh = create_test_session();
+        let mut expired_session_no_refresh = TestFixtures::oauth_session();
         expired_session_no_refresh.expires_at = Utc::now() - chrono::Duration::hours(1); // Expired 1 hour ago
         expired_session_no_refresh.refresh_token = None;
 

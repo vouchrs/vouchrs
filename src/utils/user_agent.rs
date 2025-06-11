@@ -114,12 +114,12 @@ pub fn is_browser_request(req: &HttpRequest) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_request_builder::TestRequestBuilder;
+    use crate::testing::RequestBuilder;
 
     #[test]
     fn test_user_agent_extraction() {
         // Test with modern client hints headers
-        let req = TestRequestBuilder::client_hints_request();
+        let req = RequestBuilder::client_hints_request();
 
         let user_agent_info = extract_user_agent_info(&req);
 
@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(user_agent_info.mobile, 0);
 
         // Test with fallback to User-Agent header
-        let req = TestRequestBuilder::macos_french_request();
+        let req = RequestBuilder::macos_french_request();
 
         let user_agent_info = extract_user_agent_info(&req);
 
@@ -195,25 +195,25 @@ mod tests {
     #[test]
     fn test_is_browser_request() {
         // Test browser detection with Accept: text/html
-        let browser_req = TestRequestBuilder::browser_request();
+        let browser_req = RequestBuilder::browser_request();
         assert!(is_browser_request(&browser_req));
 
         // Test API client detection with Accept: application/json
-        let api_req = TestRequestBuilder::api_request();
+        let api_req = RequestBuilder::api_request();
         assert!(!is_browser_request(&api_req));
 
         // Test with a user agent only request
-        let browser_ua_req = TestRequestBuilder::user_agent_request(
+        let browser_ua_req = RequestBuilder::user_agent_request(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         );
         assert!(is_browser_request(&browser_ua_req));
 
         // Test API client via User-Agent
-        let api_ua_req = TestRequestBuilder::user_agent_request("curl/7.68.0");
+        let api_ua_req = RequestBuilder::user_agent_request("curl/7.68.0");
         assert!(!is_browser_request(&api_ua_req));
 
         // Test unknown client (no Accept or User-Agent)
-        let unknown_req = TestRequestBuilder::empty_request();
+        let unknown_req = RequestBuilder::empty_request();
         assert!(!is_browser_request(&unknown_req));
     }
 }

@@ -259,9 +259,9 @@ fn extract_session_from_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::fixtures::TestFixtures;
+    use crate::testing::RequestBuilder;
     use crate::utils::header_processor::{is_hop_by_hop_header, RequestHeaderProcessor};
-    use crate::utils::test_helpers::create_test_settings;
-    use crate::utils::test_request_builder::TestRequestBuilder;
 
     #[test]
     fn test_hop_by_hop_headers() {
@@ -274,9 +274,9 @@ mod tests {
     #[tokio::test]
     async fn test_401_redirect_for_browser_requests() {
         // Test browser request (Accept: text/html)
-        let browser_req = TestRequestBuilder::browser_request();
+        let browser_req = RequestBuilder::browser("/");
 
-        let settings = create_test_settings();
+        let settings = TestFixtures::settings();
 
         // Test that browser requests are properly detected
         assert!(
@@ -285,7 +285,7 @@ mod tests {
         );
 
         // Test API request (Accept: application/json)
-        let api_req = TestRequestBuilder::api_request();
+        let api_req = RequestBuilder::new().api_headers().build();
 
         assert!(!is_browser_request(&api_req), "Should detect API request");
 
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_sign_in_url_generation() {
-        let settings = create_test_settings();
+        let settings = TestFixtures::settings();
         let expected_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
         assert_eq!(expected_url, "http://localhost:8080/auth/sign_in");
     }
@@ -307,7 +307,7 @@ mod tests {
         // Create a mock HTTP request with cookies
         let cookies =
             "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
-        let req = TestRequestBuilder::with_cookies(cookies);
+        let req = RequestBuilder::with_cookies(cookies);
 
         // Create a reqwest RequestBuilder and apply header forwarding using new processor
         let client = Client::new();
