@@ -84,7 +84,7 @@ pub struct OAuthTokenRefreshResult {
 /// OAuth authentication service trait
 #[async_trait]
 pub trait OAuthAuthenticationService {
-    /// Process OAuth callback and create session data
+    /// Process OAuth callback and create session data with client context
     ///
     /// # Errors
     ///
@@ -99,6 +99,8 @@ pub trait OAuthAuthenticationService {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
+        client_ip: Option<&str>,
+        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> Result<OAuthSessionResult, OAuthError>;
 
     /// Initiate OAuth flow
@@ -163,12 +165,16 @@ impl OAuthAuthenticationService for OAuthAuthenticationServiceImpl {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
+        client_ip: Option<&str>,
+        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> Result<OAuthSessionResult, OAuthError> {
         self.process_oauth_callback_async(
             provider,
             authorization_code,
             oauth_state,
             apple_user_info,
+            client_ip,
+            user_agent_info,
         )
         .await
     }
@@ -219,6 +225,8 @@ impl OAuthAuthenticationServiceImpl {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
+        client_ip: Option<&str>,
+        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> Result<OAuthSessionResult, OAuthError> {
         // Get OAuth config with lazy initialization
         let oauth_config = self.get_oauth_config().await?;
@@ -232,10 +240,6 @@ impl OAuthAuthenticationServiceImpl {
         // Use the apple_user_info parameter if available, otherwise use fallback from token exchange
         let final_apple_user_info = apple_user_info.or(apple_user_info_fallback);
 
-        // Extract client info (simplified for now)
-        let client_ip = None; // Would need request context
-        let user_agent_info = None; // Would need request context
-
         // Process ID token and create session using IdTokenProcessor
         let token_result = IdTokenProcessor::process_id_token(
             provider,
@@ -244,7 +248,7 @@ impl OAuthAuthenticationServiceImpl {
             expires_at,
             final_apple_user_info.as_ref(),
             client_ip,
-            user_agent_info.as_ref(),
+            user_agent_info,
         )
         .map_err(|e| OAuthError::IdToken(format!("ID token processing failed: {e}")))?;
 

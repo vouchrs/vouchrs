@@ -497,8 +497,19 @@ impl SessionManager {
         apple_user_info: Option<crate::utils::apple::AppleUserInfo>,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref oauth_service) = self.oauth_service {
+            // Extract client information from the request
+            let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
+
+            // Use the context-aware OAuth service method
             let result = oauth_service
-                .process_oauth_callback(provider, authorization_code, oauth_state, apple_user_info)
+                .process_oauth_callback(
+                    provider,
+                    authorization_code,
+                    oauth_state,
+                    apple_user_info,
+                    client_ip.as_deref(),
+                    Some(&user_agent_info),
+                )
                 .await
                 .map_err(|e| {
                     log::error!("OAuth callback processing failed: {e}");

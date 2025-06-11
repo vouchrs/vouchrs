@@ -13,7 +13,6 @@ use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::passkey::PasskeyUserData;
 use crate::session::{PasskeySessionBuilder, PasskeySessionData};
 use crate::settings::VouchrsSettings;
-use crate::utils::headers::extract_user_agent_info;
 
 /// Error types for passkey authentication operations
 #[derive(Debug)]
@@ -197,25 +196,13 @@ impl PasskeyAuthenticationServiceImpl {
         Ok(())
     }
 
-    /// Extract client information from request
-    fn extract_client_info(
-        req: &HttpRequest,
-    ) -> (Option<String>, crate::utils::headers::UserAgentInfo) {
-        let client_ip = req
-            .connection_info()
-            .realip_remote_addr()
-            .map(ToString::to_string);
-        let user_agent_info = extract_user_agent_info(req);
-        (client_ip, user_agent_info)
-    }
-
     /// Create session data from passkey session
     fn create_session_result(
         req: &HttpRequest,
         passkey_session: &PasskeySessionData,
         redirect_url: Option<String>,
     ) -> PasskeySessionResult {
-        let (client_ip, user_agent_info) = Self::extract_client_info(req);
+        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
 
         let session = passkey_session.to_session();
         let user_data = passkey_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
