@@ -264,41 +264,57 @@ impl SessionManager {
     ///
     /// Returns an error if decryption fails (expired sessions with refresh tokens are returned)
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
-        if let Some(cookie) = req.cookie(COOKIE_NAME) {
-            match decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key) {
-                Ok(session) => {
-                    // Validate IP binding if enabled
-                    if !self.validate_session_ip_binding(&session, req) {
-                        log::warn!("Session IP validation failed during extraction");
-                        return Ok(None);
-                    }
+        let Some(cookie) = req.cookie(COOKIE_NAME) else {
+            return Ok(None);
+        };
 
-                    // Check if session has expired
-                    if session.expires_at <= Utc::now() {
-                        // If session is expired but has a refresh token, return it for token refresh
-                        if session.refresh_token.is_some() {
-                            log::info!("Session is expired but has refresh token - returning for token refresh");
-                            return Ok(Some(session));
-                        }
-                        // No refresh token available, session is truly expired
-                        return Ok(None);
-                    }
-
-                    // Check if session needs token refresh (5 minutes before expiration)
-                    if session.expires_at - chrono::Duration::minutes(5) <= Utc::now() {
-                        log::warn!(
-                            "OAuth token needs refresh for provider: {}",
-                            session.provider
-                        );
-                    }
-                    Ok(Some(session))
-                }
-                Err(e) if e.to_string().contains("Session expired") => Ok(None),
-                Err(e) => Err(e),
-            }
-        } else {
-            Ok(None)
+        match decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key) {
+            Ok(session) => Ok(self.process_decrypted_session(session, req)),
+            Err(e) if e.to_string().contains("Session expired") => Ok(None),
+            Err(e) => Err(e),
         }
+    }
+
+    /// Process a successfully decrypted session for validation and expiration handling
+    fn process_decrypted_session(
+        &self,
+        session: VouchrsSession,
+        req: &HttpRequest,
+    ) -> Option<VouchrsSession> {
+        // Validate IP binding if enabled
+        if !self.validate_session_ip_binding(&session, req) {
+            log::warn!("Session IP validation failed during extraction");
+            return None;
+        }
+
+        self.handle_session_expiration(session)
+    }
+
+    /// Handle session expiration logic and refresh token availability
+    fn handle_session_expiration(&self, session: VouchrsSession) -> Option<VouchrsSession> {
+        let now = Utc::now();
+
+        // Check if session has expired
+        if session.expires_at <= now {
+            return if session.refresh_token.is_some() {
+                log::info!(
+                    "Session is expired but has refresh token - returning for token refresh"
+                );
+                Some(session)
+            } else {
+                None
+            };
+        }
+
+        // Check if session needs token refresh using existing method
+        if self.needs_token_refresh(&session) {
+            log::warn!(
+                "OAuth token needs refresh for provider: {}",
+                session.provider
+            );
+        }
+
+        Some(session)
     }
 
     /// Decrypt and validate session from cookie value
@@ -1501,14 +1517,14 @@ mod tests {
             .uri("/")
             .browser_headers()
             .with_client_ip("192.168.1.1")
-            .with_cookie_header(&format!("vouchrs_session={}", cookie_value))
+            .with_cookie_header(&format!("vouchrs_session={cookie_value}"))
             .build();
 
         let req_different_ip = RequestBuilder::new()
             .uri("/")
             .browser_headers()
             .with_client_ip("192.168.1.2")
-            .with_cookie_header(&format!("vouchrs_session={}", cookie_value))
+            .with_cookie_header(&format!("vouchrs_session={cookie_value}"))
             .build();
 
         // Extraction should succeed with matching IP
