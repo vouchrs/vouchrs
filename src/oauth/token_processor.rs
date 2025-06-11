@@ -151,36 +151,7 @@ impl IdTokenProcessor {
 
     /// Extract the name claim - maps to `user_name` (optional)
     fn extract_name(claims: &Value) -> Option<String> {
-        // Try different name claim formats used by different providers
-
-        // Google uses 'name' field directly
-        if let Some(name) = claims.get("name").and_then(|v| v.as_str()) {
-            if !name.trim().is_empty() {
-                debug!("Extracted name from 'name' claim: {name}");
-                return Some(name.to_string());
-            }
-        }
-
-        // Apple and others might use given_name + family_name
-        let given_name = claims
-            .get("given_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let family_name = claims
-            .get("family_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        if !given_name.is_empty() || !family_name.is_empty() {
-            let full_name = format!("{given_name} {family_name}").trim().to_string();
-            if !full_name.is_empty() {
-                debug!("Extracted name from given_name + family_name: {full_name}");
-                return Some(full_name);
-            }
-        }
-
-        debug!("No name information found in ID token claims");
-        None
+        crate::utils::validation::extract_name_from_claims(claims)
     }
 
     /// Generic timestamp extraction helper

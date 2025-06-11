@@ -7,7 +7,6 @@ use actix_web::{web, HttpRequest, HttpResponse, Result};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
-use webauthn_rs::prelude::*;
 use webauthn_rs_proto;
 
 use crate::passkey::{
@@ -104,19 +103,23 @@ pub async fn complete_registration(
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract credential response
-    let credential_response = match extract_credential_response(&data) {
+    let credential_response = match crate::utils::validation::extract_credential_response(&data) {
         Ok(response) => response,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract registration state
-    let registration_state = match extract_registration_state(&data) {
-        Ok(state) => state,
-        Err(error_response) => return Ok(error_response),
-    };
+    let registration_state =
+        match crate::utils::validation::extract_state(&data, "registration_state") {
+            Ok(state) => state,
+            Err(error_response) => return Ok(error_response),
+        };
 
     // Extract user data
-    let user_data = match extract_user_data_for_registration(&data) {
+    let user_data = match crate::utils::validation::extract_and_decode_user_data(
+        &data,
+        PasskeyUserData::decode,
+    ) {
         Ok(data) => data,
         Err(error_response) => return Ok(error_response),
     };
@@ -173,16 +176,17 @@ pub async fn complete_authentication(
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
     // Extract credential response
-    let credential_response = match extract_authentication_credential_response(&data) {
+    let credential_response = match crate::utils::validation::extract_credential_response(&data) {
         Ok(response) => response,
         Err(error_response) => return Ok(error_response),
     };
 
     // Extract authentication state
-    let authentication_state = match extract_authentication_state(&data) {
-        Ok(state) => state,
-        Err(error_response) => return Ok(error_response),
-    };
+    let authentication_state =
+        match crate::utils::validation::extract_state(&data, "authentication_state") {
+            Ok(state) => state,
+            Err(error_response) => return Ok(error_response),
+        };
 
     // Extract user data (optional for usernameless auth)
     let user_data =
@@ -199,74 +203,6 @@ pub async fn complete_authentication(
         Ok(response) => Ok(response),
         Err(error_response) => Ok(error_response),
     }
-}
-
-// Helper functions to extract data from requests
-
-fn extract_credential_response(
-    data: &web::Json<serde_json::Value>,
-) -> Result<webauthn_rs_proto::RegisterPublicKeyCredential, HttpResponse> {
-    let credential = data
-        .get("credential_response")
-        .ok_or_else(ResponseBuilder::missing_credential)?;
-
-    serde_json::from_value(credential.clone()).map_err(|e| {
-        log::error!("Failed to parse credential: {e}");
-        ResponseBuilder::invalid_credential("Invalid credential format")
-    })
-}
-
-fn extract_authentication_credential_response(
-    data: &web::Json<serde_json::Value>,
-) -> Result<webauthn_rs_proto::PublicKeyCredential, HttpResponse> {
-    let credential = data
-        .get("credential_response")
-        .ok_or_else(ResponseBuilder::missing_credential)?;
-
-    serde_json::from_value(credential.clone()).map_err(|e| {
-        log::error!("Failed to parse credential: {e}");
-        ResponseBuilder::invalid_credential("Invalid credential format")
-    })
-}
-
-fn extract_registration_state(
-    data: &web::Json<serde_json::Value>,
-) -> Result<PasskeyRegistration, HttpResponse> {
-    let state = data
-        .get("registration_state")
-        .ok_or_else(ResponseBuilder::missing_state)?;
-
-    serde_json::from_value(state.clone()).map_err(|e| {
-        log::error!("Failed to parse registration state: {e}");
-        ResponseBuilder::invalid_state("Invalid registration state")
-    })
-}
-
-fn extract_authentication_state(
-    data: &web::Json<serde_json::Value>,
-) -> Result<PasskeyAuthentication, HttpResponse> {
-    let state = data
-        .get("authentication_state")
-        .ok_or_else(ResponseBuilder::missing_state)?;
-
-    serde_json::from_value(state.clone()).map_err(|e| {
-        log::error!("Failed to parse authentication state: {e}");
-        ResponseBuilder::invalid_state("Invalid authentication state")
-    })
-}
-
-fn extract_user_data_for_registration(
-    data: &web::Json<serde_json::Value>,
-) -> Result<PasskeyUserData, HttpResponse> {
-    let encoded_user_data = data
-        .get("user_data")
-        .and_then(|v| v.as_str())
-        .ok_or_else(ResponseBuilder::missing_user_data)?;
-
-    PasskeyUserData::decode(encoded_user_data).map_err(|e| {
-        log::error!("Failed to decode user data: {e}");
-        ResponseBuilder::invalid_user_data("Failed to decode user data")
-    })
 }
 
 fn extract_user_data_for_authentication(
