@@ -1,6 +1,8 @@
 # UI Customization Guide
 
-Vouchrs OIDC Reverse Proxy supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
+Vouchrs Authentication Gateway and Reverse Proxy supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
+<img src="/auth/static/logo.png" alt="Company Logo">
+<script src="/auth/static/custom.js"></script>thout rebuilding the application.
 
 ## 🎨 How It Works
 
@@ -60,8 +62,8 @@ Example `sign-in.html`:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vouchrs OIDC Reverse Proxy - Sign In</title>
-    <link rel="stylesheet" href="/oauth2/static/sign-in.css">
+    <title>Vouchrs Authentication Gateway - Sign In</title>
+    <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 <body>
     <div class="container">
@@ -170,9 +172,9 @@ custom-ui/
 
 Reference in HTML:
 ```html
-<link rel="icon" href="/oauth2/static/favicon.ico">
-<img src="/oauth2/static/logo.png" alt="Company Logo">
-<script src="/oauth2/static/custom.js"></script>
+<link rel="icon" href="/auth/static/favicon.ico">
+<img src="/auth/static/logo.png" alt="Company Logo">
+<script src="/auth/static/custom.js"></script>
 ```
 
 ## 🚀 Deployment Workflow
@@ -228,9 +230,9 @@ This script:
 | Endpoint | Description |
 |----------|-------------|
 | `/auth/sign_in` | Main sign-in page (uses static files) |
-| `/oauth2/static/sign-in.html` | Direct access to HTML file |
-| `/oauth2/static/sign-in.css` | Direct access to CSS file |
-| `/oauth2/static/*` | Any file in static directory |
+| `/auth/static/sign-in.html` | Direct access to HTML file |
+| `/auth/static/sign-in.css` | Direct access to CSS file |
+| `/auth/static/*` | Any file in static directory |
 
 ## ⚠️ Important Notes
 

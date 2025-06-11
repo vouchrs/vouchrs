@@ -1,10 +1,10 @@
 # Vouchrs
 
-A lightweight, high-performance OIDC reverse proxy built in Rust. Vouchrs acts as an authentication gateway, protecting your applications by requiring OIDC authentication before allowing access to upstream services.
+A lightweight, high-performance authentication gateway and reverse proxy built in Rust. Vouchrs acts as an authentication gateway, protecting your applications by requiring secure authentication (OIDC or Passkeys) before allowing access to upstream services.
 
 ## Features
 
-- 🔐 **OIDC Authentication**: Configurable OAuth providers with OpenID Connect support
+- 🔐 **Multi-Method Authentication**: OIDC/OAuth2 providers (Google, Apple, etc.) and Passkey/WebAuthn support
 - 🛡️ **Secure Sessions**: AES-GCM encrypted cookie-based sessions with separate user data storage
 - 🎨 **Customizable UI**: Docker volume-mountable sign-in pages with dynamic provider lists
 - ⚡ **High Performance**: Rust-based with minimal dependencies and optimized architecture
@@ -180,11 +180,11 @@ The service will start on `http://localhost:8080`.
 
 | Endpoint | Method | Purpose |
 |----------|---------|---------|
-| `/auth/sign_in` | GET | Display sign-in page or initiate OAuth flow |
+| `/auth/sign_in` | GET | Display sign-in page or initiate authentication |
 | `/auth/oauth2/callback` | GET/POST | OAuth callback handler (Google=GET, Apple=POST) |
-| `/oauth2/sign_out` | GET/POST | Sign out user and clear session |
-| `/oauth2/userinfo` | GET | Get user data from encrypted cookie (JSON) |
-| `/oauth2/debug` | GET | Debug endpoint with session and user data |
+| `/auth/oauth2/sign_out` | GET/POST | Sign out user and clear session |
+| `/auth/userinfo` | GET | Get user data from encrypted cookie (JSON) |
+| `/auth/debug` | GET | Debug endpoint with session and user data |
 | `/ping` | GET | Health check and service status |
 
 ## Client Context and User Data
@@ -202,14 +202,15 @@ Vouchrs stores user information in encrypted cookies (`vouchrs_user`) containing
 - **mobile**: Mobile device indicator (0 or 1)
 - **session_start**: Unix timestamp of session creation
 
-This information is available to your application via the `/oauth2/userinfo` endpoint or by reading the `vouchrs_user` cookie directly.
+This information is available to your application via the `/auth/userinfo` endpoint or by reading the `vouchrs_user` cookie directly.
 
-## Dynamic Provider Support
+## Dynamic Authentication Support
 
-The sign-in page automatically generates buttons for all enabled providers. When no static HTML file is found, Vouchrs generates a dynamic page with:
+The sign-in page automatically generates authentication options for all available methods. When no static HTML file is found, Vouchrs generates a dynamic page with:
 
-- Provider buttons based on configuration
-- Automatic styling for common providers (Google, Apple, Microsoft)
+- **OAuth Provider buttons** based on configuration (Google, Apple, Microsoft, etc.)
+- **Passkey authentication** option when WebAuthn is enabled
+- Automatic styling for common providers and authentication methods
 - Responsive design with modern UI
 
 ## Documentation
@@ -223,12 +224,23 @@ The sign-in page automatically generates buttons for all enabled providers. When
 
 ## Authentication Flow
 
+### OAuth/OIDC Flow
 1. **User visits protected resource** → Redirected to `/auth/sign_in`
-2. **User selects provider** → Redirected to OAuth provider (Google/Apple)
+2. **User selects OAuth provider** → Redirected to OAuth provider (Google/Apple)
 3. **User authorizes** → Provider redirects to `/auth/oauth2/callback`
 4. **Token exchange** → User info retrieved and encrypted session created
 5. **Session storage** → Two encrypted cookies created:
    - `vouchrs_session`: OAuth tokens for provider communication
+   - `vouchrs_user`: User data and client context
+6. **User authenticated** → Request forwarded to upstream with original context
+
+### Passkey/WebAuthn Flow
+1. **User visits protected resource** → Redirected to `/auth/sign_in`
+2. **User selects Passkey authentication** → WebAuthn ceremony initiated
+3. **User authenticates** → Biometric/PIN verification with registered device
+4. **Session creation** → User info retrieved and encrypted session created
+5. **Session storage** → Two encrypted cookies created:
+   - `vouchrs_session`: Authentication state for session management
    - `vouchrs_user`: User data and client context
 6. **User authenticated** → Request forwarded to upstream with original context
 
@@ -238,7 +250,7 @@ Your upstream application can access authenticated user information through:
 
 ### Option 1: API Endpoint
 ```bash
-curl -H "Cookie: vouchrs_user=..." http://localhost:8080/oauth2/userinfo
+curl -H "Cookie: vouchrs_user=..." http://localhost:8080/auth/userinfo
 ```
 
 Response format:
@@ -262,7 +274,7 @@ Decrypt the `vouchrs_user` cookie using your session secret to access the same J
 
 ### Option 3: Debug Endpoint
 ```bash
-curl -H "Cookie: vouchrs_session=...; vouchrs_user=..." http://localhost:8080/oauth2/debug
+curl -H "Cookie: vouchrs_session=...; vouchrs_user=..." http://localhost:8080/auth/debug
 ```
 
 Returns both session token data and user data for debugging purposes.
@@ -303,12 +315,18 @@ cargo run
 - Verify `APPLE_PRIVATE_KEY_PATH` points to correct `.p8` file
 - Check Apple Team ID and Key ID are correct
 
+**"Passkey authentication failed"**
+- Ensure browser supports WebAuthn (modern browsers required)
+- Check that the domain is served over HTTPS (required for WebAuthn)
+- Verify passkey is registered for the current domain
+- Ensure biometric authentication or device PIN is properly configured
+
 **"Session cookie not found"**
 - Verify session secret is consistent across restarts
 - Check cookie security settings match your environment (HTTP vs HTTPS)
 
 **"User data not available"**
-- Ensure the `/oauth2/userinfo` endpoint is accessible
+- Ensure the `/auth/userinfo` endpoint is accessible
 - Check that both `vouchrs_session` and `vouchrs_user` cookies are present
 
 ## License

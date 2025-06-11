@@ -159,7 +159,7 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
     }
     println!("System endpoints:");
     println!("  GET  /ping            - Health check");
-    println!("  GET  /auth/oauth2/static/* - Static files (HTML, CSS, JS, images)");
+    println!("  GET  /auth/static/* - Static files (HTML, CSS, JS, images)");
     println!(
         "  Static files folder: {}",
         settings.static_files.assets_folder
