@@ -55,14 +55,6 @@ session_refresh_hours = 0
 # Node.js: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 session_secret = ""
 
-# JWT issuer claim (iss) - identifies who issued the token
-# Environment variable: JWT_ISSUER
-issuer = "https://vouchrs.app"
-
-# JWT audience claim (aud) - identifies the intended recipient of the token
-# Environment variable: JWT_AUDIENCE
-audience = "https://api.example.com"
-
 [cookies]
 # Cookie security settings
 # Environment variable: COOKIE_SECURE
