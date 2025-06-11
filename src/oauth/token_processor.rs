@@ -151,7 +151,7 @@ impl IdTokenProcessor {
 
     /// Extract the name claim - maps to `user_name` (optional)
     fn extract_name(claims: &Value) -> Option<String> {
-        crate::utils::validation::extract_name_from_claims(claims)
+        crate::validation::extract_name_from_claims(claims)
     }
 
     /// Generic timestamp extraction helper

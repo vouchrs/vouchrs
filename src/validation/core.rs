@@ -7,7 +7,7 @@ use actix_web::HttpResponse;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::responses::ResponseBuilder;
+use crate::utils::responses::ResponseBuilder;
 
 // ===============================
 // COMMON FIELD EXTRACTION PATTERNS
@@ -38,7 +38,7 @@ use super::responses::ResponseBuilder;
 ///
 /// ```rust,no_run
 /// use serde_json::json;
-/// use vouchrs::utils::validation::extract_required_field;
+/// use vouchrs::validation::extract_required_field;
 /// use serde_json::Value;
 ///
 /// let data = json!({
@@ -86,7 +86,7 @@ pub fn extract_required_field<T: DeserializeOwned>(
 ///
 /// ```rust,no_run
 /// use serde_json::json;
-/// use vouchrs::utils::validation::extract_required_string;
+/// use vouchrs::validation::extract_required_string;
 ///
 /// let data = json!({
 ///     "user_data": "encoded_user_data_here"
@@ -159,7 +159,7 @@ pub fn extract_optional_field<T: DeserializeOwned>(
 ///
 /// ```rust,no_run
 /// use serde_json::{json, Value};
-/// use vouchrs::utils::validation::extract_credential_response;
+/// use vouchrs::validation::extract_credential_response;
 ///
 /// let data = json!({"credential_response": {"type": "public-key"}});
 /// let credential: Value = extract_credential_response(&data).unwrap();
@@ -197,7 +197,7 @@ pub fn extract_credential_response<T: DeserializeOwned>(data: &Value) -> Result<
 ///
 /// ```rust,no_run
 /// use serde_json::{json, Value};
-/// use vouchrs::utils::validation::extract_state;
+/// use vouchrs::validation::extract_state;
 ///
 /// let data = json!({"registration_state": {"challenge": "abc123"}});
 /// let state: Value = extract_state(&data, "registration_state").unwrap();
@@ -234,7 +234,7 @@ pub fn extract_state<T: DeserializeOwned>(
 ///
 /// ```rust,no_run
 /// use serde_json::json;
-/// use vouchrs::utils::validation::extract_and_decode_user_data;
+/// use vouchrs::validation::extract_and_decode_user_data;
 ///
 /// let data = json!({"user_data": "base64data"});
 /// let decode_fn = |s: &str| -> Result<String, &'static str> { Ok(s.to_string()) };
@@ -266,7 +266,7 @@ where
 ///
 /// ```rust,no_run
 /// use serde_json::{json, Value};
-/// use vouchrs::{validate_all_required, utils::validation::extract_required_field};
+/// use vouchrs::{validate_all_required, validation::extract_required_field};
 ///
 /// let data = json!({
 ///     "credential_response": {"type": "public-key"},
@@ -284,7 +284,7 @@ macro_rules! validate_all_required {
     ($data:expr, $($name:ident: $type:ty = $field:expr),+ $(,)?) => {
         (|| -> Result<_, actix_web::HttpResponse> {
             $(
-                let $name: $type = $crate::utils::validation::extract_required_field($data, $field)?;
+                let $name: $type = $crate::validation::core::extract_required_field($data, $field)?;
             )+
             Ok(($($name,)+))
         })()
@@ -314,7 +314,7 @@ macro_rules! validate_all_required {
 /// ```rust,no_run
 /// use serde_json::{json, Value};
 /// use base64::Engine;
-/// use vouchrs::utils::validation::decode_and_parse_jwt_part;
+/// use vouchrs::validation::decode_and_parse_jwt_part;
 ///
 /// let header = json!({"alg": "RS256", "typ": "JWT"});
 /// let header_str = serde_json::to_string(&header).unwrap();

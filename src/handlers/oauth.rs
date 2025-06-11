@@ -2,7 +2,7 @@
 use crate::oauth::OAuthConfig;
 use crate::oauth::{OAuthCallback, OAuthState};
 use crate::session::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAME};
-use crate::session::{get_state_from_callback, SessionManager};
+use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
 use crate::utils::crypto::{encrypt_data, generate_csrf_token};
 use crate::utils::responses::{redirect_with_cookie, success_redirect_with_cookies};
@@ -177,11 +177,17 @@ pub async fn oauth_callback(
         req.connection_info()
     );
 
-    // Validate callback and extract required data
-    let (code, oauth_state) = match validate_callback(&callback_data, &session_manager, &req) {
+    // Validate callback and extract required data using the new structured validator
+    let validated_callback = match crate::validation::CallbackValidator::validate_and_extract(
+        &callback_data,
+        &session_manager,
+        &req,
+    ) {
         Ok(data) => data,
         Err(response) => return Ok(response),
     };
+
+    let (code, oauth_state) = (validated_callback.code, validated_callback.oauth_state);
 
     info!(
         "=== OAuth Callback Processing for {} ===",
@@ -235,60 +241,4 @@ fn extract_callback_data(
             form_data.into_inner()
         },
     )
-}
-
-/// Validate the callback data and extract the required code and OAuth state
-fn validate_callback(
-    callback_data: &OAuthCallback,
-    session_manager: &SessionManager,
-    req: &HttpRequest,
-) -> Result<(String, OAuthState), HttpResponse> {
-    // Check for OAuth errors
-    if let Some(_error) = &callback_data.error {
-        let clear_cookie = session_manager.create_expired_cookie();
-        return Err(HttpResponse::Found()
-            .cookie(clear_cookie)
-            .append_header(("Location", "/auth/sign_in?error=auth_failed"))
-            .finish());
-    }
-
-    // Get authorization code
-    let code = if let Some(code) = &callback_data.code {
-        code.clone()
-    } else {
-        error!("No authorization code received");
-        let clear_cookie = session_manager.create_expired_cookie();
-        return Err(HttpResponse::Found()
-            .cookie(clear_cookie)
-            .append_header(("Location", "/auth/sign_in?error=auth_failed"))
-            .finish());
-    };
-
-    // Get state parameter
-    let received_state = if let Some(state) = &callback_data.state {
-        state.clone()
-    } else {
-        error!("No state parameter received");
-        let clear_cookie = session_manager.create_expired_cookie();
-        return Err(HttpResponse::Found()
-            .cookie(clear_cookie)
-            .append_header(("Location", "/auth/sign_in?error=oauth_state_error"))
-            .finish());
-    };
-
-    // Parse and validate OAuth state
-    match get_state_from_callback(&received_state, session_manager, req) {
-        Ok(state) => {
-            debug!("OAuth state verified for provider: {}", state.provider);
-            Ok((code, state))
-        }
-        Err(e) => {
-            error!("Failed to parse OAuth state: {e}");
-            let clear_cookie = session_manager.create_expired_cookie();
-            Err(HttpResponse::Found()
-                .cookie(clear_cookie)
-                .append_header(("Location", "/auth/sign_in?error=oauth_state_error"))
-                .finish())
-        }
-    }
 }

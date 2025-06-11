@@ -783,7 +783,7 @@ impl JwtValidator {
     /// Extract audience values from JWT claims
     fn extract_audiences_from_claims(claims: &JwtClaims) -> Vec<String> {
         match &claims.aud {
-            Some(aud_value) => crate::utils::validation::extract_audiences_from_claim(aud_value),
+            Some(aud_value) => crate::validation::extract_audiences_from_claim(aud_value),
             _ => vec![],
         }
     }

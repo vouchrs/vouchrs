@@ -18,6 +18,7 @@ pub mod passkey;
 pub mod session;
 pub mod settings;
 pub mod utils;
+pub mod validation;
 
 /// Re-export commonly used items
 pub use handlers::{

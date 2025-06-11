@@ -219,7 +219,7 @@ impl PasskeySessionBuilder {
         passkey_session: &PasskeySessionData,
         redirect_url: Option<String>,
     ) -> actix_web::HttpResponse {
-        use crate::utils::redirect_validator::validate_post_auth_redirect;
+        use crate::validation::validate_post_auth_redirect;
 
         // Extract client information from the request
         let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);

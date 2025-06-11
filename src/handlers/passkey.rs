@@ -4,10 +4,8 @@
 //! delegating to the `PasskeyAuthenticationService` for cleaner separation of concerns.
 
 use actix_web::{web, HttpRequest, HttpResponse, Result};
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
-use webauthn_rs_proto;
 
 use crate::passkey::{
     PasskeyAuthenticationData, PasskeyAuthenticationService, PasskeyAuthenticationServiceImpl,
@@ -56,6 +54,16 @@ pub async fn start_registration(
     data: web::Json<RegistrationRequest>,
     settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
+    // Validate the registration request using the new validator
+    if let Err(error_response) =
+        crate::validation::RegistrationRequestValidator::validate_registration_request(
+            &data.name,
+            &data.email,
+        )
+    {
+        return Ok(error_response);
+    }
+
     let service = PasskeyAuthenticationServiceImpl::new(settings.as_ref().clone());
 
     let request = PasskeyRegistrationRequest {
@@ -102,32 +110,17 @@ pub async fn complete_registration(
     data: web::Json<serde_json::Value>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    // Extract credential response
-    let credential_response = match crate::utils::validation::extract_credential_response(&data) {
-        Ok(response) => response,
-        Err(error_response) => return Ok(error_response),
-    };
-
-    // Extract registration state
-    let registration_state =
-        match crate::utils::validation::extract_state(&data, "registration_state") {
-            Ok(state) => state,
+    // Use the new structured validator
+    let validated_data =
+        match crate::validation::PasskeyValidator::validate_registration_data(&data) {
+            Ok(data) => data,
             Err(error_response) => return Ok(error_response),
         };
 
-    // Extract user data
-    let user_data = match crate::utils::validation::extract_and_decode_user_data(
-        &data,
-        PasskeyUserData::decode,
-    ) {
-        Ok(data) => data,
-        Err(error_response) => return Ok(error_response),
-    };
-
     let registration_data = PasskeyRegistrationData {
-        credential_response,
-        registration_state,
-        user_data,
+        credential_response: validated_data.credential_response,
+        registration_state: validated_data.registration_state,
+        user_data: validated_data.user_data,
     };
 
     // Delegate to SessionManager for unified session handling
@@ -175,27 +168,20 @@ pub async fn complete_authentication(
     data: web::Json<serde_json::Value>,
     session_manager: web::Data<SessionManager>,
 ) -> Result<HttpResponse> {
-    // Extract credential response
-    let credential_response = match crate::utils::validation::extract_credential_response(&data) {
-        Ok(response) => response,
+    // Use the new structured validator
+    let validated_data = match crate::validation::PasskeyValidator::validate_authentication_data(
+        &data,
+        &req,
+        &session_manager,
+    ) {
+        Ok(data) => data,
         Err(error_response) => return Ok(error_response),
     };
 
-    // Extract authentication state
-    let authentication_state =
-        match crate::utils::validation::extract_state(&data, "authentication_state") {
-            Ok(state) => state,
-            Err(error_response) => return Ok(error_response),
-        };
-
-    // Extract user data (optional for usernameless auth)
-    let user_data =
-        extract_user_data_for_authentication(&data, &credential_response, &req, &session_manager);
-
     let authentication_data = PasskeyAuthenticationData {
-        credential_response,
-        authentication_state,
-        user_data,
+        credential_response: validated_data.credential_response,
+        authentication_state: validated_data.authentication_state,
+        user_data: validated_data.user_data,
     };
 
     // Delegate to SessionManager for unified session handling
@@ -203,53 +189,4 @@ pub async fn complete_authentication(
         Ok(response) => Ok(response),
         Err(error_response) => Ok(error_response),
     }
-}
-
-fn extract_user_data_for_authentication(
-    data: &web::Json<serde_json::Value>,
-    credential_response: &webauthn_rs_proto::PublicKeyCredential,
-    req: &HttpRequest,
-    session_manager: &SessionManager,
-) -> Option<PasskeyUserData> {
-    let user_data_value = data.get("user_data");
-
-    if let Some(user_data_val) = user_data_value {
-        if user_data_val.is_null() {
-            // Usernameless authentication - try to get from cookie or create minimal data
-            match session_manager.get_user_data_from_request(req) {
-                Ok(Some(stored_user_data)) => {
-                    let user_handle = credential_response
-                        .response
-                        .user_handle
-                        .as_ref()
-                        .map_or_else(
-                            || {
-                                base64::engine::general_purpose::URL_SAFE
-                                    .encode(&credential_response.raw_id)
-                            },
-                            |h| base64::engine::general_purpose::URL_SAFE.encode(h.as_ref()),
-                        );
-
-                    return Some(PasskeyUserData::new(
-                        &user_handle,
-                        Some(&stored_user_data.email),
-                        stored_user_data.name.as_deref(),
-                    ));
-                }
-                _ => {
-                    // Return None for usernameless auth without stored data
-                    return None;
-                }
-            }
-        }
-
-        // Traditional authentication with provided user_data
-        if let Some(encoded_data) = user_data_val.as_str() {
-            if let Ok(user_data) = PasskeyUserData::decode(encoded_data) {
-                return Some(user_data);
-            }
-        }
-    }
-
-    None
 }
