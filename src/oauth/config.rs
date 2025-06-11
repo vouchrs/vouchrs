@@ -1,13 +1,13 @@
-// Config-driven OAuth implementation using provider configurations from settings
-// Supports dynamic discovery endpoints and customizable provider configurations
+//! OAuth configuration module
+//!
+//! This module provides OAuth configuration management including provider
+//! configuration, runtime settings, and token exchange functionality.
 
-// Standard library imports
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-// Third-party imports
 use actix_web::HttpResponse;
 use chrono::Utc;
 use log::{debug, info, warn};
@@ -15,22 +15,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-// Local imports
 use crate::models::VouchrsSession;
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::apple;
-use crate::utils::crypto::decrypt_data;
-#[cfg(test)]
-use crate::utils::crypto::encrypt_data;
 
 // Static HTTP client for making OAuth and JWT validation requests
-// Optimized with connection pooling for better performance
 static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
     reqwest::Client::builder()
-        .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
-        .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90 seconds
-        .timeout(Duration::from_secs(30)) // 30 second request timeout
-        .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
+        .pool_max_idle_per_host(10)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
         .build()
         .expect("Failed to create HTTP client")
 });
@@ -62,23 +57,6 @@ impl std::error::Error for OAuthError {}
 // ============================================================================
 // Core Data Structures
 // ============================================================================
-
-/// OAuth callback structure for handling responses from OAuth providers
-#[derive(Deserialize, Debug)]
-pub struct OAuthCallback {
-    pub code: Option<String>,
-    pub state: Option<String>,
-    pub error: Option<String>,
-    pub user: Option<serde_json::Value>, // Apple sends user info in form POST on first login
-}
-
-/// OAuth state structure for CSRF protection and flow tracking
-#[derive(Serialize, Deserialize, Debug)]
-pub struct OAuthState {
-    pub state: String,
-    pub provider: String,
-    pub redirect_url: Option<String>,
-}
 
 /// OAuth tokens structure for session management
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -188,7 +166,9 @@ impl RuntimeProvider {
     /// - Response cannot be parsed as JSON
     /// - Required endpoints are missing from discovery document
     async fn resolve_from_discovery(discovery_url: &str) -> Result<(String, String), String> {
-        let resp = reqwest::get(discovery_url)
+        let resp = CLIENT
+            .get(discovery_url)
+            .send()
             .await
             .map_err(|e| e.to_string())?;
         let doc: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -238,7 +218,7 @@ pub struct OAuthConfig {
     pub redirect_base_url: String,
     // Cached encoded redirect URI for performance optimization
     pub encoded_redirect_uri: String,
-    jwt_validator: Arc<RwLock<Option<crate::jwt_validation::JwtValidator>>>,
+    jwt_validator: Arc<RwLock<Option<crate::oauth::jwt_validation::JwtValidator>>>,
 }
 
 impl Default for OAuthConfig {
@@ -259,7 +239,7 @@ impl OAuthConfig {
             env::var("REDIRECT_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
         // Pre-compute encoded redirect URI with callback path for performance optimization
-        let redirect_uri_with_callback = format!("{redirect_base_url}/oauth2/callback");
+        let redirect_uri_with_callback = format!("{redirect_base_url}/auth/oauth2/callback");
         let encoded_redirect_uri = urlencoding::encode(&redirect_uri_with_callback).to_string();
 
         Self {
@@ -335,10 +315,10 @@ impl OAuthConfig {
     }
 
     /// Get or initialize JWT validator
-    async fn get_jwt_validator(&self) -> crate::jwt_validation::JwtValidator {
+    async fn get_jwt_validator(&self) -> crate::oauth::jwt_validation::JwtValidator {
         let mut jwt_validator_guard = self.jwt_validator.write().await;
         if jwt_validator_guard.is_none() {
-            *jwt_validator_guard = Some(crate::jwt_validation::JwtValidator::new());
+            *jwt_validator_guard = Some(crate::oauth::jwt_validation::JwtValidator::new());
             info!("🔐 Initialized JWT validator for ID token validation");
         }
         jwt_validator_guard.as_ref().unwrap().clone()
@@ -494,9 +474,9 @@ impl OAuthConfig {
         runtime_provider: &RuntimeProvider,
     ) -> Result<HashMap<String, String>, String> {
         // Pre-allocate redirect URI string to avoid format! allocation
-        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 16);
+        let mut redirect_uri = String::with_capacity(self.redirect_base_url.len() + 20);
         redirect_uri.push_str(&self.redirect_base_url);
-        redirect_uri.push_str("/oauth2/callback");
+        redirect_uri.push_str("/auth/oauth2/callback");
 
         let mut params = HashMap::new();
 
@@ -658,13 +638,14 @@ impl OAuthConfig {
             .get(provider)
             .and_then(|p| p.settings.display_name.as_deref())
     }
+
     /// Validate JWT ID token using JWKS discovery and cryptographic verification
     async fn validate_jwt_token(
         &self,
         provider: &str,
         id_token: &str,
         runtime_provider: &RuntimeProvider,
-    ) -> Result<(), crate::jwt_validation::JwtValidationError> {
+    ) -> Result<(), crate::oauth::jwt_validation::JwtValidationError> {
         let jwt_config = runtime_provider.settings.get_jwt_validation_config();
 
         // Get the JWT validator
@@ -673,10 +654,20 @@ impl OAuthConfig {
         // If discovery URL is available, fetch discovery document for issuer/jwks_uri
         let discovery_doc = if let Some(ref discovery_url) = runtime_provider.settings.discovery_url
         {
-            match validator.fetch_discovery_document(discovery_url).await {
+            match crate::oauth::fetch_discovery_document(discovery_url).await {
                 Ok(doc) => {
                     debug!("✅ Discovery document fetched for provider '{provider}'");
-                    Some(doc)
+                    // Parse the JSON into the proper type
+                    match serde_json::from_value::<
+                        crate::oauth::jwt_validation::OidcDiscoveryDocument,
+                    >(doc)
+                    {
+                        Ok(parsed_doc) => Some(parsed_doc),
+                        Err(e) => {
+                            warn!("⚠️  Failed to parse discovery document for '{provider}': {e}");
+                            None
+                        }
+                    }
                 }
                 Err(e) => {
                     warn!("⚠️  Failed to fetch discovery document for '{provider}': {e}");
@@ -698,13 +689,14 @@ impl OAuthConfig {
 // Token Management Functions
 // ============================================================================
 
-/// Check if tokens need refresh and refresh them if necessary
+/// Check and refresh OAuth tokens if they are close to expiry
 ///
 /// # Errors
 ///
-/// Returns an `HttpResponse` error if:
-/// - Tokens are expired and no refresh token is available
-/// - Token refresh fails
+/// Returns an error HTTP response if:
+/// - Session tokens are expired and no refresh token is available
+/// - Token refresh operation fails
+/// - Provider is not configured for refresh
 pub async fn check_and_refresh_tokens(
     mut session: VouchrsSession,
     oauth_config: &OAuthConfig,
@@ -832,224 +824,4 @@ pub async fn refresh_tokens(
         chrono::Utc::now() + chrono::Duration::seconds(i64::try_from(expires_in).unwrap_or(3600));
 
     Ok((new_id_token, new_refresh_token, new_expires_at))
-}
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-// ============================================================================
-// OAuth State Management
-// ============================================================================
-
-/// Parse OAuth state from received state parameter and retrieve stored state from cookie
-/// This eliminates provider-specific branching logic by using the stored OAuth state
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The received state does not match the stored CSRF token
-/// - No stored state is found and encrypted state decryption fails
-/// - The encrypted state format is invalid
-pub fn get_state_from_callback(
-    received_state: &str,
-    session_manager: &crate::session::SessionManager,
-    req: &actix_web::HttpRequest,
-) -> Result<crate::oauth::OAuthState, String> {
-    debug!(
-        "Received OAuth state parameter: length = {} characters",
-        received_state.len()
-    );
-
-    // First, try to get the stored OAuth state from temporary cookie
-    match session_manager.get_temporary_state_from_request(req) {
-        Ok(Some(stored_state)) => {
-            // For cookie-based state, verify the received state matches the stored CSRF token
-            if stored_state.state == received_state {
-                debug!(
-                    "OAuth state verified: stored state matches received state for provider {}",
-                    stored_state.provider
-                );
-                Ok(stored_state)
-            } else {
-                Err(
-                    "OAuth state mismatch: received state does not match stored CSRF token"
-                        .to_string(),
-                )
-            }
-        }
-        Ok(None) => {
-            // 🔒 SECURITY: Try to decrypt the received state parameter
-            // This prevents tampering with provider name or redirect URL
-            match decrypt_data::<crate::oauth::OAuthState>(
-                received_state,
-                session_manager.encryption_key(),
-            ) {
-                Ok(decrypted_state) => {
-                    debug!(
-                        "Successfully decrypted OAuth state for provider: {}",
-                        decrypted_state.provider
-                    );
-                    Ok(decrypted_state)
-                }
-                Err(e) => {
-                    debug!("Failed to decrypt OAuth state: {e}");
-                    Err("Invalid OAuth state: cannot decrypt state parameter".to_string())
-                }
-            }
-        }
-        Err(e) => {
-            debug!("Failed to retrieve stored OAuth state: {e}");
-            // Try decrypting the state parameter directly
-            match decrypt_data::<crate::oauth::OAuthState>(
-                received_state,
-                session_manager.encryption_key(),
-            ) {
-                Ok(decrypted_state) => {
-                    debug!(
-                        "Successfully decrypted OAuth state for provider: {}",
-                        decrypted_state.provider
-                    );
-                    Ok(decrypted_state)
-                }
-                Err(decrypt_error) => {
-                    debug!("Failed to decrypt OAuth state: {decrypt_error}");
-                    Err("Invalid OAuth state: cannot decrypt state parameter".to_string())
-                }
-            }
-        }
-    }
-}
-
-/// Fetch an OIDC discovery document from the given URL
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The HTTP request fails
-/// - The response cannot be parsed as JSON
-/// - The discovery document is missing required fields
-pub async fn fetch_discovery_document(discovery_url: &str) -> Result<serde_json::Value, String> {
-    debug!("📄 Fetching OIDC discovery document from {discovery_url}");
-
-    let response = CLIENT
-        .get(discovery_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch discovery document: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Discovery document request failed with status: {}",
-            response.status()
-        ));
-    }
-
-    let discovery_doc: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse discovery document: {e}"))?;
-
-    debug!("✅ Discovery document fetched successfully");
-    Ok(discovery_doc)
-}
-
-/// Fetch JWKS (JSON Web Key Set) from the given URI
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The HTTP request fails
-/// - The response cannot be parsed as JSON
-/// - The JWKS document is malformed
-pub async fn fetch_jwks(jwks_uri: &str) -> Result<serde_json::Value, String> {
-    debug!("🔑 Fetching JWKS from {jwks_uri}");
-
-    let response = CLIENT
-        .get(jwks_uri)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch JWKS: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "JWKS request failed with status: {}",
-            response.status()
-        ));
-    }
-
-    let jwks: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse JWKS: {e}"))?;
-
-    debug!("✅ JWKS fetched successfully");
-    Ok(jwks)
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_encrypted_state_security_fix() {
-        use crate::utils::test_helpers::create_test_session_manager;
-
-        // Create a session manager for encryption/decryption
-        let session_manager = create_test_session_manager();
-
-        // Create an OAuth state
-        let original_state = OAuthState {
-            state: "csrf_token_123".to_string(),
-            provider: "google".to_string(),
-            redirect_url: Some("/dashboard".to_string()),
-        };
-
-        // Encrypt the state (this is what we now do in auth.rs)
-        let encrypted_state =
-            encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
-
-        // Verify that the encrypted state doesn't contain plain text provider info
-        assert!(!encrypted_state.contains("google"));
-        assert!(!encrypted_state.contains("dashboard"));
-        assert!(!encrypted_state.contains("csrf_token_123"));
-
-        // Verify that we can decrypt it back correctly
-        let decrypted_state: OAuthState =
-            decrypt_data(&encrypted_state, session_manager.encryption_key()).unwrap();
-        assert_eq!(decrypted_state.state, original_state.state);
-        assert_eq!(decrypted_state.provider, original_state.provider);
-        assert_eq!(decrypted_state.redirect_url, original_state.redirect_url);
-    }
-
-    #[test]
-    fn test_tampered_encrypted_state_fails() {
-        use crate::utils::test_helpers::create_test_session_manager;
-
-        let session_manager = create_test_session_manager();
-
-        let original_state = OAuthState {
-            state: "csrf_token_123".to_string(),
-            provider: "google".to_string(),
-            redirect_url: Some("/dashboard".to_string()),
-        };
-
-        let encrypted_state =
-            encrypt_data(&original_state, session_manager.encryption_key()).unwrap();
-
-        // Tamper with the encrypted state by changing one character
-        let mut chars: Vec<char> = encrypted_state.chars().collect();
-        if let Some(last_char) = chars.last_mut() {
-            *last_char = if *last_char == 'A' { 'B' } else { 'A' };
-        }
-        let tampered_state: String = chars.into_iter().collect();
-
-        // Attempting to decrypt tampered state should fail
-        let result = decrypt_data::<OAuthState>(&tampered_state, session_manager.encryption_key());
-        assert!(result.is_err());
-    }
 }

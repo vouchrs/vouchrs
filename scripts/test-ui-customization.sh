@@ -63,7 +63,7 @@ cat > test-custom-ui/static/sign-in.html << 'EOF'
         <div class="login-box">
             <h1 class="title">ACME CORP PORTAL</h1>
             <p class="subtitle">🔐 Corporate OAuth2 Gateway</p>
-            
+
             <div class="provider-buttons">
                 <a href="/oauth2/google" class="oauth-button google">
                     <svg class="icon" viewBox="0 0 24 24">
@@ -74,7 +74,7 @@ cat > test-custom-ui/static/sign-in.html << 'EOF'
                     </svg>
                     Sign in with Google
                 </a>
-                
+
                 <a href="/oauth2/apple" class="oauth-button apple">
                     <svg class="icon" viewBox="0 0 24 24">
                         <path fill="currentColor" d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
@@ -117,7 +117,7 @@ docker run -d --name vouchrs-test-default -p 8081:8080 \
 sleep 3
 
 echo -e "${BLUE}Checking default UI...${NC}"
-curl -s -o test-logs/default-response.html http://localhost:8081/oauth2/sign_in || echo "Service starting..."
+curl -s -o test-logs/default-response.html http://localhost:8081/sign_in || echo "Service starting..."
 
 # Test 2: Run with custom static files via volume mount
 echo -e "${YELLOW}🧪 Test 2: Running with custom static files (Docker volume)${NC}"
@@ -134,7 +134,7 @@ docker run -d --name vouchrs-test-custom -p 8082:8080 \
 sleep 3
 
 echo -e "${BLUE}Checking custom UI...${NC}"
-curl -s -o test-logs/custom-response.html http://localhost:8082/oauth2/sign_in || echo "Service starting..."
+curl -s -o test-logs/custom-response.html http://localhost:8082/sign_in || echo "Service starting..."
 
 # Wait for services to be ready
 echo -e "${BLUE}⏳ Waiting for services to start...${NC}"
@@ -144,10 +144,10 @@ sleep 5
 echo -e "${YELLOW}🔍 Testing endpoints...${NC}"
 
 echo "Testing default UI (port 8081):"
-curl -s -w "HTTP Status: %{http_code}\n" http://localhost:8081/oauth2/sign_in > /dev/null
+curl -s -w "HTTP Status: %{http_code}\n" http://localhost:8081/sign_in > /dev/null
 
 echo "Testing custom UI (port 8082):"
-curl -s -w "HTTP Status: %{http_code}\n" http://localhost:8082/oauth2/sign_in > /dev/null
+curl -s -w "HTTP Status: %{http_code}\n" http://localhost:8082/sign_in > /dev/null
 
 echo "Testing static file serving (port 8082):"
 curl -s -w "HTTP Status: %{http_code}\n" http://localhost:8082/oauth2/static/sign-in.css > /dev/null
@@ -161,8 +161,8 @@ echo
 echo -e "${GREEN}✅ UI Customization Test Complete!${NC}"
 echo
 echo -e "${BLUE}📋 Summary:${NC}"
-echo "• Default UI: http://localhost:8081/oauth2/sign_in (embedded fallback)"
-echo "• Custom UI:  http://localhost:8082/oauth2/sign_in (volume mounted)"
+echo "• Default UI: http://localhost:8081/sign_in (embedded fallback)"
+echo "• Custom UI:  http://localhost:8082/sign_in (volume mounted)"
 echo "• Static files: http://localhost:8082/oauth2/static/sign-in.css"
 echo
 echo -e "${YELLOW}💡 To use custom UI in production:${NC}"

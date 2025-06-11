@@ -7,8 +7,8 @@
 host = "0.0.0.0"
 port = 8080
 
-# Base URL for OAuth redirects (will have /oauth2/callback appended)
-# Full callback URL will be: {redirect_base_url}/oauth2/callback
+# Base URL for OAuth redirects (will have /auth/oauth2/callback appended)
+# Full callback URL will be: {redirect_base_url}/auth/oauth2/callback
 # Environment variable: REDIRECT_BASE_URL
 redirect_base_url = "http://localhost:8080"
 
@@ -24,7 +24,8 @@ upstream_url = "http://localhost:3000"
 [static_files]
 # Directory containing static assets (HTML, CSS, JS, images)
 # Environment variable: STATIC_FOLDER_PATH
-assets_folder = "src/static"
+# Uncomment to use custom folder, otherwise uses default "./static"
+#assets_folder = "custom-ui"
 
 [session]
 # Session cookie expiration in hours (how long browser keeps the cookie)
@@ -54,23 +55,54 @@ session_refresh_hours = 0
 # Node.js: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 session_secret = ""
 
-# JWT issuer claim (iss) - identifies who issued the token
-# Environment variable: JWT_ISSUER
-issuer = "https://vouchrs.app"
-
-# JWT audience claim (aud) - identifies the intended recipient of the token
-# Environment variable: JWT_AUDIENCE
-audience = "https://api.example.com"
-
 [cookies]
 # Cookie security settings
 # Environment variable: COOKIE_SECURE
 secure = false
 
+# Bind session cookies to client IP address for additional security
+# When enabled, session cookies are tied to the originating IP address
+# Environment variable: BIND_SESSION_TO_IP
+bind_session_to_ip = false
+
 [logging]
 # Logging level: error, warn, info, debug, trace
 # Environment variable: RUST_LOG
 level = "info"
+
+[passkeys]
+# Passkey/WebAuthn configuration
+# Environment variable: PASSKEYS_ENABLED
+enabled = true
+
+# Relying Party ID (usually your domain)
+# Environment variable: PASSKEYS_RP_ID
+rp_id = "demo.dev.vouchrs.app"
+
+# Relying Party name (displayed to users during registration)
+# Environment variable: PASSKEYS_RP_NAME
+rp_name = "vouchrs demo"
+
+# Relying Party origin (must match the origin where passkeys are used)
+# Environment variable: PASSKEYS_RP_ORIGIN
+rp_origin = "https://demo.dev.vouchrs.app"
+
+# Operation timeout in seconds
+# Environment variable: PASSKEYS_TIMEOUT_SECONDS
+timeout_seconds = 60
+
+# User verification preference: "required", "preferred", "discouraged"
+# Environment variable: PASSKEYS_USER_VERIFICATION
+user_verification = "preferred"
+
+# Optional authenticator attachment: "platform", "cross-platform", or null for any
+# Environment variable: PASSKEYS_AUTHENTICATOR_ATTACHMENT
+# Using "cross-platform" to enable password managers and external authenticators
+authenticator_attachment = "cross-platform"
+
+# Session duration in seconds for passkey-based sessions
+# Environment variable: PASSKEYS_SESSION_DURATION_SECONDS
+session_duration_seconds = 86400 # 24 hours
 
 # OAuth Provider Configuration
 # At least one provider must be configured for Vouchrs to start

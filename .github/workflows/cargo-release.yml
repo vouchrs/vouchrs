@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: get GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
            app-id: ${{ vars.RELEASE_BOT_ID }}
            private-key: ${{ secrets.RELEASE_BOT_KEY }}

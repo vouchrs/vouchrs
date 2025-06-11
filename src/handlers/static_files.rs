@@ -1,8 +1,34 @@
 use crate::models::HealthResponse;
 use crate::settings::VouchrsSettings;
 use actix_web::{web, HttpResponse, Result};
-use log::debug;
 use std::fs;
+
+/// Initialize static files - generate sign-in.html in the generated content folder
+///
+/// HTML content is always generated unless the assets path has been explicitly set.
+/// This allows Docker users to mount custom static content without having it overwritten.
+///
+/// # Errors
+/// Returns an error if file operations fail
+pub fn initialize_static_files(settings: &VouchrsSettings) -> std::io::Result<()> {
+    let generated_folder = &settings.static_files.generated_content_folder;
+
+    // Create generated content folder if it doesn't exist
+    fs::create_dir_all(generated_folder)?;
+
+    // Always generate HTML content unless assets_folder was explicitly set
+    // This prevents overwriting custom content in Docker volume mounts
+    if settings.static_files.assets_folder_explicitly_set {
+        println!("⏭️  Skipping HTML generation - assets folder explicitly set");
+    } else {
+        let html_path = format!("{generated_folder}/sign-in.html");
+        let html_content = generate_sign_in_html(settings);
+        fs::write(&html_path, html_content)?;
+        println!("✅ Generated sign-in.html");
+    }
+
+    Ok(())
+}
 
 /// Health check endpoint
 ///
@@ -16,7 +42,7 @@ pub async fn health() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(response))
 }
 
-/// Serve static files from the configured static directory
+/// Serve static files from both the assets folder and generated content folder
 ///
 /// # Errors
 ///
@@ -28,19 +54,35 @@ pub async fn serve_static(
     settings: web::Data<VouchrsSettings>,
 ) -> Result<HttpResponse> {
     let filename = path.into_inner();
-    let file_path = format!("{}/{}", settings.static_files.assets_folder, filename);
 
-    debug!("Attempting to serve static file: {file_path}");
+    // Try generated content folder first (for HTML files)
+    let generated_file_path = format!(
+        "{}/{}",
+        settings.static_files.generated_content_folder, filename
+    );
 
-    fs::read(&file_path).map_or_else(
-        |_| {
-            debug!("Static file not found: {file_path}");
-            Ok(HttpResponse::NotFound().json(serde_json::json!({
-                "error": "not_found",
-                "message": "File not found"
-            })))
-        },
-        |contents| {
+    // Then try assets folder (for CSS, JS, images)
+    let assets_file_path = format!("{}/{}", settings.static_files.assets_folder, filename);
+
+    // If assets folder was explicitly set, prefer it over generated content folder
+    let file_path = if settings.static_files.assets_folder_explicitly_set
+        && std::path::Path::new(&assets_file_path).exists()
+    {
+        println!("✅ Using custom static file from {assets_file_path}");
+        assets_file_path
+    } else if std::path::Path::new(&generated_file_path).exists() {
+        generated_file_path
+    } else if std::path::Path::new(&assets_file_path).exists() {
+        assets_file_path
+    } else {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "not_found",
+            "message": "File not found"
+        })));
+    };
+
+    match fs::read(&file_path) {
+        Ok(contents) => {
             let content_type = match file_path.split('.').next_back() {
                 Some("html") => "text/html",
                 Some("css") => "text/css",
@@ -54,200 +96,126 @@ pub async fn serve_static(
             };
 
             Ok(HttpResponse::Ok().content_type(content_type).body(contents))
-        },
-    )
+        }
+        Err(_) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": "read_error",
+            "message": "Failed to read file"
+        }))),
+    }
 }
 
-// Helper function to get sign-in page HTML (reused from original handlers)
+/// Get sign-in page HTML - checks custom assets folder first, then generated content folder
+///
+/// # Panics
+/// Panics if the sign-in HTML file is not found in either location
 #[must_use]
 pub fn get_sign_in_page(settings: &VouchrsSettings) -> String {
-    let html_path = format!("{}/sign-in.html", settings.static_files.assets_folder);
-    std::fs::read_to_string(&html_path).unwrap_or_else(|_| generate_dynamic_sign_in_page(settings))
+    // If assets folder was explicitly set, check for custom sign-in.html first
+    if settings.static_files.assets_folder_explicitly_set {
+        let custom_html_path = format!("{}/sign-in.html", settings.static_files.assets_folder);
+        if let Ok(custom_html) = std::fs::read_to_string(&custom_html_path) {
+            println!("✅ Using custom sign-in.html from {custom_html_path}");
+            return custom_html;
+        }
+    }
+
+    // Fallback to generated content folder
+    let html_path = format!(
+        "{}/sign-in.html",
+        settings.static_files.generated_content_folder
+    );
+    std::fs::read_to_string(&html_path).unwrap_or_else(|_| {
+        // This should not happen if initialization was successful
+        panic!("Sign-in HTML file not found at {html_path}. Call initialize_static_files() first.")
+    })
 }
 
-// Generate dynamic sign-in page with providers from configuration
-#[must_use]
-pub fn generate_dynamic_sign_in_page(settings: &VouchrsSettings) -> String {
+/// Generate sign-in HTML from template
+fn generate_sign_in_html(settings: &VouchrsSettings) -> String {
     let provider_buttons = generate_provider_buttons(settings);
     let brand_name = settings.application.redirect_base_url.clone();
 
-    format!(
-        r#"<!DOCTYPE html>
+    // Conditionally include passkey JavaScript
+    let passkey_script = if settings.passkeys.enabled {
+        r#"<script src="/auth/static/passkey-signin.js"></script>"#
+    } else {
+        ""
+    };
+
+    // Use embedded template
+    let template = get_html_template();
+
+    template
+        .replace("{{brand_name}}", &brand_name)
+        .replace("{{provider_buttons}}", &provider_buttons)
+        .replace("{{passkey_script}}", passkey_script)
+        .replace("{{version}}", crate::VERSION)
+}
+
+fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
+    let mut buttons = Vec::new();
+
+    // Generate OAuth provider buttons
+    for provider in settings.get_enabled_providers() {
+        let display_name = provider
+            .display_name
+            .as_ref()
+            .unwrap_or(&provider.name)
+            .clone();
+
+        // Generate provider class
+        let provider_class = format!("provider-{}", provider.name.to_lowercase());
+
+        // Create button without inline style - CSS handles the colors
+        buttons.push(format!(
+            r#"<a href="/auth/sign_in?provider={}" class="provider-button {}">
+                    <span>Continue with {}</span>
+                </a>"#,
+            provider.name, provider_class, display_name
+        ));
+    }
+
+    // Add passkey button if passkeys are enabled
+    if settings.passkeys.enabled {
+        buttons.push(
+            r#"<button id="passkey-signin" class="provider-button provider-passkey">
+                    <span>🔑 Continue with Passkey</span>
+                </button>"#
+                .to_string(),
+        );
+    }
+
+    buttons.join("\n                ")
+}
+
+/// HTML template for sign-in page
+const fn get_html_template() -> &'static str {
+    r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - {brand_name}</title>
-    <style>{styles}</style>
+    <title>Sign In - {{brand_name}}</title>
+    <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 <body>
     <div class="container">
         <div class="login-box">
+            <div class="logo-container">
+                <img src="/auth/static/vouchrs-logo.svg" alt="Vouchrs" class="logo">
+            </div>
             <h1>Sign In</h1>
             <p>Choose your authentication provider</p>
             <div class="button-container">
-                {provider_buttons}
+                {{provider_buttons}}
             </div>
+            <div id="redirect-indicator" class="redirect-indicator" style="display: none;"></div>
             <div class="footer">
-                <p>Protected by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">v{version}</span></p>
+                <p>Protected by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">v{{version}}</span></p>
             </div>
         </div>
     </div>
+    {{passkey_script}}
 </body>
-</html>"#,
-        styles = get_sign_in_styles(),
-        brand_name = brand_name,
-        provider_buttons = provider_buttons,
-        version = crate::VERSION
-    )
-}
-
-fn generate_provider_buttons(settings: &VouchrsSettings) -> String {
-    // Define 5 vibrant colors to cycle through
-    let colors = [
-        "#4285f4", // Blue
-        "#ea4335", // Red
-        "#34a853", // Green
-        "#000000", // Black
-        "#8e44ad", // Purple
-    ];
-
-    settings
-        .get_enabled_providers()
-        .iter()
-        .enumerate() // Add index for color rotation
-        .map(|(index, provider)| {
-            let display_name = provider.display_name.as_ref()
-                .unwrap_or(&provider.name)
-                .clone();
-
-            // Generate both standard provider class and our color class
-            let provider_class = format!("provider-{}", provider.name.to_lowercase());
-
-            // Use index % 5 to rotate through our colors
-            let color_index = index % colors.len();
-            let color = colors[color_index];
-
-            // Create a dynamic style attribute with the color
-            format!(
-                r#"<a href="/oauth2/sign_in?provider={}" class="provider-button {}" style="background-color: {}">
-                    <span>Continue with {}</span>
-                </a>"#,
-                provider.name, provider_class, color, display_name
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n                ")
-}
-
-#[allow(clippy::too_many_lines)]
-const fn get_sign_in_styles() -> &'static str {
-    r"
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .container {
-            width: 100%;
-            max-width: 400px;
-        }
-        
-        .login-box {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 14px 28px rgba(0,0,0,0.12), 0 10px 10px rgba(0,0,0,0.08);
-            padding: 40px;
-        }
-        
-        h1 {
-            color: #333;
-            font-size: 28px;
-            font-weight: 600;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-        
-        p {
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .button-container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-        
-        .provider-button {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12px 20px;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            color: white; /* Text color for all buttons */
-        }
-        
-        .provider-button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            filter: brightness(90%); /* Darken on hover */
-        }
-        
-        .footer {
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #e9ecef;
-        }
-        
-        .footer p {
-            color: #999;
-            font-size: 14px;
-            margin: 0;
-        }
-        
-        .footer a {
-            color: #6366f1;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        
-        .version {
-            color: #999;
-            font-size: 12px;
-            margin-left: 5px;
-            opacity: 0.7;
-        }
-        
-        @media (max-width: 480px) {
-            .login-box {
-                padding: 30px 20px;
-            }
-            
-            h1 {
-                font-size: 24px;
-            }
-        }
-    "
+</html>"#
 }

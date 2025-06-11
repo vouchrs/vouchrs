@@ -5,13 +5,13 @@ use std::collections::HashMap;
 
 use crate::{
     models::VouchrsSession,
-    oauth::{check_and_refresh_tokens, OAuthConfig},
+    oauth::check_and_refresh_tokens,
+    oauth::OAuthConfig,
+    session::cookie::COOKIE_NAME,
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::cached_responses::RESPONSES,
-    utils::cookie::filter_vouchrs_cookies,
-    utils::response_builder::{build_upstream_url, convert_http_method, is_hop_by_hop_header},
-    utils::user_agent::is_browser_request,
+    utils::headers::{forward_request_headers, forward_response_headers, is_browser_request},
+    utils::responses::{build_upstream_url, convert_http_method, ResponseBuilder},
 };
 
 /// HTTP client for making upstream requests
@@ -76,6 +76,63 @@ pub async fn proxy_upstream(
     .await
 }
 
+/// Handle 401 Unauthorized responses with appropriate redirect or error response
+fn handle_unauthorized_response(req: &HttpRequest, settings: &VouchrsSettings) -> HttpResponse {
+    if is_browser_request(req) {
+        // Redirect browser requests to sign-in page
+        let sign_in_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
+        HttpResponse::Found()
+            .insert_header(("Location", sign_in_url.clone()))
+            .json(serde_json::json!({
+                "error": "authentication_required",
+                "message": "Authentication required. Redirecting to sign-in page.",
+                "redirect_url": sign_in_url
+            }))
+    } else {
+        // For non-browser requests, return 401 with JSON error
+        ResponseBuilder::unauthorized().build()
+    }
+}
+
+/// Update session cookie if needed due to token refresh or regular refresh
+fn update_session_cookie_if_needed(
+    response_builder: &mut actix_web::HttpResponseBuilder,
+    session_manager: &SessionManager,
+    session: &VouchrsSession,
+    req: &HttpRequest,
+    tokens_were_refreshed: bool,
+) {
+    if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
+        let reason = if tokens_were_refreshed {
+            "tokens were refreshed"
+        } else {
+            "regular session refresh is enabled"
+        };
+        log::debug!("Updating session cookie because {reason}");
+
+        // Use IP binding if enabled for cookie updates
+        let cookie_result = if session_manager.is_session_ip_binding_enabled() {
+            session_manager.create_session_cookie_with_context(session, req)
+        } else {
+            session_manager.create_session_cookie(session)
+        };
+
+        match cookie_result {
+            Ok(updated_cookie) => {
+                log::info!(
+                    "Setting updated session cookie for user on provider: {} (reason: {reason})",
+                    session.provider
+                );
+                response_builder.cookie(updated_cookie);
+            }
+            Err(e) => {
+                log::warn!("Failed to create updated session cookie: {e}");
+                // Continue without refresh rather than failing the request
+            }
+        }
+    }
+}
+
 /// Forward upstream response back to client with session refresh functionality
 ///
 /// # Errors
@@ -93,20 +150,7 @@ async fn forward_upstream_response(
 
     // Check if this is a 401 Unauthorized response
     if status_code == reqwest::StatusCode::UNAUTHORIZED {
-        // Determine if this is a browser request
-        if is_browser_request(req) {
-            // Redirect browser requests to sign-in page
-            let sign_in_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-            return Ok(HttpResponse::Found()
-                .insert_header(("Location", sign_in_url.clone()))
-                .json(serde_json::json!({
-                    "error": "authentication_required",
-                    "message": "Authentication required. Redirecting to sign-in page.",
-                    "redirect_url": sign_in_url
-                })));
-        }
-        // For non-browser requests, return 401 with JSON error
-        return Ok(RESPONSES.unauthorized());
+        return Ok(handle_unauthorized_response(req, settings));
     }
 
     // For all other status codes, forward the response as-is
@@ -116,38 +160,16 @@ async fn forward_upstream_response(
     let mut response_builder = HttpResponse::build(actix_status);
 
     // Forward relevant headers (excluding hop-by-hop headers)
-    for (name, value) in upstream_response.headers() {
-        let name_str = name.as_str().to_lowercase();
-        if !is_hop_by_hop_header(&name_str) {
-            if let Ok(value_str) = value.to_str() {
-                response_builder.insert_header((name.as_str(), value_str));
-            }
-        }
-    }
+    forward_response_headers(&upstream_response, &mut response_builder);
 
     // Check if session cookie should be updated due to token refresh or regular refresh
-    if tokens_were_refreshed || session_manager.is_cookie_refresh_enabled() {
-        let reason = if tokens_were_refreshed {
-            "tokens were refreshed"
-        } else {
-            "regular session refresh is enabled"
-        };
-        log::debug!("Updating session cookie because {reason}");
-
-        match session_manager.create_session_cookie(session) {
-            Ok(updated_cookie) => {
-                log::info!(
-                    "Setting updated session cookie for user on provider: {} (reason: {reason})",
-                    session.provider
-                );
-                response_builder.cookie(updated_cookie);
-            }
-            Err(e) => {
-                log::warn!("Failed to create updated session cookie: {e}");
-                // Continue without refresh rather than failing the request
-            }
-        }
-    }
+    update_session_cookie_if_needed(
+        &mut response_builder,
+        session_manager,
+        session,
+        req,
+        tokens_were_refreshed,
+    );
 
     // Get response body
     let response_body = upstream_response.bytes().await.map_err(|err| {
@@ -194,11 +216,9 @@ async fn execute_upstream_request(
     // Execute the request
     request_builder.send().await.map_err(|_err| {
         // Return a bad gateway error response for upstream connection failures
-        RESPONSES.bad_gateway()
+        ResponseBuilder::bad_gateway().build()
     })
 }
-
-// Functions have been moved to ResponseBuilder
 
 /// Extract and validate session from encrypted cookie with session hijacking prevention
 ///
@@ -216,125 +236,43 @@ fn extract_session_from_request(
     let handle_auth_error = |_message: &str| {
         if is_browser_request(req) {
             // For browser requests, redirect to sign-in page
-            let sign_in_url = "/oauth2/sign_in";
+            let sign_in_url = "/auth/sign_in";
             HttpResponse::Found()
                 .insert_header(("Location", sign_in_url))
                 .finish()
         } else {
             // For non-browser requests, return JSON error
-            RESPONSES.unauthorized()
+            ResponseBuilder::unauthorized().build()
         }
     };
 
     // Extract session cookie
     let cookie = req
-        .cookie("vouchrs_session")
+        .cookie(COOKIE_NAME)
         .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
 
     // Decrypt and validate session
     let session = session_manager
-        .decrypt_and_validate_session(cookie.value())
+        .decrypt_and_validate_session_with_ip(cookie.value(), req)
         .map_err(|_| {
             handle_auth_error("Session is invalid or expired. Please authenticate again.")
         })?;
 
-    // Extract user data for client context validation
-    match session_manager.get_user_data_from_request(req) {
-        Ok(Some(user_data)) => {
-            // Validate session security (client context + expiration awareness)
-            if let Ok(is_valid_and_not_expired) =
-                session_manager.validate_session_security(&user_data, req)
-            {
-                if is_valid_and_not_expired {
-                    // Session is valid and not expired
-                    Ok(session)
-                } else {
-                    // Session is valid but expired - could be refreshed
-                    log::info!("Session is expired but client context is valid for user: {} - allowing for potential token refresh", user_data.email);
-                    Ok(session)
-                }
-            } else {
-                // Client context validation failed - session hijacking detected
-                log::warn!(
-                    "Session hijacking detected: client context validation failed for user: {}",
-                    user_data.email
-                );
-                Err(handle_auth_error(
-                    "Session security validation failed. Please authenticate again.",
-                ))
-            }
-        }
-        Ok(None) => {
-            log::warn!("No user data found for session validation");
-            Err(handle_auth_error(
-                "User data not found. Please authenticate again.",
-            ))
-        }
-        Err(e) => {
-            log::error!("Failed to extract user data for session validation: {e}");
-            Err(handle_auth_error(
-                "Session validation failed. Please authenticate again.",
-            ))
-        }
-    }
-}
-
-/// Forward request headers to upstream, filtering out restricted headers
-///
-/// This function handles:
-/// - Skipping authorization headers (handled separately by auth)
-/// - Skipping hop-by-hop headers (not meant for upstream)
-/// - Filtering `vouchrs_session` from cookies
-/// - Converting header values to strings safely
-///
-/// # Arguments
-///
-/// * `req` - The incoming HTTP request
-/// * `request_builder` - The reqwest `RequestBuilder` to add headers to
-///
-/// # Returns
-///
-/// The updated `RequestBuilder` with forwarded headers
-fn forward_request_headers(
-    req: &HttpRequest,
-    mut request_builder: reqwest::RequestBuilder,
-) -> reqwest::RequestBuilder {
-    for (name, value) in req.headers() {
-        let name_str = name.as_str().to_lowercase();
-
-        // Skip authorization and hop-by-hop headers
-        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
-            continue;
-        }
-
-        // Special handling for cookies
-        if name_str == "cookie" {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
-                }
-            }
-            continue;
-        }
-
-        // Add other headers
-        if let Ok(value_str) = value.to_str() {
-            request_builder = request_builder.header(name.as_str(), value_str);
-        }
-    }
-
-    request_builder
+    // For proxy requests, we only need basic session validation
+    // Client context validation (session hijacking detection) should only be used
+    // for sensitive operations like passkey registration, not regular proxy requests
+    Ok(session)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_helpers::create_test_settings;
-    use crate::utils::test_request_builder::TestRequestBuilder;
+    use crate::testing::fixtures::TestFixtures;
+    use crate::testing::RequestBuilder;
+    use crate::utils::headers::{is_hop_by_hop_header, RequestHeaderProcessor};
 
     #[test]
     fn test_hop_by_hop_headers() {
-        use crate::utils::response_builder::is_hop_by_hop_header;
         assert!(is_hop_by_hop_header("connection"));
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("content-type"));
@@ -344,9 +282,9 @@ mod tests {
     #[tokio::test]
     async fn test_401_redirect_for_browser_requests() {
         // Test browser request (Accept: text/html)
-        let browser_req = TestRequestBuilder::browser_request();
+        let browser_req = RequestBuilder::browser("/");
 
-        let settings = create_test_settings();
+        let settings = TestFixtures::settings();
 
         // Test that browser requests are properly detected
         assert!(
@@ -355,24 +293,21 @@ mod tests {
         );
 
         // Test API request (Accept: application/json)
-        let api_req = TestRequestBuilder::api_request();
+        let api_req = RequestBuilder::new().api_headers().build();
 
         assert!(!is_browser_request(&api_req), "Should detect API request");
 
         // Test that the redirect URL is properly constructed
         let expected_redirect_url =
-            format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-        assert_eq!(
-            expected_redirect_url,
-            "http://localhost:8080/oauth2/sign_in"
-        );
+            format!("{}/auth/sign_in", settings.application.redirect_base_url);
+        assert_eq!(expected_redirect_url, "http://localhost:8080/auth/sign_in");
     }
 
     #[test]
     fn test_sign_in_url_generation() {
-        let settings = create_test_settings();
-        let expected_url = format!("{}/oauth2/sign_in", settings.application.redirect_base_url);
-        assert_eq!(expected_url, "http://localhost:8080/oauth2/sign_in");
+        let settings = TestFixtures::settings();
+        let expected_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
+        assert_eq!(expected_url, "http://localhost:8080/auth/sign_in");
     }
 
     #[tokio::test]
@@ -380,12 +315,14 @@ mod tests {
         // Create a mock HTTP request with cookies
         let cookies =
             "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
-        let req = TestRequestBuilder::with_cookies(cookies);
+        let req = RequestBuilder::with_cookies(cookies);
 
-        // Create a reqwest RequestBuilder and apply header forwarding
+        // Create a reqwest RequestBuilder and apply header forwarding using new processor
         let client = Client::new();
         let request_builder = client.get("http://example.com");
-        let modified_builder = apply_header_forwarding_for_test(&req, request_builder);
+
+        let processor = RequestHeaderProcessor::for_proxy();
+        let modified_builder = processor.forward_request_headers(&req, request_builder);
 
         // Convert to request and check headers
         let request = modified_builder.build().expect("Failed to build request");
@@ -393,52 +330,6 @@ mod tests {
 
         // Verify cookie filtering
         verify_cookie_filtering(headers);
-    }
-
-    /// Helper function to apply header forwarding logic for testing
-    fn apply_header_forwarding_for_test(
-        req: &HttpRequest,
-        mut request_builder: reqwest::RequestBuilder,
-    ) -> reqwest::RequestBuilder {
-        for (name, value) in req.headers() {
-            let name_str = name.as_str().to_lowercase();
-
-            // Skip authorization and hop-by-hop headers
-            if should_skip_header(&name_str) {
-                continue;
-            }
-
-            // Handle cookie filtering
-            if name_str == "cookie" {
-                request_builder = handle_cookie_header(value, request_builder, &name_str);
-                continue;
-            }
-
-            // Add other headers
-            if let Ok(value_str) = value.to_str() {
-                request_builder = request_builder.header(name.as_str(), value_str);
-            }
-        }
-        request_builder
-    }
-
-    /// Check if header should be skipped
-    fn should_skip_header(name_str: &str) -> bool {
-        name_str == "authorization" || is_hop_by_hop_header(name_str)
-    }
-
-    /// Handle cookie header filtering
-    fn handle_cookie_header(
-        value: &actix_web::http::header::HeaderValue,
-        mut request_builder: reqwest::RequestBuilder,
-        name_str: &str,
-    ) -> reqwest::RequestBuilder {
-        if let Ok(cookie_str) = value.to_str() {
-            if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                request_builder = request_builder.header(name_str, filtered_cookie);
-            }
-        }
-        request_builder
     }
 
     /// Verify that cookie filtering worked correctly

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 
+// Import PasskeySettings
+use crate::passkey::PasskeySettings;
+
 // Additional imports for environment and logging setup
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -14,6 +17,9 @@ pub struct VouchrsSettings {
     pub cookies: CookieSettings,
     pub logging: LoggingSettings,
     pub providers: Vec<ProviderSettings>,
+
+    #[serde(default)]
+    pub passkeys: PasskeySettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +37,18 @@ pub struct ProxySettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticFilesSettings {
+    #[serde(default = "StaticFilesSettings::get_default_static_path")]
     pub assets_folder: String,
+
+    /// Separate folder for generated content (like HTML files)
+    /// This ensures we can write to a location we have permissions for
+    #[serde(default = "StaticFilesSettings::get_default_static_path")]
+    pub generated_content_folder: String,
+
+    /// Track whether `assets_folder` was explicitly set (not using default)
+    /// This is used to determine whether to always regenerate HTML content
+    #[serde(skip)]
+    pub assets_folder_explicitly_set: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +67,10 @@ pub struct SessionSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CookieSettings {
     pub secure: bool,
+    /// Bind session cookies to client IP address for additional security
+    /// When enabled, session cookies are tied to the originating IP address
+    #[serde(default)]
+    pub bind_session_to_ip: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,9 +198,43 @@ impl Default for ProxySettings {
 
 impl Default for StaticFilesSettings {
     fn default() -> Self {
+        let static_path = Self::get_default_static_path();
         Self {
-            assets_folder: "src/static".to_string(),
+            assets_folder: static_path.clone(),
+            generated_content_folder: static_path,
+            assets_folder_explicitly_set: false,
         }
+    }
+}
+
+impl StaticFilesSettings {
+    /// Get the default static path - binary directory + /static
+    /// This ensures both reading CSS files and writing HTML files use the same location
+    #[must_use]
+    pub fn get_default_static_path() -> String {
+        // Try to get the executable's directory and use static relative to it
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let exe_static = exe_dir.join("static");
+                if exe_static.exists() {
+                    return exe_static.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        // Fallback: try target/debug/static (for development)
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+        let target_static = format!("target/{profile}/static");
+        if std::path::Path::new(&target_static).exists() {
+            return target_static;
+        }
+
+        // Final fallback
+        "./static".to_string()
     }
 }
 
@@ -197,7 +252,8 @@ impl Default for SessionSettings {
 impl Default for CookieSettings {
     fn default() -> Self {
         Self {
-            secure: true, // Default to secure cookies
+            secure: true,              // Default to secure cookies
+            bind_session_to_ip: false, // Default to disabled for compatibility
         }
     }
 }
@@ -291,7 +347,16 @@ impl VouchrsSettings {
         let default_config_path = std::path::PathBuf::from("Settings.toml");
         if default_config_path.exists() {
             let toml_content = fs::read_to_string(&default_config_path)?;
+
+            // Check if assets_folder is explicitly set in TOML (not commented out)
+            let assets_folder_explicitly_set = toml_content.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
+            });
+
             settings = basic_toml::from_str(&toml_content)?;
+            settings.static_files.assets_folder_explicitly_set = assets_folder_explicitly_set;
+
             println!(
                 "✓ Loaded base settings from {}",
                 default_config_path.display()
@@ -303,12 +368,20 @@ impl VouchrsSettings {
             let secrets_path = std::path::Path::new(&secrets_dir).join("Settings.toml");
             if secrets_path.exists() {
                 let secrets_toml_content = fs::read_to_string(&secrets_path)?;
+
+                // Check if assets_folder is explicitly set in secrets TOML (not commented out)
+                let assets_folder_explicitly_set = secrets_toml_content.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("assets_folder") && !trimmed.starts_with('#')
+                });
+
                 let secrets_settings: Self = basic_toml::from_str(&secrets_toml_content)?;
 
                 println!("✓ Overriding settings from {}", secrets_path.display());
 
                 // Replace settings with those from secrets directory
                 settings = secrets_settings;
+                settings.static_files.assets_folder_explicitly_set = assets_folder_explicitly_set;
             } else {
                 println!(
                     "ℹ VOUCHRS_SECRETS_DIR set but no Settings.toml found at: {}",
@@ -361,6 +434,10 @@ impl VouchrsSettings {
     fn apply_static_files_env_overrides(static_settings: &mut StaticFilesSettings) {
         if let Ok(assets_folder) = std::env::var("STATIC_FOLDER_PATH") {
             static_settings.assets_folder = assets_folder;
+            static_settings.assets_folder_explicitly_set = true;
+        }
+        if let Ok(generated_folder) = std::env::var("GENERATED_CONTENT_PATH") {
+            static_settings.generated_content_folder = generated_folder;
         }
     }
 

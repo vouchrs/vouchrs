@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vouchrs OIDC Reverse Proxy - Sign In</title>
-    <link rel="stylesheet" href="/oauth2/static/sign-in.css">
+    <title>Vouchrs Authentication Reverse Proxy - Sign In</title>
+    <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 
 <body>
@@ -15,7 +15,7 @@
             <p class="subtitle">Choose your authentication provider</p>
 
             <div class="provider-buttons">
-                <a href="/oauth2/sign_in?provider=google" class="provider-btn google-btn">
+                <a href="/auth/sign_in?provider=google" class="provider-btn google-btn">
                     <svg class="provider-icon" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"
                         xmlns:xlink="http://www.w3.org/1999/xlink" style="display: block;">
                         <path fill="#EA4335"
@@ -35,7 +35,7 @@
                     <span>Sign in with Google</span>
                 </a>
 
-                <a href="/oauth2/sign_in?provider=apple" class="provider-btn apple-btn">
+                <a href="/auth/sign_in?provider=apple" class="provider-btn apple-btn">
                     <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" width="31px" height="44px"
                         viewBox="0 0 31 44">
                         <g id="Left-White-Logo-Medium" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
@@ -47,14 +47,21 @@
                     </svg>
                     <span>Sign in with Apple</span>
                 </a>
+
+                <button id="passkey-signin" class="provider-btn passkey-btn">
+                    <span class="provider-icon passkey-icon">🔑</span>
+                    <span>Sign in with Passkey</span>
+                </button>
             </div>
 
             <div class="footer">
                 <p>Secured by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span
-                        class="version">OIDC Proxy</span></p>
+                        class="version">Auth Proxy</span></p>
             </div>
         </div>
     </div>
+
+    <script src="/auth/static/passkey-signin.js"></script>
 </body>
 
 </html>
