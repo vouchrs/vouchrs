@@ -243,27 +243,45 @@ impl RedirectValidator {
 }
 ```
 
-#### 5. **Extract Header Processing Utilities**
+#### 5. **✅ Extract Header Processing Utilities**
 
-Create a dedicated header processing module:
+**Date Completed**: June 11, 2025
 
+**Summary**: Successfully consolidated HTTP header processing utilities, eliminating duplication between production and test code.
+
+**Changes Made**:
+1. **Created centralized header processor** (`src/utils/header_processor.rs`):
+   - Unified `is_hop_by_hop_header()` function (removed 3 duplicates)
+   - Configurable `RequestHeaderProcessor` with fluent interface
+   - Configurable `ResponseHeaderProcessor` for response forwarding
+   - Comprehensive convenience methods for common patterns
+   - Full test coverage with 5 new test cases
+
+2. **Updated proxy upstream handler** (`src/handlers/proxy_upstream.rs`):
+   - Removed duplicated `forward_request_headers()` function (~30 lines)
+   - Removed duplicated `forward_response_headers()` function (~15 lines)
+   - Removed duplicated test helper functions (~50 lines)
+   - Simplified tests to use centralized processor
+
+**Lines of Code Reduced**: ~95 lines of duplicated header processing patterns
+**Maintainability Impact**: High - single source of truth for header processing
+**Performance Impact**: Positive - eliminated redundant header parsing
+
+**Example Transformation**:
 ```rust
-// New: utils/header_processor.rs
-pub struct HeaderProcessor;
-
-impl HeaderProcessor {
-    pub fn forward_headers(
-        from: &reqwest::Response,
-        to: &mut actix_web::HttpResponseBuilder,
-    ) {
-        // Unified header forwarding logic
-    }
-
-    pub fn filter_cookies(cookie_header: &str) -> Option<String> {
-        // Centralized cookie filtering
-    }
+// Before: Duplicated in proxy_upstream.rs and test helpers
+fn forward_request_headers(req: &HttpRequest, builder: RequestBuilder) -> RequestBuilder {
+    // 30+ lines of duplicated logic
 }
+
+// After: Centralized with configuration
+use crate::utils::header_processor::RequestHeaderProcessor;
+let processor = RequestHeaderProcessor::for_proxy();
+processor.forward_request_headers(&req, builder)
 ```
+
+**All Tests Pass**: ✅ 123 tests passing, no regressions introduced
+**Documentation**: Added comprehensive consolidation guide (`HEADER_PROCESSING_CONSOLIDATION.md`)
 
 #### 6. **Simplify Handler Functions**
 
@@ -459,6 +477,46 @@ let redirect_response = ResponseBuilder::redirect("https://example.com")
 
 **All Tests Pass**: ✅ 120 tests passing (14 new tests added), no regressions introduced
 **Documentation**: Added comprehensive consolidation guide (`RESPONSE_CONSOLIDATION.md`)
+
+### ✅ Completed: Extract Header Processing Utilities (High Priority)
+
+**Date Completed**: June 11, 2025
+
+**Summary**: Successfully consolidated HTTP header processing utilities, eliminating duplication between production and test code.
+
+**Changes Made**:
+1. **Created centralized header processor** (`src/utils/header_processor.rs`):
+   - Unified `is_hop_by_hop_header()` function (removed 3 duplicates)
+   - Configurable `RequestHeaderProcessor` with fluent interface
+   - Configurable `ResponseHeaderProcessor` for response forwarding
+   - Comprehensive convenience methods for common patterns
+   - Full test coverage with 5 new test cases
+
+2. **Updated proxy upstream handler** (`src/handlers/proxy_upstream.rs`):
+   - Removed duplicated `forward_request_headers()` function (~30 lines)
+   - Removed duplicated `forward_response_headers()` function (~15 lines)
+   - Removed duplicated test helper functions (~50 lines)
+   - Simplified tests to use centralized processor
+
+**Lines of Code Reduced**: ~95 lines of duplicated header processing patterns
+**Maintainability Impact**: High - single source of truth for header processing
+**Performance Impact**: Positive - eliminated redundant header parsing
+
+**Example Transformation**:
+```rust
+// Before: Duplicated in proxy_upstream.rs and test helpers
+fn forward_request_headers(req: &HttpRequest, builder: RequestBuilder) -> RequestBuilder {
+    // 30+ lines of duplicated logic
+}
+
+// After: Centralized with configuration
+use crate::utils::header_processor::RequestHeaderProcessor;
+let processor = RequestHeaderProcessor::for_proxy();
+processor.forward_request_headers(&req, builder)
+```
+
+**All Tests Pass**: ✅ 123 tests passing, no regressions introduced
+**Documentation**: Added comprehensive consolidation guide (`HEADER_PROCESSING_CONSOLIDATION.md`)
 
 ### 🔲 Remaining High Priority Items:
 - Extract validation patterns from passkey handlers

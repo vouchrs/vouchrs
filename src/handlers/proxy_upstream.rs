@@ -7,12 +7,11 @@ use crate::{
     models::VouchrsSession,
     oauth::check_and_refresh_tokens,
     oauth::OAuthConfig,
-    session::cookie::{filter_vouchrs_cookies, COOKIE_NAME},
+    session::cookie::COOKIE_NAME,
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::responses::{
-        build_upstream_url, convert_http_method, is_hop_by_hop_header, ResponseBuilder,
-    },
+    utils::header_processor::{forward_request_headers, forward_response_headers},
+    utils::responses::{build_upstream_url, convert_http_method, ResponseBuilder},
     utils::user_agent::is_browser_request,
 };
 
@@ -93,21 +92,6 @@ fn handle_unauthorized_response(req: &HttpRequest, settings: &VouchrsSettings) -
     } else {
         // For non-browser requests, return 401 with JSON error
         ResponseBuilder::unauthorized().build()
-    }
-}
-
-/// Forward response headers while excluding hop-by-hop headers
-fn forward_response_headers(
-    upstream_response: &reqwest::Response,
-    response_builder: &mut actix_web::HttpResponseBuilder,
-) {
-    for (name, value) in upstream_response.headers() {
-        let name_str = name.as_str().to_lowercase();
-        if !is_hop_by_hop_header(&name_str) {
-            if let Ok(value_str) = value.to_str() {
-                response_builder.insert_header((name.as_str(), value_str));
-            }
-        }
     }
 }
 
@@ -272,62 +256,15 @@ fn extract_session_from_request(
     Ok(session)
 }
 
-/// Forward request headers to upstream, filtering out restricted headers
-///
-/// This function handles:
-/// - Skipping authorization headers (handled separately by auth)
-/// - Skipping hop-by-hop headers (not meant for upstream)
-/// - Filtering `vouchrs_session` from cookies
-/// - Converting header values to strings safely
-///
-/// # Arguments
-///
-/// * `req` - The incoming HTTP request
-/// * `request_builder` - The reqwest `RequestBuilder` to add headers to
-///
-/// # Returns
-///
-/// The updated `RequestBuilder` with forwarded headers
-fn forward_request_headers(
-    req: &HttpRequest,
-    mut request_builder: reqwest::RequestBuilder,
-) -> reqwest::RequestBuilder {
-    for (name, value) in req.headers() {
-        let name_str = name.as_str().to_lowercase();
-
-        // Skip authorization and hop-by-hop headers
-        if name_str == "authorization" || is_hop_by_hop_header(&name_str) {
-            continue;
-        }
-
-        // Special handling for cookies
-        if name_str == "cookie" {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                    request_builder = request_builder.header(name.as_str(), filtered_cookie);
-                }
-            }
-            continue;
-        }
-
-        // Add other headers
-        if let Ok(value_str) = value.to_str() {
-            request_builder = request_builder.header(name.as_str(), value_str);
-        }
-    }
-
-    request_builder
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::header_processor::{is_hop_by_hop_header, RequestHeaderProcessor};
     use crate::utils::test_helpers::create_test_settings;
     use crate::utils::test_request_builder::TestRequestBuilder;
 
     #[test]
     fn test_hop_by_hop_headers() {
-        use crate::utils::responses::is_hop_by_hop_header;
         assert!(is_hop_by_hop_header("connection"));
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("content-type"));
@@ -372,10 +309,12 @@ mod tests {
             "vouchrs_session=test_session_value; another_cookie=value; third_cookie=value3";
         let req = TestRequestBuilder::with_cookies(cookies);
 
-        // Create a reqwest RequestBuilder and apply header forwarding
+        // Create a reqwest RequestBuilder and apply header forwarding using new processor
         let client = Client::new();
         let request_builder = client.get("http://example.com");
-        let modified_builder = apply_header_forwarding_for_test(&req, request_builder);
+
+        let processor = RequestHeaderProcessor::for_proxy();
+        let modified_builder = processor.forward_request_headers(&req, request_builder);
 
         // Convert to request and check headers
         let request = modified_builder.build().expect("Failed to build request");
@@ -383,52 +322,6 @@ mod tests {
 
         // Verify cookie filtering
         verify_cookie_filtering(headers);
-    }
-
-    /// Helper function to apply header forwarding logic for testing
-    fn apply_header_forwarding_for_test(
-        req: &HttpRequest,
-        mut request_builder: reqwest::RequestBuilder,
-    ) -> reqwest::RequestBuilder {
-        for (name, value) in req.headers() {
-            let name_str = name.as_str().to_lowercase();
-
-            // Skip authorization and hop-by-hop headers
-            if should_skip_header(&name_str) {
-                continue;
-            }
-
-            // Handle cookie filtering
-            if name_str == "cookie" {
-                request_builder = handle_cookie_header(value, request_builder, &name_str);
-                continue;
-            }
-
-            // Add other headers
-            if let Ok(value_str) = value.to_str() {
-                request_builder = request_builder.header(name.as_str(), value_str);
-            }
-        }
-        request_builder
-    }
-
-    /// Check if header should be skipped
-    fn should_skip_header(name_str: &str) -> bool {
-        name_str == "authorization" || is_hop_by_hop_header(name_str)
-    }
-
-    /// Handle cookie header filtering
-    fn handle_cookie_header(
-        value: &actix_web::http::header::HeaderValue,
-        mut request_builder: reqwest::RequestBuilder,
-        name_str: &str,
-    ) -> reqwest::RequestBuilder {
-        if let Ok(cookie_str) = value.to_str() {
-            if let Some(filtered_cookie) = filter_vouchrs_cookies(cookie_str) {
-                request_builder = request_builder.header(name_str, filtered_cookie);
-            }
-        }
-        request_builder
     }
 
     /// Verify that cookie filtering worked correctly
