@@ -322,6 +322,70 @@ impl SessionManager {
         )
     }
 
+    /// Create an encrypted user data cookie with persistence across sessions
+    ///
+    /// This method checks for an existing user cookie with the same `provider_id`.
+    /// If found and the existing cookie has populated `email` and `name` fields
+    /// but the incoming request has null/empty values for these fields,
+    /// it preserves the values from the existing cookie.
+    ///
+    /// # Arguments
+    /// * `req` - The HTTP request to check for existing cookies
+    /// * `user_data` - The new user data to store
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encryption fails
+    pub fn create_user_cookie_with_persistence(
+        &self,
+        req: &HttpRequest,
+        user_data: &VouchrsUserData,
+    ) -> Result<Cookie> {
+        // Check for existing user data with the same provider and provider_id
+        if let Ok(Some(existing_user_data)) = self.get_user_data_from_request(req) {
+            if existing_user_data.provider == user_data.provider
+                && existing_user_data.provider_id == user_data.provider_id
+            {
+                // Create merged user data, preserving non-empty existing values
+                let merged_user_data = Self::merge_user_data(&existing_user_data, user_data);
+
+                log::info!(
+                    "Persisting user data across sessions for provider '{}' with provider_id '{}': email preserved={}, name preserved={}",
+                    user_data.provider,
+                    user_data.provider_id,
+                    merged_user_data.email != user_data.email,
+                    merged_user_data.name != user_data.name
+                );
+
+                return self.create_user_cookie(&merged_user_data);
+            }
+        }
+
+        // No existing data found or provider/provider_id doesn't match, create new cookie
+        log::debug!(
+            "Creating new user cookie for provider_id '{}' (no existing data to persist)",
+            user_data.provider_id
+        );
+        self.create_user_cookie(user_data)
+    }
+    /// Merge user data, preserving existing non-empty email and name values
+    /// when the new data has empty values
+    fn merge_user_data(existing: &VouchrsUserData, new: &VouchrsUserData) -> VouchrsUserData {
+        let mut merged = new.clone();
+
+        // Preserve existing email if new email is empty and existing is not
+        if new.email.is_empty() && !existing.email.is_empty() {
+            merged.email.clone_from(&existing.email);
+        }
+
+        // Preserve existing name if new name is None and existing has a value
+        if new.name.is_none() && existing.name.is_some() {
+            merged.name.clone_from(&existing.name);
+        }
+
+        merged
+    }
+
     /// Extract user data from HTTP request cookie
     ///
     /// # Errors
@@ -739,7 +803,7 @@ impl SessionManager {
     /// Returns an error if session cookie creation fails
     fn create_session_response(
         &self,
-        _req: &HttpRequest,
+        req: &HttpRequest,
         session: &VouchrsSession,
         user_data: &VouchrsUserData,
         redirect_url: Option<String>,
@@ -750,10 +814,12 @@ impl SessionManager {
             Self::create_service_error_response("Session creation failed")
         })?;
 
-        let user_cookie = self.create_user_cookie(user_data).map_err(|e| {
-            log::error!("Failed to create user cookie: {e}");
-            Self::create_service_error_response("Session creation failed")
-        })?;
+        let user_cookie = self
+            .create_user_cookie_with_persistence(req, user_data)
+            .map_err(|e| {
+                log::error!("Failed to create user cookie: {e}");
+                Self::create_service_error_response("Session creation failed")
+            })?;
 
         // Handle redirect and create response
         let final_redirect_url = redirect_url.unwrap_or_else(|| "/".to_string());
@@ -774,7 +840,7 @@ impl SessionManager {
     /// Returns an error if session cookie creation fails
     fn create_json_session_response(
         &self,
-        _req: &HttpRequest,
+        req: &HttpRequest,
         session: &VouchrsSession,
         user_data: &VouchrsUserData,
         redirect_url: Option<String>,
@@ -785,10 +851,12 @@ impl SessionManager {
             Self::create_service_error_response("Session creation failed")
         })?;
 
-        let user_cookie = self.create_user_cookie(user_data).map_err(|e| {
-            log::error!("Failed to create user cookie: {e}");
-            Self::create_service_error_response("Session creation failed")
-        })?;
+        let user_cookie = self
+            .create_user_cookie_with_persistence(req, user_data)
+            .map_err(|e| {
+                log::error!("Failed to create user cookie: {e}");
+                Self::create_service_error_response("Session creation failed")
+            })?;
 
         // Return JSON response with cookies
         let final_redirect_url = redirect_url.unwrap_or_else(|| "/".to_string());

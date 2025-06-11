@@ -231,7 +231,7 @@ impl PasskeySessionBuilder {
         // Create session cookies
         match (
             session_manager.create_session_cookie(&session),
-            session_manager.create_user_cookie(&user_data),
+            session_manager.create_user_cookie_with_persistence(req, &user_data),
         ) {
             (Ok(session_cookie), Ok(user_cookie)) => {
                 let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
