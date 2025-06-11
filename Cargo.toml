@@ -22,6 +22,7 @@ strip = true      # Strip symbols from binary
 [features]
 default = ["passkeys"]
 passkeys = ["dep:ciborium", "dep:cbor-codec"]
+testing = []                                  # Enable testing utilities for integration tests
 
 # Clippy configuration - pedantic mode with warnings as errors
 [lints.clippy]
@@ -60,6 +61,7 @@ reqwest = { version = "0.12.19", default-features = false, features = [
 url = { version = "2.4", default-features = false }
 
 # Utilities
+async-trait = { version = "0.1", default-features = false }
 base64 = { version = "0.22", default-features = false }
 chrono = { version = "0.4", default-features = false, features = [
     "serde",
@@ -67,6 +69,7 @@ chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ] }
 anyhow = { version = "1.0", default-features = false }
+thiserror = { version = "1.0", default-features = false }
 log = { version = "0.4", default-features = false }
 env_logger = { version = "0.11", default-features = false }
 regex = { version = "1.10", default-features = false, features = [
@@ -120,3 +123,12 @@ uuid = { version = "1.17.0", features = ["v4"] }
 [dev-dependencies]
 serial_test = "3.2.0"
 tempfile = "3.20.0"
+
+# Enable testing feature for integration tests
+[[test]]
+name = "integration_test"
+required-features = ["testing"]
+
+[[test]]
+name = "integration_validation_tests"
+required-features = ["testing"]

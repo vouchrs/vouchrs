@@ -1,6 +1,8 @@
 # UI Customization Guide
 
-Vouchrs OIDC Reverse Proxy supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
+Vouchrs Authentication Gateway and Reverse Proxy supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
+<img src="/auth/static/logo.png" alt="Company Logo">
+<script src="/auth/static/custom.js"></script>thout rebuilding the application.
 
 ## 🎨 How It Works
 
@@ -60,31 +62,31 @@ Example `sign-in.html`:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vouchrs OIDC Reverse Proxy - Sign In</title>
-    <link rel="stylesheet" href="/oauth2/static/sign-in.css">
+    <title>Vouchrs Authentication Gateway - Sign In</title>
+    <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 <body>
     <div class="container">
         <div class="login-box">
             <h1>🔐 Secure Authentication</h1>
             <p class="subtitle">Choose a provider to continue</p>
-            
+
             <div class="provider-buttons">
-                <a href="/oauth2/sign_in?provider=google" class="provider-btn google-btn">
+                <a href="/auth/sign_in?provider=google" class="provider-btn google-btn">
                     <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <!-- Google SVG icon path data -->
                     </svg>
                     <span>Sign in with Google</span>
                 </a>
-                
-                <a href="/oauth2/sign_in?provider=apple" class="provider-btn apple-btn">
+
+                <a href="/auth/sign_in?provider=apple" class="provider-btn apple-btn">
                     <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <!-- Apple SVG icon path data -->
                     </svg>
                     <span>Sign in with Apple</span>
                 </a>
             </div>
-            
+
             <div class="footer">
                 <p>Secured by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">OIDC Proxy</span></p>
             </div>
@@ -170,9 +172,9 @@ custom-ui/
 
 Reference in HTML:
 ```html
-<link rel="icon" href="/oauth2/static/favicon.ico">
-<img src="/oauth2/static/logo.png" alt="Company Logo">
-<script src="/oauth2/static/custom.js"></script>
+<link rel="icon" href="/auth/static/favicon.ico">
+<img src="/auth/static/logo.png" alt="Company Logo">
+<script src="/auth/static/custom.js"></script>
 ```
 
 ## 🚀 Deployment Workflow
@@ -227,10 +229,10 @@ This script:
 
 | Endpoint | Description |
 |----------|-------------|
-| `/oauth2/sign_in` | Main sign-in page (uses static files) |
-| `/oauth2/static/sign-in.html` | Direct access to HTML file |
-| `/oauth2/static/sign-in.css` | Direct access to CSS file |
-| `/oauth2/static/*` | Any file in static directory |
+| `/auth/sign_in` | Main sign-in page (uses static files) |
+| `/auth/static/sign-in.html` | Direct access to HTML file |
+| `/auth/static/sign-in.css` | Direct access to CSS file |
+| `/auth/static/*` | Any file in static directory |
 
 ## ⚠️ Important Notes
 

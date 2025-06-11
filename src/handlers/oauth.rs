@@ -1,15 +1,18 @@
-// Authentication handlers: sign-in and sign-out
-use crate::oauth::{OAuthConfig, OAuthState};
+// OAuth handlers: sign-in, sign-out, and callback
+use crate::oauth::OAuthConfig;
+use crate::oauth::{OAuthCallback, OAuthState};
+use crate::session::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
-use crate::utils::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::utils::crypto::{encrypt_data, generate_csrf_token};
-use crate::utils::response_builder::{redirect_with_cookie, success_redirect_with_cookies};
+use crate::utils::responses::{redirect_with_cookie, success_redirect_with_cookies};
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
 use super::static_files::get_sign_in_page;
+use crate::utils::apple::process_apple_callback;
 use serde::Deserialize;
+
 #[derive(Deserialize)]
 pub struct SignInQuery {
     pub provider: Option<String>,
@@ -56,10 +59,7 @@ pub async fn oauth_sign_in(
                         create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
                     return Ok(HttpResponse::Found()
                         .cookie(clear_cookie)
-                        .append_header((
-                            "Location",
-                            "/oauth2/sign_in?error=state_encryption_failed",
-                        ))
+                        .append_header(("Location", "/auth/sign_in?error=state_encryption_failed"))
                         .finish());
                 }
             };
@@ -87,7 +87,7 @@ pub async fn oauth_sign_in(
                     let error_clear_cookie =
                         create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
                     Ok(redirect_with_cookie(
-                        "/oauth2/sign_in?error=oauth_config",
+                        "/auth/sign_in?error=oauth_config",
                         Some(error_clear_cookie),
                     ))
                 }
@@ -95,8 +95,7 @@ pub async fn oauth_sign_in(
         }
         Some(provider) => {
             let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
-            let error_url =
-                format!("/oauth2/sign_in?error=unsupported_provider&provider={provider}");
+            let error_url = format!("/auth/sign_in?error=unsupported_provider&provider={provider}");
             Ok(redirect_with_cookie(&error_url, Some(clear_cookie)))
         }
         None => {
@@ -145,7 +144,101 @@ pub async fn oauth_sign_out(
 
     // Default: redirect to login page
     Ok(success_redirect_with_cookies(
-        "/oauth2/sign_in",
+        "/auth/sign_in",
         vec![clear_session_cookie, clear_user_cookie],
     ))
+}
+
+/// OAuth callback handler
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - OAuth state validation fails
+/// - Authorization code exchange fails
+/// - Session building fails
+/// - Cookie creation fails
+pub async fn oauth_callback(
+    query: web::Query<OAuthCallback>,
+    form: Option<web::Form<OAuthCallback>>,
+    req: HttpRequest,
+    _oauth_config: web::Data<OAuthConfig>,
+    session_manager: web::Data<SessionManager>,
+) -> Result<HttpResponse> {
+    // Extract callback data from either query params or form
+    let callback_data = extract_callback_data(query, form);
+    debug!(
+        "OAuth callback received via {}: {callback_data:?}",
+        req.method()
+    );
+    debug!("Callback request headers: {:?}", req.headers());
+    debug!(
+        "Callback request connection info: {:?}",
+        req.connection_info()
+    );
+
+    // Validate callback and extract required data using the new structured validator
+    let validated_callback = match crate::validation::CallbackValidator::validate_and_extract(
+        &callback_data,
+        &session_manager,
+        &req,
+    ) {
+        Ok(data) => data,
+        Err(response) => return Ok(response),
+    };
+
+    let (code, oauth_state) = (validated_callback.code, validated_callback.oauth_state);
+
+    info!(
+        "=== OAuth Callback Processing for {} ===",
+        oauth_state.provider
+    );
+
+    // Process additional Apple user info if available from the callback form
+    let processed_apple_info = process_apple_callback(&callback_data, None);
+
+    // Delegate to SessionManager for unified authentication handling
+    // The OAuth service will handle token exchange and Apple user info extraction
+    match session_manager
+        .handle_oauth_callback(
+            &req,
+            &oauth_state.provider,
+            &code,
+            &oauth_state,
+            processed_apple_info,
+        )
+        .await
+    {
+        Ok(response) => {
+            info!(
+                "OAuth callback processing successful for {}",
+                oauth_state.provider
+            );
+            Ok(response)
+        }
+        Err(error_response) => {
+            error!(
+                "OAuth callback processing failed for {}",
+                oauth_state.provider
+            );
+            Ok(error_response)
+        }
+    }
+}
+
+/// Extract callback data from either query parameters or form submission
+fn extract_callback_data(
+    query: web::Query<OAuthCallback>,
+    form: Option<web::Form<OAuthCallback>>,
+) -> OAuthCallback {
+    form.map_or_else(
+        || {
+            debug!("OAuth callback received via query: {query:?}");
+            query.into_inner()
+        },
+        |form_data| {
+            debug!("OAuth callback received via form_post: {form_data:?}");
+            form_data.into_inner()
+        },
+    )
 }

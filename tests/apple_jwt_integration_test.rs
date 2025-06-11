@@ -1,4 +1,4 @@
-// Integration test for Apple JWT functions using the refactored crypto module
+// Integration test for Apple JWT functions using the crypto module
 use std::fs;
 use std::path::Path;
 use vouchrs::settings::JwtSigningConfig;
@@ -36,7 +36,7 @@ fn test_apple_jwt_creation_with_crypto_module() {
     let jwt_config = create_test_jwt_config();
     let client_id = "com.example.testapp";
 
-    // Generate Apple JWT using the refactored function
+    // Generate Apple JWT using the crypto module
     let result = generate_jwt_client_secret(&jwt_config, client_id);
 
     match &result {

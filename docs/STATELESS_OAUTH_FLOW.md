@@ -11,7 +11,7 @@ Vouchrs implements a **stateless OAuth flow** where authentication state is embe
 
 When a user initiates OAuth authentication:
 ```
-GET /oauth2/sign_in?provider=google&rd=https://example.com/dashboard
+GET /auth/sign_in?provider=google&rd=https://example.com/dashboard
 ```
 
 The system creates a cryptographically protected state parameter:
@@ -36,7 +36,7 @@ The encrypted state parameter is sent in the authorization URL:
 ```
 https://accounts.google.com/oauth/authorize?
   client_id=...&
-  redirect_uri=http://localhost:8080/oauth2/callback&
+  redirect_uri=http://localhost:8080/auth/oauth2/callback&
   response_type=code&
   scope=openid email profile&
   state=FoS9lPOT9ctSc5P4Cga_BilM-MQBqB6r0kOKVXBWVifjKU5bSHZmGOXHMdLjzTXG2WiEwlhGFcp8ZIXH7mJ2S9pvPTjr0Sjz64Yf5g6HMPYDXKkZXGs-tqvrws0h-noKo3gf4WlGORf-ftb8EZF_Tal3qzovE6klWPkYMn0zp03D_bkTgxUrjXOezbaQF28
@@ -54,7 +54,7 @@ pub async fn get_state_from_callback(
     session_manager: &SessionManager,
 ) -> Result<OAuthState, String> {
     let received_state = &callback_params.state;
-    
+
     // Decrypt and validate the encrypted state
     match session_manager.decrypt_data::<OAuthState>(received_state) {
         Ok(oauth_state) => {
@@ -71,7 +71,7 @@ pub async fn get_state_from_callback(
 
 **Security Benefits:**
 - **Tamper Protection**: Encrypted state cannot be modified by attackers
-- **Integrity Verification**: Any tampering will cause decryption to fail  
+- **Integrity Verification**: Any tampering will cause decryption to fail
 - **Provider Name Security**: Provider configuration cannot be manipulated
 
 ### 4. Redirect URL Consumption
@@ -103,7 +103,7 @@ When `oauth_config.exchange_code_for_tokens(&oauth_state.provider, &code)` is ca
 
 2. **Provider-Specific Configuration**: The `RuntimeProvider` contains:
    - `auth_url`: Authorization endpoint URL
-   - `token_url`: Token endpoint URL  
+   - `token_url`: Token endpoint URL
    - `client_id`: OAuth client ID
    - `client_secret`: OAuth client secret (or None for JWT-based auth)
    - `settings`: Provider-specific settings including JWT signing config
@@ -120,7 +120,7 @@ When `oauth_config.exchange_code_for_tokens(&oauth_state.provider, &code)` is ca
 4. **Authentication Method**: Handles different authentication methods per provider:
    - **Regular OAuth**: Uses `client_secret` from configuration
    - **Apple (JWT-based)**: Generates client secret using JWT signing configuration
-   
+
    ```rust
    if let Some(ref secret) = runtime_provider.client_secret {
        // Regular OAuth with client secret
@@ -185,7 +185,7 @@ The OAuth state is encrypted using AES-256-GCM with a 96-bit nonce:
 
 ## Example Flow
 
-1. **User Request**: `/oauth2/sign_in?provider=google&rd=/dashboard`
+1. **User Request**: `/auth/sign_in?provider=google&rd=/dashboard`
 2. **State Creation**: `FoS9lPOT9ctSc5P4Cga_BilM-MQBqB6r0kOKVXBWVifjKU5bSHZmGOXHMdLjzTXG2WiEwlhGFcp8ZIXH7mJ2S9pvPTjr0Sjz64Yf5g6HMPYDXKkZXGs-tqvrws0h-noKo3gf4WlGORf-ftb8EZF_Tal3qzovE6klWPkYMn0zp03D_bkTgxUrjXOezbaQF28` (encrypted OAuth state)
 3. **OAuth Redirect**: User sent to Google with encrypted state parameter
 4. **OAuth Callback**: Google returns with same encrypted state parameter
