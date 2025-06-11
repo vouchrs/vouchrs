@@ -10,9 +10,8 @@ use crate::{
     session::cookie::COOKIE_NAME,
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::header_processor::{forward_request_headers, forward_response_headers},
+    utils::headers::{forward_request_headers, forward_response_headers, is_browser_request},
     utils::responses::{build_upstream_url, convert_http_method, ResponseBuilder},
-    utils::user_agent::is_browser_request,
 };
 
 /// HTTP client for making upstream requests
@@ -261,7 +260,7 @@ mod tests {
     use super::*;
     use crate::testing::fixtures::TestFixtures;
     use crate::testing::RequestBuilder;
-    use crate::utils::header_processor::{is_hop_by_hop_header, RequestHeaderProcessor};
+    use crate::utils::headers::{is_hop_by_hop_header, RequestHeaderProcessor};
 
     #[test]
     fn test_hop_by_hop_headers() {

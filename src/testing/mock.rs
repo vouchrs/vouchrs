@@ -5,7 +5,7 @@
 
 use crate::oauth::{OAuthCallback, OAuthState};
 use crate::settings::JwtSigningConfig;
-use crate::utils::user_agent::UserAgentInfo;
+use crate::utils::headers::UserAgentInfo;
 use serde_json::Value;
 use std::collections::HashMap;
 

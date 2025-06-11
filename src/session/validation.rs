@@ -46,7 +46,7 @@ pub fn calculate_client_context_hash(
 ///
 /// Returns true if the client context matches the stored context
 pub fn validate_client_context(user_data: &VouchrsUserData, req: &HttpRequest) -> bool {
-    use crate::utils::user_agent::extract_user_agent_info;
+    use crate::utils::headers::extract_user_agent_info;
 
     // Extract current client info from request
     let current_ip = req

@@ -76,7 +76,7 @@ impl PasskeySessionData {
     pub fn to_user_data(
         &self,
         client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
+        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> VouchrsUserData {
         VouchrsUserData {
             email: self.user_email.clone().unwrap_or_default(),
@@ -144,7 +144,7 @@ pub fn create_passkey_session(
 pub fn to_vouchrs_session(
     session: &PasskeySessionData,
     client_ip: Option<&str>,
-    user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
+    user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
 ) -> (VouchrsSession, VouchrsUserData) {
     // Create VouchrsSession for cookie storage
     let vouchrs_session = VouchrsSession {

@@ -5,7 +5,7 @@
 
 use crate::oauth::OAuthState;
 use crate::utils::crypto::decrypt_data;
-use crate::utils::user_agent::{extract_user_agent_info, UserAgentInfo};
+use crate::utils::headers::{extract_user_agent_info, UserAgentInfo};
 use actix_web::HttpResponse;
 
 /// Extract client information from the request

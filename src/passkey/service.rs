@@ -13,7 +13,7 @@ use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::passkey::PasskeyUserData;
 use crate::session::{PasskeySessionBuilder, PasskeySessionData};
 use crate::settings::VouchrsSettings;
-use crate::utils::user_agent::extract_user_agent_info;
+use crate::utils::headers::extract_user_agent_info;
 
 /// Error types for passkey authentication operations
 #[derive(Debug)]
@@ -200,7 +200,7 @@ impl PasskeyAuthenticationServiceImpl {
     /// Extract client information from request
     fn extract_client_info(
         req: &HttpRequest,
-    ) -> (Option<String>, crate::utils::user_agent::UserAgentInfo) {
+    ) -> (Option<String>, crate::utils::headers::UserAgentInfo) {
         let client_ip = req
             .connection_info()
             .realip_remote_addr()

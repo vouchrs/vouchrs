@@ -45,7 +45,7 @@ impl IdTokenProcessor {
         expires_at: DateTime<Utc>,
         apple_user_info: Option<&AppleUserInfo>,
         client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::user_agent::UserAgentInfo>,
+        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> Result<TokenProcessingResult, OAuthError> {
         let id_token_ref =
             id_token.ok_or_else(|| OAuthError::IdToken("No ID token available".to_string()))?;

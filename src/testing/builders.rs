@@ -6,7 +6,7 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::session::SessionManager;
 use crate::settings::{ApplicationSettings, ProxySettings, SessionSettings, VouchrsSettings};
-use crate::utils::user_agent::UserAgentInfo;
+use crate::utils::headers::UserAgentInfo;
 use chrono::{Duration, Utc};
 
 use super::constants::{

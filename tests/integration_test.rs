@@ -1,7 +1,7 @@
 // Integration test for JWT settings and user cookie functionality
 use vouchrs::models::VouchrsUserData;
 use vouchrs::testing::fixtures::TestFixtures;
-use vouchrs::utils::user_agent::UserAgentInfo;
+use vouchrs::utils::headers::UserAgentInfo;
 
 /// Helper function to create test user data with optional context
 fn create_test_user_data(
