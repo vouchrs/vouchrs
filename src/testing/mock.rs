@@ -145,12 +145,37 @@ impl MockJwtConfig {
     ///
     /// Returns an error if the file cannot be created or written to.
     pub fn create_test_key_file(path: &str) -> std::io::Result<()> {
-        let test_key = r"-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
-9QFCar9R+eojTjLOXCisVV9xfvehRANCAATyHpTDz7xyWXHaC0FXYlwK5r4IpeHx
-1X4WXDZiAKUxHblBs1Kn15IR334KNiNP7gEWM+9BFuWh9uJwHGOBJXc/
------END PRIVATE KEY-----";
+        let test_key = Self::generate_test_private_key();
         std::fs::write(path, test_key)
+    }
+
+    /// Generate a new P-256 private key for testing
+    ///
+    /// This creates a fresh cryptographic key each time it's called,
+    /// eliminating the security risk of hardcoded keys in source code.
+    ///
+    /// # Returns
+    ///
+    /// A PEM-formatted P-256 private key suitable for ES256 JWT signing
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cryptographic key generation or PEM encoding fails.
+    /// This should only happen in exceptional circumstances like
+    /// insufficient system entropy or memory allocation failures.
+    #[must_use]
+    pub fn generate_test_private_key() -> String {
+        use p256::pkcs8::EncodePrivateKey;
+        use p256::SecretKey;
+
+        // Generate a new random P-256 secret key
+        let secret_key = SecretKey::random(&mut rand::rng());
+
+        // Encode as PKCS#8 PEM format
+        secret_key
+            .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
+            .expect("Failed to encode private key as PKCS#8 PEM")
+            .to_string()
     }
 
     /// Clean up test key file
