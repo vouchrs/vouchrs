@@ -31,6 +31,9 @@ WORKDIR /app
 # Copy dependency files first for better caching
 COPY Cargo.toml Cargo.lock ./
 
+# Create a temporary Cargo.toml without test configurations for dependency build
+RUN sed '/^# Integration tests require/,$d' Cargo.toml > Cargo-deps.toml && mv Cargo-deps.toml Cargo.toml
+
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
@@ -46,12 +49,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
     esac && \
-    cargo build --release --target $TARGET --locked
+    cargo build --release --target $TARGET --locked --bin vouchrs
 RUN rm src/main.rs
 
-# Copy source code
+# Copy source code and restore original Cargo.toml
 COPY src ./src
-COPY Settings.toml ./
+COPY tests ./tests
+COPY Cargo.toml Settings.toml ./
 
 # Build the application with static linking for the target platform
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -62,7 +66,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     "x86_64-unknown-linux-musl") export CC_x86_64_unknown_linux_musl=musl-gcc ;; \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
     esac && \
-    cargo build --release --target $TARGET --locked && \
+    cargo build --release --target $TARGET --locked --bin vouchrs && \
     cp /app/target/$TARGET/release/vouchrs /app/vouchrs
 
 # Copy the static files that were built

@@ -124,7 +124,7 @@ uuid = { version = "1.17.0", features = ["v4"] }
 serial_test = "3.2.0"
 tempfile = "3.20.0"
 
-# Enable testing feature for integration tests
+# Integration tests require the testing feature to access test utilities
 [[test]]
 name = "integration_test"
 required-features = ["testing"]
