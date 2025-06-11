@@ -455,4 +455,65 @@ mod tests {
         let empty = MockValidationData::empty_data();
         assert!(empty.get("name").unwrap().is_empty());
     }
+
+    #[test]
+    fn test_dynamic_key_generation() {
+        // Generate multiple keys and verify they are different
+        let key1 = MockJwtConfig::generate_test_private_key();
+        let key2 = MockJwtConfig::generate_test_private_key();
+        let key3 = MockJwtConfig::generate_test_private_key();
+
+        // All keys should be valid PKCS#8 PEM format
+        assert!(key1.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key1.trim_end().ends_with("-----END PRIVATE KEY-----"));
+        assert!(key2.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key2.trim_end().ends_with("-----END PRIVATE KEY-----"));
+        assert!(key3.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key3.trim_end().ends_with("-----END PRIVATE KEY-----"));
+
+        // Each key should be different (cryptographic randomness test)
+        assert_ne!(key1, key2, "First and second keys should be different");
+        assert_ne!(key2, key3, "Second and third keys should be different");
+        assert_ne!(key1, key3, "First and third keys should be different");
+
+        // Keys should be reasonably long (P-256 private keys in PEM format)
+        assert!(key1.len() > 200, "Key should be substantial length");
+        assert!(key2.len() > 200, "Key should be substantial length");
+        assert!(key3.len() > 200, "Key should be substantial length");
+    }
+
+    #[test]
+    fn test_create_test_key_file_with_dynamic_generation() {
+        use tempfile::NamedTempFile;
+
+        // Create a temporary file
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let temp_path = temp_file.path().to_str().unwrap();
+
+        // Create key file using our new method
+        let result = MockJwtConfig::create_test_key_file(temp_path);
+        assert!(result.is_ok(), "Key file creation should succeed");
+
+        // Verify the file exists and contains a valid key
+        assert!(
+            std::path::Path::new(temp_path).exists(),
+            "Key file should exist"
+        );
+
+        let key_content =
+            std::fs::read_to_string(temp_path).expect("Should be able to read key file");
+
+        assert!(key_content.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(key_content
+            .trim_end()
+            .ends_with("-----END PRIVATE KEY-----"));
+        assert!(key_content.len() > 200, "Key should be substantial length");
+
+        // Verify it's different from a direct generation call
+        let direct_key = MockJwtConfig::generate_test_private_key();
+        assert_ne!(
+            key_content, direct_key,
+            "File key should be different from direct generation"
+        );
+    }
 }

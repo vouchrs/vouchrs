@@ -5,21 +5,29 @@ use vouchrs::settings::JwtSigningConfig;
 use vouchrs::utils::apple::generate_jwt_client_secret;
 use vouchrs::utils::crypto::decode_jwt_payload;
 
+#[cfg(feature = "testing")]
+use vouchrs::testing::mock::MockJwtConfig;
+
 // Helper function to create a test JWT signing config
 fn create_test_jwt_config() -> JwtSigningConfig {
     create_test_jwt_config_with_path("/tmp/test_apple_key.p8")
 }
 
 // Helper function to create a test JWT signing config with custom path
+#[cfg_attr(not(feature = "testing"), allow(unused_variables, unreachable_code))]
 fn create_test_jwt_config_with_path(path: &str) -> JwtSigningConfig {
-    // Create a temporary test key file
-    let test_key = r"-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgpQUGzV2mpXNdjHnV
-9QFCar9R+eojTjLOXCisVV9xfvehRANCAATyHpTDz7xyWXHaC0FXYlwK5r4IpeHx
-1X4WXDZiAKUxHblBs1Kn15IR334KNiNP7gEWM+9BFuWh9uJwHGOBJXc/
------END PRIVATE KEY-----";
+    #[cfg(feature = "testing")]
+    {
+        // Use the secure dynamic key generation from MockJwtConfig
+        let test_key = MockJwtConfig::generate_test_private_key();
+        fs::write(path, test_key).expect("Failed to write test key file");
+    }
 
-    fs::write(path, test_key).expect("Failed to write test key file");
+    #[cfg(not(feature = "testing"))]
+    {
+        // Fallback for non-testing builds (should not happen in practice)
+        panic!("This test requires the 'testing' feature to be enabled for secure key generation");
+    }
 
     JwtSigningConfig {
         team_id: Some("TEST123456".to_string()),

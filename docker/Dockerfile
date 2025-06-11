@@ -52,10 +52,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --target $TARGET --locked --bin vouchrs
 RUN rm src/main.rs
 
-# Copy source code and restore original Cargo.toml
+# Copy source code and restore filtered Cargo.toml without test configurations
 COPY src ./src
-COPY tests ./tests
 COPY Cargo.toml Settings.toml ./
+RUN sed '/^# Integration tests require/,$d' Cargo.toml > Cargo-filtered.toml && mv Cargo-filtered.toml Cargo.toml
 
 # Build the application with static linking for the target platform
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
