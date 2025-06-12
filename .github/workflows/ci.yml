@@ -134,14 +134,10 @@ jobs:
           org.opencontainers.image.revision=${{ github.sha }}
           org.opencontainers.image.licenses=MIT
         cache-from: |
-          type=gha,scope=vouchrs-docker
-          type=gha,scope=vouchrs-docker-dev
-          type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
-          type=registry,ref=ghcr.io/${{ github.repository }}:dev
+          type=gha,scope=vouchrs-deps
+          type=gha,scope=vouchrs-dev
         cache-to: |
-          type=gha,mode=max,scope=vouchrs-docker-dev
-          type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev,mode=max
-          type=inline
+          type=gha,mode=max,scope=vouchrs-dev
 
   docker-build-test:
     name: Docker Build Test
@@ -163,9 +159,8 @@ jobs:
         platforms: linux/amd64
         push: false
         cache-from: |
-          type=gha,scope=vouchrs-docker
-          type=gha,scope=vouchrs-docker-dev
-          type=gha,scope=vouchrs-docker-release
+          type=gha,scope=vouchrs-deps
+          type=gha,scope=vouchrs-dev
+          type=gha,scope=vouchrs-release
         cache-to: |
-          type=gha,mode=max,scope=vouchrs-docker
-          type=inline
+          type=gha,mode=max,scope=vouchrs-test

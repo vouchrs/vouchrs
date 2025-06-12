@@ -60,11 +60,10 @@ jobs:
           platforms: linux/amd64
           push: false
           cache-from: |
-            type=gha,scope=vouchrs-docker-deps
+            type=gha,scope=vouchrs-deps
             type=registry,ref=ghcr.io/${{ github.repository }}:cache-deps
           cache-to: |
-            type=gha,mode=max,scope=vouchrs-docker-deps
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache-deps,mode=max
+            type=gha,mode=max,scope=vouchrs-deps
 
       - name: Pre-warm build cache (dry-run)
         if: inputs.dry_run == true
@@ -75,8 +74,8 @@ jobs:
           target: builder
           platforms: linux/amd64
           push: false
-          cache-from: type=gha,scope=vouchrs-docker-deps
-          cache-to: type=gha,mode=max,scope=vouchrs-docker-deps
+          cache-from: type=gha,scope=vouchrs-deps
+          cache-to: type=gha,mode=max,scope=vouchrs-deps
 
       - name: Extract version parts
         id: version_parts
@@ -110,19 +109,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
           cache-from: |
-            type=gha,scope=vouchrs-docker
-            type=gha,scope=vouchrs-docker-dev
-            type=gha,scope=vouchrs-docker-release
-            type=gha,scope=vouchrs-docker-deps
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache-dev
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache-release
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache-deps
-            type=registry,ref=ghcr.io/${{ github.repository }}:latest
-            type=registry,ref=ghcr.io/${{ github.repository }}:dev
+            type=gha,scope=vouchrs-deps
+            type=gha,scope=vouchrs-release
           cache-to: |
-            type=gha,mode=max,scope=vouchrs-docker-release
-            type=registry,ref=ghcr.io/${{ github.repository }}:cache-release,mode=max
-            type=inline
+            type=gha,mode=max,scope=vouchrs-release
 
       - name: Build Docker Image (dry-run)
         id: build-dry-run
@@ -148,13 +138,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
           cache-from: |
-            type=gha,scope=vouchrs-docker
-            type=gha,scope=vouchrs-docker-dev
-            type=gha,scope=vouchrs-docker-release
-            type=gha,scope=vouchrs-docker-deps
+            type=gha,scope=vouchrs-deps
+            type=gha,scope=vouchrs-release
           cache-to: |
-            type=gha,mode=max,scope=vouchrs-docker-release
-            type=inline
+            type=gha,mode=max,scope=vouchrs-release
 
       - name: Generate artifact attestation
         if: inputs.dry_run == false
