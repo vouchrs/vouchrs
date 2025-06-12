@@ -741,7 +741,7 @@ impl SessionManager {
     pub fn create_session_from_passkey_result(
         &self,
         req: &HttpRequest,
-        passkey_result: crate::session::auth_results::PasskeyResult,
+        passkey_result: crate::passkey::PasskeyResult,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         self.handle_passkey_authentication_direct(req, passkey_result, redirect_url)
@@ -818,7 +818,7 @@ impl SessionManager {
     /// Returns a session creation error if the input is invalid
     pub fn create_passkey_session(
         &self,
-        passkey_result: crate::session::auth_results::PasskeyResult,
+        passkey_result: crate::passkey::PasskeyResult,
         req: &HttpRequest,
     ) -> Result<
         (
@@ -900,7 +900,7 @@ impl SessionManager {
     pub fn handle_passkey_authentication_direct(
         &self,
         req: &HttpRequest,
-        passkey_result: crate::session::auth_results::PasskeyResult,
+        passkey_result: crate::passkey::PasskeyResult,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         // Direct session creation
@@ -926,7 +926,7 @@ impl SessionManager {
     pub fn handle_passkey_authentication_direct_json(
         &self,
         req: &HttpRequest,
-        passkey_result: crate::session::auth_results::PasskeyResult,
+        passkey_result: crate::passkey::PasskeyResult,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         // Direct session creation

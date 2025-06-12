@@ -5,13 +5,26 @@
 //! registration and authentication flows.
 
 use base64::Engine;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
 use crate::passkey::PasskeyUserData;
-use crate::session::PasskeyResult;
 use crate::settings::VouchrsSettings;
+
+/// Pure authentication result from Passkey flow - no session logic
+#[derive(Debug, Clone)]
+pub struct PasskeyResult {
+    pub provider: String,    // Always "passkey"
+    pub provider_id: String, // user_handle
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub expires_at: DateTime<Utc>,
+    pub authenticated_at: DateTime<Utc>,
+    // Passkey-specific data
+    pub credential_id: String,
+    pub user_handle: String,
+}
 
 /// Error types for passkey authentication operations
 #[derive(Debug)]

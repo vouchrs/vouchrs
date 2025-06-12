@@ -13,7 +13,6 @@
 //! - [`auth_results`] - Authentication result structures for module separation
 //! - [`token_processor`] - OAuth token processing (moved from oauth module)
 
-pub mod auth_results;
 pub mod cookie;
 pub mod manager;
 pub mod passkey;
@@ -26,6 +25,3 @@ pub use manager::{SessionError, SessionManager};
 pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
 pub use utils::{create_error_response, extract_client_info, get_state_from_callback};
 pub use validation::{calculate_client_context_hash, validate_client_context};
-
-// Re-export auth result types
-pub use auth_results::{OauthResult, PasskeyResult};
