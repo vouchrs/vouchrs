@@ -47,25 +47,8 @@ pub struct OAuthSessionResult {
 }
 
 impl OAuthSessionResult {
-    /// Convert to the common `AuthenticationResult` type
-    #[must_use]
-    pub fn into_auth_result(self) -> crate::models::auth::AuthenticationResult {
-        crate::models::auth::AuthenticationResult::new(
-            self.session,
-            self.user_data,
-            self.redirect_url,
-        )
-    }
-
-    /// Create from the common `AuthenticationResult` type
-    #[must_use]
-    pub fn from_auth_result(auth_result: crate::models::auth::AuthenticationResult) -> Self {
-        Self {
-            session: auth_result.session,
-            user_data: auth_result.user_data,
-            redirect_url: auth_result.redirect_url,
-        }
-    }
+    // Note: Conversion methods to AuthenticationResult removed as part of
+    // AuthenticationResult elimination strategy
 }
 
 /// Result of OAuth flow initiation

@@ -3,50 +3,9 @@
 //! This module provides unified data structures and error types that can be used
 //! across all authentication methods (OAuth, Passkey, etc.)
 
-use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::service::OAuthError;
 use crate::passkey::PasskeyError;
 use std::fmt;
-
-/// Common result type for all authentication methods
-///
-/// This structure provides a unified interface for authentication results
-/// regardless of the authentication method used (OAuth, Passkey, etc.)
-#[derive(Debug, Clone)]
-pub struct AuthenticationResult {
-    /// The session data containing tokens and authentication state
-    pub session: VouchrsSession,
-    /// The user data containing profile information and client context
-    pub user_data: VouchrsUserData,
-    /// Optional redirect URL after successful authentication
-    pub redirect_url: Option<String>,
-}
-
-impl AuthenticationResult {
-    /// Create a new authentication result
-    #[must_use]
-    pub fn new(
-        session: VouchrsSession,
-        user_data: VouchrsUserData,
-        redirect_url: Option<String>,
-    ) -> Self {
-        Self {
-            session,
-            user_data,
-            redirect_url,
-        }
-    }
-
-    /// Create authentication result with default redirect
-    #[must_use]
-    pub fn with_default_redirect(session: VouchrsSession, user_data: VouchrsUserData) -> Self {
-        Self {
-            session,
-            user_data,
-            redirect_url: Some("/".to_string()),
-        }
-    }
-}
 
 /// Common error type for authentication operations
 ///
@@ -176,28 +135,5 @@ pub enum AuthenticationRequest {
         credential_response: webauthn_rs::prelude::PublicKeyCredential,
         authentication_state: webauthn_rs::prelude::PasskeyAuthentication,
         user_data: Option<crate::passkey::PasskeyUserData>,
-    },
-}
-
-/// Authentication response types for different operations
-#[derive(Debug, Clone)]
-pub enum AuthenticationResponse {
-    /// Standard authentication result with session and user data
-    Session(AuthenticationResult),
-    /// OAuth flow initiation result with authorization URL
-    OAuthFlow {
-        authorization_url: String,
-        oauth_state: crate::oauth::OAuthState,
-    },
-    /// Passkey registration start result
-    PasskeyRegistrationStart {
-        options: webauthn_rs::prelude::CreationChallengeResponse,
-        state: webauthn_rs::prelude::PasskeyRegistration,
-        user_handle: String,
-    },
-    /// Passkey authentication start result
-    PasskeyAuthenticationStart {
-        options: webauthn_rs::prelude::RequestChallengeResponse,
-        state: webauthn_rs::prelude::PasskeyAuthentication,
     },
 }

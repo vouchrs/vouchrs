@@ -19,7 +19,7 @@ impl IdTokenProcessor {
     /// Process ID token and return simple OAuth result - NO session creation logic here
     ///
     /// This method extracts claims from ID tokens and returns a simple `OauthResult`
-    /// that can be converted to `AuthenticationResult` by `SessionManager`.
+    /// that can be directly converted to `VouchrsSession` and `VouchrsUserData` by `SessionManager`.
     ///
     /// # Errors
     ///

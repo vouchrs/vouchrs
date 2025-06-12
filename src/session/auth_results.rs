@@ -1,8 +1,8 @@
 //! Authentication result structures for module separation
 //!
 //! This module defines lightweight result structures that authentication modules
-//! return, which can be easily converted to `AuthenticationResult` by the
-//! session manager.
+//! return, which are directly converted to `VouchrsSession` and `VouchrsUserData`
+//! by the session manager without intermediate abstractions.
 
 use chrono::{DateTime, Utc};
 
