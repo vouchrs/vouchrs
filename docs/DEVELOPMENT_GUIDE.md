@@ -104,8 +104,8 @@ Stateless encrypted session handling without server-side storage.
 
 ```rust
 // Sessions are encrypted into HTTP-only cookies
-let session_cookie = session_manager.create_session_cookie(&session)?;
-let user_cookie = session_manager.create_user_cookie(&user_data)?;
+let session_cookie = session_manager.cookie_factory().create_session_cookie(&session)?;
+let user_cookie = session_manager.cookie_factory().create_user_cookie(&user_data)?;
 
 // Session data is split across two cookies:
 // - vouchrs_session: tokens, credentials, expiry
