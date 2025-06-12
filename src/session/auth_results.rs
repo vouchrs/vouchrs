@@ -23,7 +23,7 @@ pub struct OauthResult {
 /// Pure authentication result from Passkey flow - no session logic
 #[derive(Debug, Clone)]
 pub struct PasskeyResult {
-    pub provider: String, // Always "passkey"
+    pub provider: String,    // Always "passkey"
     pub provider_id: String, // user_handle
     pub email: Option<String>,
     pub name: Option<String>,

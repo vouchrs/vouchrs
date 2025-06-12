@@ -170,7 +170,8 @@ impl PasskeyAuthenticationServiceImpl {
     ) -> PasskeyResult {
         let now = Utc::now();
         let duration_hours = session_duration_hours.unwrap_or(168); // Default 7 days
-        let expires_at = now + chrono::Duration::hours(i64::try_from(duration_hours).unwrap_or(168));
+        let expires_at =
+            now + chrono::Duration::hours(i64::try_from(duration_hours).unwrap_or(168));
 
         PasskeyResult {
             provider: "passkey".to_string(),

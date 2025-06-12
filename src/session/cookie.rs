@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
-use crate::utils::crypto::{encrypt_data, decrypt_data};
+use crate::utils::crypto::{decrypt_data, encrypt_data};
 
 /// Common cookie names used across the application
 pub const COOKIE_NAME: &str = "vouchrs_session";
@@ -459,8 +459,12 @@ mod tests {
         assert!(!factory_no_refresh.is_cookie_refresh_enabled());
 
         let session = TestFixtures::oauth_session();
-        let normal_cookie = factory_with_refresh.create_session_cookie(&session).unwrap();
-        let refreshed_cookie = factory_with_refresh.create_refreshed_session_cookie(&session).unwrap();
+        let normal_cookie = factory_with_refresh
+            .create_session_cookie(&session)
+            .unwrap();
+        let refreshed_cookie = factory_with_refresh
+            .create_refreshed_session_cookie(&session)
+            .unwrap();
 
         // Both should be valid cookies but may have different max_age
         assert_eq!(normal_cookie.name(), COOKIE_NAME);

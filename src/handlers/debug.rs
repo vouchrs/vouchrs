@@ -69,7 +69,8 @@ pub async fn oauth_debug(
         Ok(Some(session)) => {
             // Also try to get user data from user cookie
             let user_data = session_manager
-                .cookie_factory().get_user_data_from_request(&req)
+                .cookie_factory()
+                .get_user_data_from_request(&req)
                 .unwrap_or(None);
 
             let debug_response = serde_json::json!({

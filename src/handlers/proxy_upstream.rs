@@ -112,9 +112,13 @@ fn update_session_cookie_if_needed(
 
         // Use IP binding if enabled for cookie updates
         let cookie_result = if session_manager.is_session_ip_binding_enabled() {
-            session_manager.cookie_factory().create_session_cookie_with_context(session, req)
+            session_manager
+                .cookie_factory()
+                .create_session_cookie_with_context(session, req)
         } else {
-            session_manager.cookie_factory().create_session_cookie(session)
+            session_manager
+                .cookie_factory()
+                .create_session_cookie(session)
         };
 
         match cookie_result {

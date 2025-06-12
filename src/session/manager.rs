@@ -2,9 +2,9 @@ use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
 use crate::session::cookie::{CookieFactory, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::validation::{calculate_client_context_hash, validate_client_context};
-use crate::utils::crypto::{decrypt_data, derive_encryption_key};
 #[cfg(test)]
 use crate::utils::crypto::encrypt_data;
+use crate::utils::crypto::{decrypt_data, derive_encryption_key};
 use crate::utils::responses::ResponseBuilder;
 use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
@@ -92,7 +92,7 @@ impl SessionManager {
     }
 
     /// Get reference to cookie factory for direct cookie operations
-    /// 
+    ///
     /// Use this when you need direct access to cookie creation methods
     /// or want to avoid the convenience wrapper methods in `SessionManager`.
     /// This provides access to all cookie factory functionality without
@@ -474,12 +474,7 @@ impl SessionManager {
         if let Some(ref oauth_service) = self.oauth_service {
             // Call OAuth service to get OAuth result (no session creation)
             let oauth_result = oauth_service
-                .process_oauth_callback(
-                    provider,
-                    authorization_code,
-                    oauth_state,
-                    apple_user_info,
-                )
+                .process_oauth_callback(provider, authorization_code, oauth_state, apple_user_info)
                 .await
                 .map_err(|e| {
                     log::error!("OAuth callback processing failed: {e}");
@@ -680,7 +675,8 @@ impl SessionManager {
     ) -> Result<HttpResponse, HttpResponse> {
         // Create session cookies - use IP binding if enabled
         let session_cookie = if self.bind_session_to_ip {
-            self.cookie_factory.create_session_cookie_with_context(session, req)
+            self.cookie_factory
+                .create_session_cookie_with_context(session, req)
         } else {
             self.cookie_factory.create_session_cookie(session)
         }
@@ -690,7 +686,8 @@ impl SessionManager {
         })?;
 
         let user_cookie = self
-            .cookie_factory.create_user_cookie_with_persistence(req, user_data)
+            .cookie_factory
+            .create_user_cookie_with_persistence(req, user_data)
             .map_err(|e| {
                 log::error!("Failed to create user cookie: {e}");
                 Self::create_service_error_response("Session creation failed")
@@ -722,7 +719,8 @@ impl SessionManager {
     ) -> Result<HttpResponse, HttpResponse> {
         // Create session cookies - use IP binding if enabled
         let session_cookie = if self.bind_session_to_ip {
-            self.cookie_factory.create_session_cookie_with_context(session, req)
+            self.cookie_factory
+                .create_session_cookie_with_context(session, req)
         } else {
             self.cookie_factory.create_session_cookie(session)
         }
@@ -732,7 +730,8 @@ impl SessionManager {
         })?;
 
         let user_cookie = self
-            .cookie_factory.create_user_cookie_with_persistence(req, user_data)
+            .cookie_factory
+            .create_user_cookie_with_persistence(req, user_data)
             .map_err(|e| {
                 log::error!("Failed to create user cookie: {e}");
                 Self::create_service_error_response("Session creation failed")
@@ -967,7 +966,10 @@ mod tests {
         let session = TestFixtures::oauth_session();
 
         // Test session cookie creation via CookieFactory
-        let cookie = manager.cookie_factory().create_session_cookie(&session).unwrap();
+        let cookie = manager
+            .cookie_factory()
+            .create_session_cookie(&session)
+            .unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
 
@@ -988,10 +990,12 @@ mod tests {
 
         // Create normal and refreshed cookies
         let normal_cookie = manager_with_refresh
-            .cookie_factory().create_session_cookie(&session)
+            .cookie_factory()
+            .create_session_cookie(&session)
             .unwrap();
         let refreshed_cookie = manager_with_refresh
-            .cookie_factory().create_refreshed_session_cookie(&session)
+            .cookie_factory()
+            .create_refreshed_session_cookie(&session)
             .unwrap();
 
         // Both should have correct name and valid content
@@ -1005,9 +1009,13 @@ mod tests {
         assert!(!manager_no_refresh.is_cookie_refresh_enabled());
 
         // Refreshed cookie should behave same as normal when disabled
-        let disabled_normal = manager_no_refresh.cookie_factory().create_session_cookie(&session).unwrap();
+        let disabled_normal = manager_no_refresh
+            .cookie_factory()
+            .create_session_cookie(&session)
+            .unwrap();
         let disabled_refreshed = manager_no_refresh
-            .cookie_factory().create_refreshed_session_cookie(&session)
+            .cookie_factory()
+            .create_refreshed_session_cookie(&session)
             .unwrap();
         assert_eq!(disabled_refreshed.max_age(), disabled_normal.max_age());
     }
@@ -1289,7 +1297,8 @@ mod tests {
 
         // Create session cookie with IP binding
         let cookie = manager
-            .cookie_factory().create_session_cookie_with_context(&session, &req)
+            .cookie_factory()
+            .create_session_cookie_with_context(&session, &req)
             .unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
@@ -1311,7 +1320,8 @@ mod tests {
         );
 
         let cookie_no_binding = manager_no_binding
-            .cookie_factory().create_session_cookie_with_context(&session, &req)
+            .cookie_factory()
+            .create_session_cookie_with_context(&session, &req)
             .unwrap();
         let decrypted_no_binding: VouchrsSession = crate::utils::crypto::decrypt_data(
             cookie_no_binding.value(),
