@@ -213,42 +213,6 @@ impl PasskeyAuthenticationServiceImpl {
             redirect_url: redirect_url.or_else(|| Some("/".to_string())),
         }
     }
-
-    /// Validate authentication state to prevent replay attacks and ensure request legitimacy
-    ///
-    /// In a more secure implementation, this would:
-    /// 1. Use encrypted, HTTP-only, short-lived cookies for state storage
-    /// 2. Bind state to client IP address
-    /// 3. Implement timestamp validation to ensure challenges aren't too old
-    /// 4. Implement one-time use validation to prevent replay attacks
-    fn validate_authentication_state(_state: &PasskeyAuthentication, _webauthn: &Webauthn) {
-        log::info!("Validating authentication state for stateless passkey flow");
-
-        // TODO: Implement enhanced state validation:
-        // - Decrypt and validate state from secure cookie
-        // - Check timestamp and ensure not expired
-        // - Verify client IP binding
-        // - Mark as used to prevent replay
-
-        // For now, we perform basic validation
-        // In a production system, this should be much more robust
-    }
-
-    /// Validate registration state to prevent replay attacks and ensure request legitimacy
-    ///
-    /// Similar to authentication state validation but for registration flows
-    fn validate_registration_state(_state: &PasskeyRegistration, _webauthn: &Webauthn) {
-        log::info!("Validating registration state for stateless passkey flow");
-
-        // TODO: Implement enhanced state validation:
-        // - Decrypt and validate state from secure cookie
-        // - Check timestamp and ensure not expired
-        // - Verify client IP binding
-        // - Mark as used to prevent replay
-
-        // For now, we perform basic validation
-        // In a production system, this should be much more robust
-    }
 }
 
 impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
@@ -265,12 +229,11 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
 
         log::debug!("Processing stateless passkey registration completion");
 
-        // Validate registration state - this ensures the request corresponds to a legitimate
-        // registration challenge we issued and prevents replay attacks
-        let webauthn = self.create_webauthn()?;
-
-        // We validate that the state is legitimate and the challenge matches.
-        Self::validate_registration_state(&registration_data.registration_state, &webauthn);
+        // State validation is performed at the handler level via secure cookies with:
+        // - Decryption and validation from secure cookie
+        // - Timestamp validation to ensure not expired
+        // - Client IP binding verification
+        // - Operation type validation to prevent misuse
 
         // Extract credential_id from the client response
         let credential_id = base64::engine::general_purpose::URL_SAFE
@@ -304,14 +267,11 @@ impl PasskeyAuthenticationService for PasskeyAuthenticationServiceImpl {
 
         log::debug!("Processing stateless passkey authentication completion");
 
-        // Validate authentication state - this ensures the request corresponds to a legitimate
-        // authentication challenge we issued and prevents replay attacks
-        let webauthn = self.create_webauthn()?;
-
-        // We still need to validate the challenge and state, but we can't complete the full
-        // authentication because we don't have stored credentials. Instead, we validate
-        // that the state is legitimate and the challenge matches.
-        Self::validate_authentication_state(&authentication_data.authentication_state, &webauthn);
+        // State validation is performed at the handler level via secure cookies with:
+        // - Decryption and validation from secure cookie
+        // - Timestamp validation to ensure not expired
+        // - Client IP binding verification
+        // - Operation type validation to prevent misuse
 
         // Extract credential_id from the client response
         let credential_id = base64::engine::general_purpose::URL_SAFE
