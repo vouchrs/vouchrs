@@ -4,8 +4,9 @@
 //! token processing, and session creation for all OAuth providers.
 
 use crate::models::{VouchrsSession, VouchrsUserData};
-use crate::oauth::token_processor::IdTokenProcessor;
 use crate::oauth::{OAuthConfig, OAuthState};
+use crate::session::auth_results::OauthResult;
+use crate::session::token_processor::IdTokenProcessor;
 use crate::settings::VouchrsSettings;
 use crate::utils::apple::AppleUserInfo;
 use anyhow::Result;
@@ -84,7 +85,7 @@ pub struct OAuthTokenRefreshResult {
 /// OAuth authentication service trait
 #[async_trait]
 pub trait OAuthAuthenticationService {
-    /// Process OAuth callback and create session data with client context
+    /// Process OAuth callback and return simple OAuth result
     ///
     /// # Errors
     ///
@@ -92,16 +93,13 @@ pub trait OAuthAuthenticationService {
     /// - Provider is not configured
     /// - Authorization code exchange fails
     /// - ID token processing fails
-    /// - Session creation fails
     async fn process_oauth_callback(
         &self,
         provider: &str,
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
-        client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
-    ) -> Result<OAuthSessionResult, OAuthError>;
+    ) -> Result<OauthResult, OAuthError>;
 
     /// Initiate OAuth flow
     ///
@@ -165,16 +163,12 @@ impl OAuthAuthenticationService for OAuthAuthenticationServiceImpl {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
-        client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
-    ) -> Result<OAuthSessionResult, OAuthError> {
+    ) -> Result<OauthResult, OAuthError> {
         self.process_oauth_callback_async(
             provider,
             authorization_code,
             oauth_state,
             apple_user_info,
-            client_ip,
-            user_agent_info,
         )
         .await
     }
@@ -223,11 +217,9 @@ impl OAuthAuthenticationServiceImpl {
         &self,
         provider: &str,
         authorization_code: &str,
-        oauth_state: &OAuthState,
+        _oauth_state: &OAuthState, // redirect_url handled by session manager
         apple_user_info: Option<AppleUserInfo>,
-        client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
-    ) -> Result<OAuthSessionResult, OAuthError> {
+    ) -> Result<OauthResult, OAuthError> {
         // Get OAuth config with lazy initialization
         let oauth_config = self.get_oauth_config().await?;
 
@@ -240,22 +232,16 @@ impl OAuthAuthenticationServiceImpl {
         // Use the apple_user_info parameter if available, otherwise use fallback from token exchange
         let final_apple_user_info = apple_user_info.or(apple_user_info_fallback);
 
-        // Process ID token and create session using IdTokenProcessor
-        let token_result = IdTokenProcessor::process_id_token(
+        // Process ID token and create OAuth result using IdTokenProcessor (no session creation)
+        let oauth_result = IdTokenProcessor::process_id_token(
             provider,
             id_token.as_deref(),
             refresh_token.clone(),
             expires_at,
             final_apple_user_info.as_ref(),
-            client_ip,
-            user_agent_info,
         )
         .map_err(|e| OAuthError::IdToken(format!("ID token processing failed: {e}")))?;
 
-        Ok(OAuthSessionResult {
-            session: token_result.session,
-            user_data: token_result.user_data,
-            redirect_url: oauth_state.redirect_url.clone(),
-        })
+        Ok(oauth_result)
     }
 }

@@ -7,7 +7,6 @@ pub mod config;
 pub mod jwt_validation;
 pub mod providers;
 pub mod service;
-pub mod token_processor;
 
 // Re-export main configuration and utility types
 pub use config::{check_and_refresh_tokens, refresh_tokens, OAuthConfig, RuntimeProvider};
@@ -20,9 +19,6 @@ pub use service::{
 
 // Re-export JWT validation types
 pub use jwt_validation::{JwtValidationError, JwtValidator, OidcDiscoveryDocument};
-
-// Re-export token processing types
-pub use token_processor::{IdTokenProcessor, TokenProcessingResult};
 
 use serde::{Deserialize, Serialize};
 

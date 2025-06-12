@@ -78,7 +78,7 @@ fn test_user_cookie_contains_required_fields() {
     // Test user cookie encryption/decryption
     let session_manager = TestFixtures::session_manager_from_settings(&settings);
     let user_cookie = session_manager
-        .create_user_cookie(&user_data)
+        .cookie_factory().create_user_cookie(&user_data)
         .expect("Should create user cookie");
 
     // Verify cookie has correct properties
@@ -94,7 +94,7 @@ fn test_user_cookie_contains_required_fields() {
     let test_req = TestFixtures::request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
-        .get_user_data_from_request(&test_req)
+        .cookie_factory().get_user_data_from_request(&test_req)
         .expect("Should get user data from request")
         .expect("Should have user data");
 
@@ -137,14 +137,14 @@ fn test_minimal_user_data() {
     // Test encryption/decryption with minimal data
     let session_manager = TestFixtures::session_manager_from_settings(&settings);
     let user_cookie = session_manager
-        .create_user_cookie(&user_data)
+        .cookie_factory().create_user_cookie(&user_data)
         .expect("Should create user cookie");
 
     // Test that we can decrypt the user data back using a mock request
     let test_req = TestFixtures::request_with_cookie(user_cookie.clone());
 
     let decrypted_data = session_manager
-        .get_user_data_from_request(&test_req)
+        .cookie_factory().get_user_data_from_request(&test_req)
         .expect("Should get user data from request")
         .expect("Should have user data");
 

@@ -68,7 +68,7 @@ fn create_passkey_state_cookie(
     };
 
     session_manager
-        .create_cookie(cookie_name.to_string(), Some(&passkey_state), options)
+        .cookie_factory().create_cookie(cookie_name.to_string(), Some(&passkey_state), options)
         .map_err(|e| {
             PasskeyError::ServiceUnavailable(format!("Failed to create state cookie: {e}"))
         })

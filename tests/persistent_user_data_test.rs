@@ -31,7 +31,7 @@ async fn test_persistent_user_data_preservation() {
 
     // Create an initial user cookie
     let initial_cookie = session_manager
-        .create_user_cookie(&initial_user_data)
+        .cookie_factory().create_user_cookie(&initial_user_data)
         .expect("Should create initial user cookie");
 
     // Create a test request with the existing cookie
@@ -56,7 +56,7 @@ async fn test_persistent_user_data_preservation() {
 
     // Create user cookie with persistence - should preserve existing email and name
     let persistent_cookie = session_manager
-        .create_user_cookie_with_persistence(&req, &new_user_data)
+        .cookie_factory().create_user_cookie_with_persistence(&req, &new_user_data)
         .expect("Should create persistent user cookie");
 
     // Decrypt the persistent cookie to verify data was preserved
@@ -104,7 +104,7 @@ async fn test_no_persistence_different_provider_id() {
     };
 
     let initial_cookie = session_manager
-        .create_user_cookie(&initial_user_data)
+        .cookie_factory().create_user_cookie(&initial_user_data)
         .expect("Should create initial user cookie");
 
     let req = test::TestRequest::get()
@@ -127,7 +127,7 @@ async fn test_no_persistence_different_provider_id() {
     };
 
     let new_cookie = session_manager
-        .create_user_cookie_with_persistence(&req, &new_user_data)
+        .cookie_factory().create_user_cookie_with_persistence(&req, &new_user_data)
         .expect("Should create new user cookie");
 
     let result_data: VouchrsUserData =
@@ -167,7 +167,7 @@ async fn test_new_values_override_existing() {
     };
 
     let initial_cookie = session_manager
-        .create_user_cookie(&initial_user_data)
+        .cookie_factory().create_user_cookie(&initial_user_data)
         .expect("Should create initial user cookie");
 
     let req = test::TestRequest::get()
@@ -190,7 +190,7 @@ async fn test_new_values_override_existing() {
     };
 
     let result_cookie = session_manager
-        .create_user_cookie_with_persistence(&req, &new_user_data)
+        .cookie_factory().create_user_cookie_with_persistence(&req, &new_user_data)
         .expect("Should create result user cookie");
 
     let result_data: VouchrsUserData = vouchrs::utils::crypto::decrypt_data(

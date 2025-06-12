@@ -70,7 +70,7 @@ impl CallbackValidator {
     ) -> Result<(), HttpResponse> {
         if let Some(error) = &callback_data.error {
             error!("OAuth error received: {error}");
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
             return Err(ResponseBuilder::redirect("/auth/sign_in?error=auth_failed")
                 .with_cookie(clear_cookie)
                 .build());
@@ -90,7 +90,7 @@ impl CallbackValidator {
         if let Some(code) = &callback_data.code {
             if code.trim().is_empty() {
                 error!("Empty authorization code received");
-                let clear_cookie = session_manager.create_expired_cookie();
+                let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
                 return Err(ResponseBuilder::redirect("/auth/sign_in?error=auth_failed")
                     .with_cookie(clear_cookie)
                     .build());
@@ -98,7 +98,7 @@ impl CallbackValidator {
             Ok(code.clone())
         } else {
             error!("No authorization code received in OAuth callback");
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
             Err(ResponseBuilder::redirect("/auth/sign_in?error=auth_failed")
                 .with_cookie(clear_cookie)
                 .build())
@@ -116,7 +116,7 @@ impl CallbackValidator {
         if let Some(state) = &callback_data.state {
             if state.trim().is_empty() {
                 error!("Empty state parameter received");
-                let clear_cookie = session_manager.create_expired_cookie();
+                let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
                 return Err(
                     ResponseBuilder::redirect("/auth/sign_in?error=oauth_state_error")
                         .with_cookie(clear_cookie)
@@ -126,7 +126,7 @@ impl CallbackValidator {
             Ok(state.clone())
         } else {
             error!("No state parameter received in OAuth callback");
-            let clear_cookie = session_manager.create_expired_cookie();
+            let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
             Err(
                 ResponseBuilder::redirect("/auth/sign_in?error=oauth_state_error")
                     .with_cookie(clear_cookie)
@@ -151,7 +151,7 @@ impl CallbackValidator {
             }
             Err(e) => {
                 error!("Failed to parse OAuth state: {e}");
-                let clear_cookie = session_manager.create_expired_cookie();
+                let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
                 Err(
                     ResponseBuilder::redirect("/auth/sign_in?error=oauth_state_error")
                         .with_cookie(clear_cookie)

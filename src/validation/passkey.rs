@@ -142,7 +142,7 @@ impl PasskeyValidator {
         req: &HttpRequest,
         session_manager: &SessionManager,
     ) -> Result<Option<PasskeyUserData>, HttpResponse> {
-        match session_manager.get_user_data_from_request(req) {
+        match session_manager.cookie_factory().get_user_data_from_request(req) {
             Ok(Some(stored_user_data)) => {
                 let user_handle = Self::extract_user_handle(credential_response);
 

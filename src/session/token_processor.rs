@@ -1,31 +1,25 @@
 //! ID token processing and validation
 //!
 //! This module handles ID token decoding, validation, and claim extraction
-//! for OAuth authentication flows.
+//! for OAuth authentication flows. Returns simplified result structures
+//! instead of full session data.
 
-use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::service::OAuthError;
+use crate::session::auth_results::OauthResult;
 use crate::utils::apple::AppleUserInfo;
 use crate::utils::crypto::decode_jwt_payload;
 use chrono::{DateTime, TimeZone, Utc};
 use log::{debug, info, warn};
 use serde_json::Value;
 
-/// Result of processing ID token containing both session and user data
-#[derive(Debug, Clone)]
-pub struct TokenProcessingResult {
-    pub session: VouchrsSession,
-    pub user_data: VouchrsUserData,
-}
-
-/// ID token processor for extracting session data from OAuth ID tokens
+/// ID token processor for extracting authentication data from OAuth ID tokens
 pub struct IdTokenProcessor;
 
 impl IdTokenProcessor {
-    /// Process ID token and create session and user data directly
+    /// Process ID token and return simple OAuth result - NO session creation logic here
     ///
-    /// This method contains the core logic for processing OAuth ID tokens
-    /// and creating both session and user data structures directly.
+    /// This method extracts claims from ID tokens and returns a simple `OauthResult`
+    /// that can be converted to `AuthenticationResult` by `SessionManager`.
     ///
     /// # Errors
     ///
@@ -36,17 +30,15 @@ impl IdTokenProcessor {
     ///
     /// # Panics
     ///
-    /// This function may panic if the email extraction logic fails unexpectedly,
-    /// though it's designed to provide fallbacks and defaults.
+    /// Panics if no email is found in either the ID token claims or the Apple user info,
+    /// as a default email should always be available from one of these sources.
     pub fn process_id_token(
         provider: &str,
         id_token: Option<&str>,
         refresh_token: Option<String>,
         expires_at: DateTime<Utc>,
         apple_user_info: Option<&AppleUserInfo>,
-        client_ip: Option<&str>,
-        user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
-    ) -> Result<TokenProcessingResult, OAuthError> {
+    ) -> Result<OauthResult, OAuthError> {
         let id_token_ref =
             id_token.ok_or_else(|| OAuthError::IdToken("No ID token available".to_string()))?;
 
@@ -97,38 +89,24 @@ impl IdTokenProcessor {
         let normalized_provider = Self::normalize_provider(provider, &claims);
 
         info!(
-            "Session built successfully - Email: {user_email}, Provider: {normalized_provider}, Provider ID: {provider_id}, Name: {user_name:?}"
+            "OAuth result extracted - Email: {user_email}, Provider: {normalized_provider}, Provider ID: {provider_id}, Name: {user_name:?}"
         );
 
         let authenticated_at = created_at.unwrap_or_else(Utc::now);
 
-        // Create VouchrsSession directly
-        let session = VouchrsSession {
-            id_token: id_token.map(ToString::to_string),
-            refresh_token,
-            credential_id: None, // OAuth doesn't use credentials
-            user_handle: None,   // OAuth doesn't use user handles
-            provider: normalized_provider.clone(),
-            expires_at,
-            authenticated_at,
-            client_ip: client_ip.map(std::string::ToString::to_string),
-        };
-
-        // Create VouchrsUserData directly
-        let user_data = VouchrsUserData {
-            email: user_email,
-            name: user_name,
+        // Return simple OauthResult - NO session creation here
+        let oauth_result = OauthResult {
             provider: normalized_provider,
             provider_id,
-            client_ip: client_ip.map(std::string::ToString::to_string),
-            user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-            platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-            lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-            mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-            session_start: Some(authenticated_at.timestamp()),
+            email: Some(user_email),
+            name: user_name,
+            expires_at,
+            authenticated_at,
+            id_token: id_token.map(String::from),
+            refresh_token,
         };
 
-        Ok(TokenProcessingResult { session, user_data })
+        Ok(oauth_result)
     }
 
     /// Extract the subject (sub) claim - maps to `provider_id`
@@ -283,17 +261,14 @@ mod tests {
             refresh_token,
             expires_at,
             Some(&apple_user_info),
-            Some("192.168.1.1"),
-            None,
         )
-        .expect("Session should be built");
+        .expect("OAuth result should be created");
 
-        assert_eq!(result.user_data.email, "jane.doe@apple.com");
-        assert_eq!(result.user_data.name.unwrap(), "Jane Doe");
-        assert_eq!(result.user_data.provider, "apple");
-        assert_eq!(result.user_data.provider_id, "apple-sub-123");
-        assert_eq!(result.session.provider, "apple");
-        assert_eq!(result.session.credential_id, None);
-        assert_eq!(result.session.user_handle, None);
+        assert_eq!(result.email.unwrap(), "jane.doe@apple.com");
+        assert_eq!(result.name.unwrap(), "Jane Doe");
+        assert_eq!(result.provider, "apple");
+        assert_eq!(result.provider_id, "apple-sub-123");
+        assert!(result.id_token.is_some());
+        assert!(result.refresh_token.is_some());
     }
 }

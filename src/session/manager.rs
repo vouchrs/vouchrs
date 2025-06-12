@@ -1,13 +1,14 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
-use crate::session::cookie::{CookieOptions, COOKIE_NAME, USER_COOKIE_NAME};
+use crate::session::cookie::{CookieFactory, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::validation::{calculate_client_context_hash, validate_client_context};
-use crate::utils::crypto::{decrypt_data, derive_encryption_key, encrypt_data};
+use crate::utils::crypto::{decrypt_data, derive_encryption_key};
+#[cfg(test)]
+use crate::utils::crypto::encrypt_data;
 use crate::utils::responses::ResponseBuilder;
-use actix_web::{cookie::Cookie, HttpRequest, HttpResponse, ResponseError};
+use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use serde::Serialize;
 use std::sync::Arc;
 
 // Custom error wrapper for ResponseError implementation
@@ -44,9 +45,9 @@ pub struct SessionManager {
     encryption_key: [u8; 32],
     cookie_secure: bool,
     bind_session_to_ip: bool,
-    session_duration_hours: u64,
     session_expiration_hours: u64,
-    session_refresh_hours: u64,
+    // Cookie factory for all cookie operations
+    cookie_factory: CookieFactory,
     // Authentication services (optional - can be None if disabled)
     oauth_service: Option<Arc<dyn crate::oauth::OAuthAuthenticationService + Send + Sync>>,
     passkey_service: Option<Arc<dyn crate::passkey::PasskeyAuthenticationService + Send + Sync>>,
@@ -65,13 +66,20 @@ impl SessionManager {
     ) -> Self {
         let encryption_key = derive_encryption_key(key);
 
+        let cookie_factory = CookieFactory::new(
+            encryption_key,
+            cookie_secure,
+            session_duration_hours,
+            session_refresh_hours,
+            bind_session_to_ip,
+        );
+
         Self {
             encryption_key,
             cookie_secure,
             bind_session_to_ip,
-            session_duration_hours,
             session_expiration_hours,
-            session_refresh_hours,
+            cookie_factory,
             oauth_service: None,
             passkey_service: None,
         }
@@ -83,23 +91,15 @@ impl SessionManager {
         &self.encryption_key
     }
 
-    /// Create an encrypted session cookie from `VouchrsSession`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
-        self.create_cookie(
-            COOKIE_NAME.to_string(),
-            Some(session),
-            CookieOptions {
-                same_site: actix_web::cookie::SameSite::Lax,
-                max_age: actix_web::cookie::time::Duration::hours(
-                    i64::try_from(self.session_duration_hours).unwrap_or(24),
-                ),
-                ..Default::default()
-            },
-        )
+    /// Get reference to cookie factory for direct cookie operations
+    /// 
+    /// Use this when you need direct access to cookie creation methods
+    /// or want to avoid the convenience wrapper methods in `SessionManager`.
+    /// This provides access to all cookie factory functionality without
+    /// the additional session management context.
+    #[must_use]
+    pub const fn cookie_factory(&self) -> &CookieFactory {
+        &self.cookie_factory
     }
 
     /// Extract and decrypt session from HTTP request
@@ -155,71 +155,13 @@ impl SessionManager {
     /// Check if cookie refresh is enabled
     #[must_use]
     pub fn is_cookie_refresh_enabled(&self) -> bool {
-        self.session_refresh_hours > 0
+        self.cookie_factory.is_cookie_refresh_enabled()
     }
 
     /// Check if session IP binding is enabled
     #[must_use]
     pub const fn is_session_ip_binding_enabled(&self) -> bool {
         self.bind_session_to_ip
-    }
-
-    /// Create a refreshed session cookie with extended expiration
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_refreshed_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
-        if !self.is_cookie_refresh_enabled() {
-            return self.create_session_cookie(session);
-        }
-
-        // Create cookie with refresh interval (already in hours)
-        let refresh_duration = i64::try_from(self.session_refresh_hours).unwrap_or(1);
-
-        self.create_cookie(
-            COOKIE_NAME.to_string(),
-            Some(session),
-            CookieOptions {
-                same_site: actix_web::cookie::SameSite::Lax,
-                max_age: actix_web::cookie::time::Duration::hours(refresh_duration),
-                ..Default::default()
-            },
-        )
-    }
-
-    /// Create an expired cookie to clear the session
-    #[must_use]
-    pub fn create_expired_cookie(&self) -> Cookie<'static> {
-        crate::session::cookie::create_expired_cookie(COOKIE_NAME, self.cookie_secure)
-    }
-
-    /// Create a temporary cookie for storing OAuth state during the OAuth flow
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_temporary_state_cookie(
-        &self,
-        oauth_state: &OAuthState,
-    ) -> Result<Cookie<'static>> {
-        let cookie_name = crate::session::cookie::OAUTH_STATE_COOKIE;
-        let options = CookieOptions {
-            same_site: actix_web::cookie::SameSite::Lax,
-            max_age: actix_web::cookie::time::Duration::minutes(10), // Short-lived for OAuth flow
-            ..Default::default()
-        };
-
-        let cookie = self.create_cookie(cookie_name.to_string(), Some(oauth_state), options)?;
-
-        log::info!(
-            "Creating temporary state cookie: secure={}, name={}, encrypted_len={}",
-            self.cookie_secure,
-            cookie_name,
-            cookie.value().len()
-        );
-
-        Ok(cookie)
     }
 
     /// Get OAuth state from temporary cookie in request
@@ -373,89 +315,6 @@ impl SessionManager {
         Ok(session)
     }
 
-    /// Create an encrypted user data cookie from `VouchrsUserData`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_user_cookie(&self, user_data: &VouchrsUserData) -> Result<Cookie> {
-        self.create_cookie(
-            USER_COOKIE_NAME.to_string(),
-            Some(user_data),
-            CookieOptions {
-                same_site: actix_web::cookie::SameSite::Lax,
-                max_age: actix_web::cookie::time::Duration::hours(
-                    i64::try_from(self.session_duration_hours).unwrap_or(24),
-                ),
-                ..Default::default()
-            },
-        )
-    }
-
-    /// Create an encrypted user data cookie with persistence across sessions
-    ///
-    /// This method checks for an existing user cookie with the same `provider_id`.
-    /// If found and the existing cookie has populated `email` and `name` fields
-    /// but the incoming request has null/empty values for these fields,
-    /// it preserves the values from the existing cookie.
-    ///
-    /// # Arguments
-    /// * `req` - The HTTP request to check for existing cookies
-    /// * `user_data` - The new user data to store
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_user_cookie_with_persistence(
-        &self,
-        req: &HttpRequest,
-        user_data: &VouchrsUserData,
-    ) -> Result<Cookie> {
-        // Check for existing user data with the same provider and provider_id
-        if let Ok(Some(existing_user_data)) = self.get_user_data_from_request(req) {
-            if existing_user_data.provider == user_data.provider
-                && existing_user_data.provider_id == user_data.provider_id
-            {
-                // Create merged user data, preserving non-empty existing values
-                let merged_user_data = Self::merge_user_data(&existing_user_data, user_data);
-
-                log::info!(
-                    "Persisting user data across sessions for provider '{}' with provider_id '{}': email preserved={}, name preserved={}",
-                    user_data.provider,
-                    user_data.provider_id,
-                    merged_user_data.email != user_data.email,
-                    merged_user_data.name != user_data.name
-                );
-
-                return self.create_user_cookie(&merged_user_data);
-            }
-        }
-
-        // No existing data found or provider/provider_id doesn't match, create new cookie
-        log::debug!(
-            "Creating new user cookie for provider_id '{}' (no existing data to persist)",
-            user_data.provider_id
-        );
-        self.create_user_cookie(user_data)
-    }
-    /// Merge user data, preserving existing non-empty email and name values
-    /// when the new data has empty values
-    fn merge_user_data(existing: &VouchrsUserData, new: &VouchrsUserData) -> VouchrsUserData {
-        let mut merged = new.clone();
-
-        // Preserve existing email if new email is empty and existing is not
-        if new.email.is_empty() && !existing.email.is_empty() {
-            merged.email.clone_from(&existing.email);
-        }
-
-        // Preserve existing name if new name is None and existing has a value
-        if new.name.is_none() && existing.name.is_some() {
-            merged.name.clone_from(&existing.name);
-        }
-
-        merged
-    }
-
     /// Extract user data from HTTP request cookie
     ///
     /// # Errors
@@ -471,24 +330,6 @@ impl SessionManager {
             .to_string();
 
         decrypt_data(&cookie_value, &self.encryption_key)
-    }
-
-    /// Get user data from HTTP request cookies (returns None if not found)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a critical failure occurs (decryption failures return None)
-    pub fn get_user_data_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsUserData>> {
-        req.cookie(USER_COOKIE_NAME).map_or_else(
-            || Ok(None),
-            |cookie| match decrypt_data::<VouchrsUserData>(cookie.value(), &self.encryption_key) {
-                Ok(user_data) => Ok(Some(user_data)),
-                Err(e) => {
-                    log::warn!("Failed to decrypt user data cookie: {e}");
-                    Ok(None)
-                }
-            },
-        )
     }
 
     /// Validate client context against stored user data for session hijacking prevention
@@ -631,18 +472,13 @@ impl SessionManager {
         apple_user_info: Option<crate::utils::apple::AppleUserInfo>,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref oauth_service) = self.oauth_service {
-            // Extract client information from the request
-            let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
-
-            // Use the context-aware OAuth service method
-            let result = oauth_service
+            // Call OAuth service to get OAuth result (no session creation)
+            let oauth_result = oauth_service
                 .process_oauth_callback(
                     provider,
                     authorization_code,
                     oauth_state,
                     apple_user_info,
-                    client_ip.as_deref(),
-                    Some(&user_agent_info),
                 )
                 .await
                 .map_err(|e| {
@@ -650,11 +486,11 @@ impl SessionManager {
                     Self::create_service_error_response("OAuth authentication failed")
                 })?;
 
-            self.create_session_response(
+            // Convert OAuth result to session using new method
+            self.create_session_from_oauth_result(
                 req,
-                &result.session,
-                &result.user_data,
-                result.redirect_url,
+                oauth_result,
+                oauth_state.redirect_url.clone(),
             )
         } else {
             Err(Self::create_service_unavailable_response("OAuth"))
@@ -675,19 +511,14 @@ impl SessionManager {
         registration_data: crate::passkey::PasskeyRegistrationData,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref passkey_service) = self.passkey_service {
-            let result = passkey_service
-                .complete_registration(req, registration_data)
+            let passkey_result = passkey_service
+                .complete_registration(registration_data)
                 .map_err(|e| {
                     log::error!("Passkey registration failed: {e}");
                     Self::create_service_error_response("Passkey registration failed")
                 })?;
 
-            self.create_session_response(
-                req,
-                &result.session,
-                &result.user_data,
-                result.redirect_url,
-            )
+            self.create_session_from_passkey_result(req, passkey_result, None)
         } else {
             Err(Self::create_service_unavailable_response("Passkey"))
         }
@@ -707,18 +538,19 @@ impl SessionManager {
         registration_data: crate::passkey::PasskeyRegistrationData,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref passkey_service) = self.passkey_service {
-            let result = passkey_service
-                .complete_registration(req, registration_data)
+            let passkey_result = passkey_service
+                .complete_registration(registration_data)
                 .map_err(|e| {
                     log::error!("Passkey registration failed: {e}");
                     Self::create_service_error_response("Passkey registration failed")
                 })?;
 
+            let auth_result = Self::passkey_result_to_auth_result(req, passkey_result, None);
             self.create_json_session_response(
                 req,
-                &result.session,
-                &result.user_data,
-                result.redirect_url,
+                &auth_result.session,
+                &auth_result.user_data,
+                auth_result.redirect_url,
             )
         } else {
             Err(Self::create_service_unavailable_response("Passkey"))
@@ -739,19 +571,14 @@ impl SessionManager {
         authentication_data: crate::passkey::PasskeyAuthenticationData,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref passkey_service) = self.passkey_service {
-            let result = passkey_service
-                .complete_authentication(req, authentication_data)
+            let passkey_result = passkey_service
+                .complete_authentication(authentication_data)
                 .map_err(|e| {
                     log::error!("Passkey authentication failed: {e}");
                     Self::create_service_error_response("Passkey authentication failed")
                 })?;
 
-            self.create_session_response(
-                req,
-                &result.session,
-                &result.user_data,
-                result.redirect_url,
-            )
+            self.create_session_from_passkey_result(req, passkey_result, None)
         } else {
             Err(Self::create_service_unavailable_response("Passkey"))
         }
@@ -771,18 +598,19 @@ impl SessionManager {
         authentication_data: crate::passkey::PasskeyAuthenticationData,
     ) -> Result<HttpResponse, HttpResponse> {
         if let Some(ref passkey_service) = self.passkey_service {
-            let result = passkey_service
-                .complete_authentication(req, authentication_data)
+            let passkey_result = passkey_service
+                .complete_authentication(authentication_data)
                 .map_err(|e| {
                     log::error!("Passkey authentication failed: {e}");
                     Self::create_service_error_response("Passkey authentication failed")
                 })?;
 
+            let auth_result = Self::passkey_result_to_auth_result(req, passkey_result, None);
             self.create_json_session_response(
                 req,
-                &result.session,
-                &result.user_data,
-                result.redirect_url,
+                &auth_result.session,
+                &auth_result.user_data,
+                auth_result.redirect_url,
             )
         } else {
             Err(Self::create_service_unavailable_response("Passkey"))
@@ -852,9 +680,9 @@ impl SessionManager {
     ) -> Result<HttpResponse, HttpResponse> {
         // Create session cookies - use IP binding if enabled
         let session_cookie = if self.bind_session_to_ip {
-            self.create_session_cookie_with_context(session, req)
+            self.cookie_factory.create_session_cookie_with_context(session, req)
         } else {
-            self.create_session_cookie(session)
+            self.cookie_factory.create_session_cookie(session)
         }
         .map_err(|e| {
             log::error!("Failed to create session cookie: {e}");
@@ -862,7 +690,7 @@ impl SessionManager {
         })?;
 
         let user_cookie = self
-            .create_user_cookie_with_persistence(req, user_data)
+            .cookie_factory.create_user_cookie_with_persistence(req, user_data)
             .map_err(|e| {
                 log::error!("Failed to create user cookie: {e}");
                 Self::create_service_error_response("Session creation failed")
@@ -894,9 +722,9 @@ impl SessionManager {
     ) -> Result<HttpResponse, HttpResponse> {
         // Create session cookies - use IP binding if enabled
         let session_cookie = if self.bind_session_to_ip {
-            self.create_session_cookie_with_context(session, req)
+            self.cookie_factory.create_session_cookie_with_context(session, req)
         } else {
-            self.create_session_cookie(session)
+            self.cookie_factory.create_session_cookie(session)
         }
         .map_err(|e| {
             log::error!("Failed to create session cookie: {e}");
@@ -904,7 +732,7 @@ impl SessionManager {
         })?;
 
         let user_cookie = self
-            .create_user_cookie_with_persistence(req, user_data)
+            .cookie_factory.create_user_cookie_with_persistence(req, user_data)
             .map_err(|e| {
                 log::error!("Failed to create user cookie: {e}");
                 Self::create_service_error_response("Session creation failed")
@@ -924,44 +752,116 @@ impl SessionManager {
     }
 
     // =============================================================================
-    // Conversion Utilities for Authentication Results
+    // New Result-Based Session Creation Methods
     // =============================================================================
 
-    /// Convert OAuth session result to common `AuthenticationResult`
+    /// Create session from OAuth result (replaces `handle_oauth_callback`)
     ///
-    /// This method provides a bridge between the OAuth-specific result type
-    /// and the unified authentication result type.
-    #[must_use]
-    pub fn oauth_to_auth_result(
-        oauth_result: crate::oauth::OAuthSessionResult,
-    ) -> crate::models::auth::AuthenticationResult {
-        oauth_result.into_auth_result()
+    /// # Errors
+    ///
+    /// Returns an HTTP error response if:
+    /// - Session creation fails due to invalid user data
+    /// - Database operations fail during session storage
+    /// - Token validation or processing errors occur
+    pub fn create_session_from_oauth_result(
+        &self,
+        req: &HttpRequest,
+        oauth_result: crate::session::auth_results::OauthResult,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        let auth_result = Self::oauth_result_to_auth_result(req, oauth_result, redirect_url);
+        self.handle_authentication_result(req, auth_result)
     }
 
-    /// Convert Passkey session result to common `AuthenticationResult`
+    /// Create session from Passkey result (replaces `handle_passkey_registration`/`authentication`)
     ///
-    /// This method provides a bridge between the Passkey-specific result type
-    /// and the unified authentication result type.
-    #[must_use]
-    pub fn passkey_to_auth_result(
-        passkey_result: crate::passkey::PasskeySessionResult,
-    ) -> crate::models::auth::AuthenticationResult {
-        passkey_result.into_auth_result()
+    /// # Errors
+    ///
+    /// Returns an HTTP error response if:
+    /// - Session creation fails due to invalid user data
+    /// - Database operations fail during session storage
+    /// - Passkey validation or credential processing errors occur
+    pub fn create_session_from_passkey_result(
+        &self,
+        req: &HttpRequest,
+        passkey_result: crate::session::auth_results::PasskeyResult,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        let auth_result = Self::passkey_result_to_auth_result(req, passkey_result, redirect_url);
+        self.handle_authentication_result(req, auth_result)
     }
 
-    /// Create `AuthenticationResult` directly from session and user data
-    ///
-    /// This method allows creating authentication results directly from
-    /// session and user data, useful for custom authentication flows.
-    #[must_use]
-    pub fn create_auth_result(
-        session: VouchrsSession,
-        user_data: VouchrsUserData,
+    /// Convert `OAuth` result to `AuthenticationResult`
+    fn oauth_result_to_auth_result(
+        req: &HttpRequest,
+        result: crate::session::auth_results::OauthResult,
         redirect_url: Option<String>,
     ) -> crate::models::auth::AuthenticationResult {
+        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
+
+        let session = crate::models::VouchrsSession {
+            provider: result.provider.clone(),
+            expires_at: result.expires_at,
+            authenticated_at: result.authenticated_at,
+            client_ip: client_ip.clone(),
+            id_token: result.id_token,
+            refresh_token: result.refresh_token,
+            credential_id: None,
+            user_handle: None,
+        };
+
+        let user_data = crate::models::VouchrsUserData {
+            email: result.email.unwrap_or_default(),
+            name: result.name,
+            provider: result.provider,
+            provider_id: result.provider_id,
+            client_ip,
+            user_agent: user_agent_info.user_agent,
+            platform: user_agent_info.platform,
+            lang: user_agent_info.lang,
+            mobile: i32::from(user_agent_info.mobile),
+            session_start: Some(result.authenticated_at.timestamp()),
+        };
+
         crate::models::auth::AuthenticationResult::new(session, user_data, redirect_url)
     }
 
+    /// Convert `Passkey` result to `AuthenticationResult`
+    fn passkey_result_to_auth_result(
+        req: &HttpRequest,
+        result: crate::session::auth_results::PasskeyResult,
+        redirect_url: Option<String>,
+    ) -> crate::models::auth::AuthenticationResult {
+        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
+
+        let session = crate::models::VouchrsSession {
+            provider: result.provider.clone(),
+            expires_at: result.expires_at,
+            authenticated_at: result.authenticated_at,
+            client_ip: client_ip.clone(),
+            id_token: None,
+            refresh_token: None,
+            credential_id: Some(result.credential_id),
+            user_handle: Some(result.user_handle),
+        };
+
+        let user_data = crate::models::VouchrsUserData {
+            email: result.email.unwrap_or_default(),
+            name: result.name,
+            provider: result.provider,
+            provider_id: result.provider_id,
+            client_ip,
+            user_agent: user_agent_info.user_agent,
+            platform: user_agent_info.platform,
+            lang: user_agent_info.lang,
+            mobile: i32::from(user_agent_info.mobile),
+            session_start: Some(result.authenticated_at.timestamp()),
+        };
+
+        crate::models::auth::AuthenticationResult::new(session, user_data, redirect_url)
+    }
+
+    // =============================================================================
     /// Create service unavailable response
     fn create_service_unavailable_response(service_name: &str) -> HttpResponse {
         log::error!("{service_name} service is not available");
@@ -977,71 +877,6 @@ impl SessionManager {
             "error": "authentication_failed",
             "message": message
         }))
-    }
-
-    /// Generic method to create a cookie with encrypted data
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_cookie<T: Serialize>(
-        &self,
-        name: String,
-        data: Option<&T>,
-        options: CookieOptions,
-    ) -> Result<Cookie<'static>> {
-        let value = match data {
-            Some(data) => encrypt_data(data, &self.encryption_key)?,
-            None => String::new(),
-        };
-
-        Ok(Cookie::build(name, value)
-            .http_only(options.http_only)
-            .secure(self.cookie_secure && options.secure)
-            .same_site(options.same_site)
-            .path(options.path)
-            .max_age(options.max_age)
-            .finish())
-    }
-
-    /// Create an encrypted session cookie with optional client IP binding
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if encryption fails
-    pub fn create_session_cookie_with_context(
-        &self,
-        session: &VouchrsSession,
-        req: &HttpRequest,
-    ) -> Result<Cookie> {
-        if self.bind_session_to_ip {
-            // Extract client IP for IP binding
-            let (client_ip, _) = crate::session::utils::extract_client_info(req);
-
-            // Create a session copy with bound IP
-            let mut bound_session = session.clone();
-            bound_session.client_ip = client_ip;
-
-            log::debug!(
-                "Creating session cookie with IP binding: {:?}",
-                bound_session.client_ip
-            );
-
-            self.create_cookie(
-                COOKIE_NAME.to_string(),
-                Some(&bound_session),
-                CookieOptions {
-                    same_site: actix_web::cookie::SameSite::Lax,
-                    max_age: actix_web::cookie::time::Duration::hours(
-                        i64::try_from(self.session_duration_hours).unwrap_or(24),
-                    ),
-                    ..Default::default()
-                },
-            )
-        } else {
-            // Use existing method for no IP binding
-            self.create_session_cookie(session)
-        }
     }
 
     /// Validate session IP binding against current request
@@ -1131,8 +966,8 @@ mod tests {
         let manager = TestFixtures::session_manager();
         let session = TestFixtures::oauth_session();
 
-        // Test session cookie creation via SessionManager
-        let cookie = manager.create_session_cookie(&session).unwrap();
+        // Test session cookie creation via CookieFactory
+        let cookie = manager.cookie_factory().create_session_cookie(&session).unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
 
@@ -1153,10 +988,10 @@ mod tests {
 
         // Create normal and refreshed cookies
         let normal_cookie = manager_with_refresh
-            .create_session_cookie(&session)
+            .cookie_factory().create_session_cookie(&session)
             .unwrap();
         let refreshed_cookie = manager_with_refresh
-            .create_refreshed_session_cookie(&session)
+            .cookie_factory().create_refreshed_session_cookie(&session)
             .unwrap();
 
         // Both should have correct name and valid content
@@ -1170,9 +1005,9 @@ mod tests {
         assert!(!manager_no_refresh.is_cookie_refresh_enabled());
 
         // Refreshed cookie should behave same as normal when disabled
-        let disabled_normal = manager_no_refresh.create_session_cookie(&session).unwrap();
+        let disabled_normal = manager_no_refresh.cookie_factory().create_session_cookie(&session).unwrap();
         let disabled_refreshed = manager_no_refresh
-            .create_refreshed_session_cookie(&session)
+            .cookie_factory().create_refreshed_session_cookie(&session)
             .unwrap();
         assert_eq!(disabled_refreshed.max_age(), disabled_normal.max_age());
     }
@@ -1454,7 +1289,7 @@ mod tests {
 
         // Create session cookie with IP binding
         let cookie = manager
-            .create_session_cookie_with_context(&session, &req)
+            .cookie_factory().create_session_cookie_with_context(&session, &req)
             .unwrap();
         assert_eq!(cookie.name(), COOKIE_NAME);
         assert!(!cookie.value().is_empty());
@@ -1476,7 +1311,7 @@ mod tests {
         );
 
         let cookie_no_binding = manager_no_binding
-            .create_session_cookie_with_context(&session, &req)
+            .cookie_factory().create_session_cookie_with_context(&session, &req)
             .unwrap();
         let decrypted_no_binding: VouchrsSession = crate::utils::crypto::decrypt_data(
             cookie_no_binding.value(),

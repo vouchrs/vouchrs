@@ -125,7 +125,7 @@ pub async fn oauth_sign_out(
     };
 
     // Create expired cookies to clear both session and user data
-    let clear_session_cookie = session_manager.create_expired_cookie();
+    let clear_session_cookie = session_manager.cookie_factory().create_expired_cookie();
     let clear_user_cookie =
         create_expired_cookie(USER_COOKIE_NAME, session_manager.cookie_secure());
     info!("User signed out and both session and user data cleared");

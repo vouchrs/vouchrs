@@ -4,8 +4,9 @@
 //! implementing the `PasskeyAuthenticationService` trait to handle
 //! registration and authentication flows.
 
+use actix_web::HttpRequest;
 use base64::Engine;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
@@ -162,7 +163,7 @@ impl PasskeyAuthenticationServiceImpl {
         Ok(())
     }
 
-    /// Create `PasskeyResult` from user data
+    /// Create PasskeyResult from user data
     fn create_passkey_result(
         user_data: &PasskeyUserData,
         credential_id: String,
