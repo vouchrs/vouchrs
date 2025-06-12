@@ -17,7 +17,6 @@ pub mod auth_results;
 pub mod cookie;
 pub mod manager;
 pub mod passkey;
-pub mod token_processor;
 pub mod utils;
 pub mod validation;
 
@@ -25,7 +24,6 @@ pub mod validation;
 pub use cookie::{CookieFactory, CookieOptions, COOKIE_NAME, OAUTH_STATE_COOKIE, USER_COOKIE_NAME};
 pub use manager::{SessionError, SessionManager};
 pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
-pub use token_processor::IdTokenProcessor;
 pub use utils::{create_error_response, extract_client_info, get_state_from_callback};
 pub use validation::{calculate_client_context_hash, validate_client_context};
 

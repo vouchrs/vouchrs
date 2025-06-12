@@ -7,6 +7,7 @@ pub mod config;
 pub mod jwt_validation;
 pub mod providers;
 pub mod service;
+pub mod tokens;
 
 // Re-export main configuration and utility types
 pub use config::{check_and_refresh_tokens, refresh_tokens, OAuthConfig, RuntimeProvider};
@@ -14,8 +15,11 @@ pub use config::{check_and_refresh_tokens, refresh_tokens, OAuthConfig, RuntimeP
 // Re-export service types
 pub use service::{
     OAuthAuthenticationService, OAuthAuthenticationServiceImpl, OAuthError, OAuthFlowResult,
-    OAuthSessionResult, OAuthTokenRefreshResult,
+    OAuthResult,
 };
+
+// Re-export token processing functions
+pub use tokens::{extract_email, process_id_token};
 
 // Re-export JWT validation types
 pub use jwt_validation::{JwtValidationError, JwtValidator, OidcDiscoveryDocument};

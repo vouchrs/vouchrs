@@ -1,5 +1,6 @@
 use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::OAuthState;
+use crate::oauth::OAuthResult;
 use crate::session::cookie::{CookieFactory, COOKIE_NAME, USER_COOKIE_NAME};
 use crate::session::validation::{calculate_client_context_hash, validate_client_context};
 #[cfg(test)]
@@ -481,7 +482,7 @@ impl SessionManager {
                     Self::create_service_error_response("OAuth authentication failed")
                 })?;
 
-            // Convert OAuth result to session using new method
+            // Create session from OAuth result
             self.create_session_from_oauth_result(
                 req,
                 oauth_result,
@@ -711,10 +712,22 @@ impl SessionManager {
     pub fn create_session_from_oauth_result(
         &self,
         req: &HttpRequest,
-        oauth_result: crate::session::auth_results::OauthResult,
+        oauth_result: crate::oauth::OAuthResult,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
-        self.handle_oauth_callback_direct(req, oauth_result, redirect_url)
+        // Convert from OAuthResult to session's OauthResult format first
+        let session_oauth_result = OAuthResult {
+            provider: oauth_result.provider,
+            provider_id: oauth_result.provider_id,
+            email: oauth_result.email,
+            name: oauth_result.name,
+            expires_at: oauth_result.expires_at,
+            authenticated_at: oauth_result.authenticated_at,
+            id_token: oauth_result.id_token,
+            refresh_token: oauth_result.refresh_token,
+        };
+
+        self.handle_oauth_callback_direct(req, session_oauth_result, redirect_url)
     }
 
     /// Create session from Passkey result (replaces `handle_passkey_registration`/`authentication`)
@@ -748,9 +761,15 @@ impl SessionManager {
     /// Returns a session creation error if the input is invalid
     pub fn create_oauth_session(
         &self,
-        oauth_result: crate::session::auth_results::OauthResult,
+        oauth_result: crate::oauth::OAuthResult,
         req: &HttpRequest,
-    ) -> Result<(crate::models::VouchrsSession, crate::models::VouchrsUserData), crate::models::auth::SessionError> {
+    ) -> Result<
+        (
+            crate::models::VouchrsSession,
+            crate::models::VouchrsUserData,
+        ),
+        crate::models::auth::SessionError,
+    > {
         let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
 
         let session = crate::models::VouchrsSession {
@@ -766,7 +785,11 @@ impl SessionManager {
             provider: oauth_result.provider.clone(),
             expires_at: oauth_result.expires_at,
             authenticated_at: oauth_result.authenticated_at,
-            client_ip: if self.bind_session_to_ip { client_ip.clone() } else { None },
+            client_ip: if self.bind_session_to_ip {
+                client_ip.clone()
+            } else {
+                None
+            },
         };
 
         let user_data = crate::models::VouchrsUserData {
@@ -797,7 +820,13 @@ impl SessionManager {
         &self,
         passkey_result: crate::session::auth_results::PasskeyResult,
         req: &HttpRequest,
-    ) -> Result<(crate::models::VouchrsSession, crate::models::VouchrsUserData), crate::models::auth::SessionError> {
+    ) -> Result<
+        (
+            crate::models::VouchrsSession,
+            crate::models::VouchrsUserData,
+        ),
+        crate::models::auth::SessionError,
+    > {
         let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
 
         let session = crate::models::VouchrsSession {
@@ -813,7 +842,11 @@ impl SessionManager {
             provider: passkey_result.provider.clone(),
             expires_at: passkey_result.expires_at,
             authenticated_at: passkey_result.authenticated_at,
-            client_ip: if self.bind_session_to_ip { client_ip.clone() } else { None },
+            client_ip: if self.bind_session_to_ip {
+                client_ip.clone()
+            } else {
+                None
+            },
         };
 
         let user_data = crate::models::VouchrsUserData {
@@ -843,15 +876,14 @@ impl SessionManager {
     pub fn handle_oauth_callback_direct(
         &self,
         req: &HttpRequest,
-        oauth_result: crate::session::auth_results::OauthResult,
+        oauth_result: crate::oauth::OAuthResult,
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         // Direct session creation
-        let (session, user_data) = self.create_oauth_session(oauth_result, req)
-            .map_err(|e| {
-                log::error!("Failed to create OAuth session: {e}");
-                Self::create_service_error_response("Session creation failed")
-            })?;
+        let (session, user_data) = self.create_oauth_session(oauth_result, req).map_err(|e| {
+            log::error!("Failed to create OAuth session: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
 
         // Create response with cookies
         self.create_session_response(req, &session, &user_data, redirect_url)
@@ -872,11 +904,12 @@ impl SessionManager {
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         // Direct session creation
-        let (session, user_data) = self.create_passkey_session(passkey_result, req)
-            .map_err(|e| {
-                log::error!("Failed to create passkey session: {e}");
-                Self::create_service_error_response("Session creation failed")
-            })?;
+        let (session, user_data) =
+            self.create_passkey_session(passkey_result, req)
+                .map_err(|e| {
+                    log::error!("Failed to create passkey session: {e}");
+                    Self::create_service_error_response("Session creation failed")
+                })?;
 
         // Create response with cookies
         self.create_session_response(req, &session, &user_data, redirect_url)
@@ -897,11 +930,12 @@ impl SessionManager {
         redirect_url: Option<String>,
     ) -> Result<HttpResponse, HttpResponse> {
         // Direct session creation
-        let (session, user_data) = self.create_passkey_session(passkey_result, req)
-            .map_err(|e| {
-                log::error!("Failed to create passkey session: {e}");
-                Self::create_service_error_response("Session creation failed")
-            })?;
+        let (session, user_data) =
+            self.create_passkey_session(passkey_result, req)
+                .map_err(|e| {
+                    log::error!("Failed to create passkey session: {e}");
+                    Self::create_service_error_response("Session creation failed")
+                })?;
 
         // Create JSON response with cookies
         self.create_json_session_response(req, &session, &user_data, redirect_url)

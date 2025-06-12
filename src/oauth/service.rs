@@ -1,18 +1,31 @@
 //! OAuth authentication service implementations
 //!
-//! This module provides the OAuth authentication service that handles OAuth flows,
-//! token processing, and session creation for all OAuth providers.
+//! This module provides the OAuth authentication service that handles OAuth flows
+//! and token processing for all OAuth providers. It has no knowledge of session creation.
 
-use crate::models::{VouchrsSession, VouchrsUserData};
 use crate::oauth::{OAuthConfig, OAuthState};
-use crate::session::auth_results::OauthResult;
-use crate::session::token_processor::IdTokenProcessor;
 use crate::settings::VouchrsSettings;
 use crate::utils::apple::AppleUserInfo;
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono;
+use chrono::{DateTime, Utc};
 use std::fmt;
+
+/// Pure authentication result from OAuth flow - no session logic
+#[derive(Debug, Clone)]
+pub struct OAuthResult {
+    pub provider: String,
+    pub provider_id: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub expires_at: DateTime<Utc>,
+    pub authenticated_at: DateTime<Utc>,
+    // OAuth-specific data
+    pub id_token: Option<String>,
+    pub refresh_token: Option<String>,
+}
+
+// No conversion needed as the session manager now directly accepts OAuthResult
 
 /// OAuth authentication errors
 #[derive(Debug)]
@@ -38,19 +51,6 @@ impl fmt::Display for OAuthError {
 
 impl std::error::Error for OAuthError {}
 
-/// Result of OAuth callback processing
-#[derive(Debug, Clone)]
-pub struct OAuthSessionResult {
-    pub session: VouchrsSession,
-    pub user_data: VouchrsUserData,
-    pub redirect_url: Option<String>,
-}
-
-impl OAuthSessionResult {
-    // Note: Conversion methods to AuthenticationResult removed as part of
-    // AuthenticationResult elimination strategy
-}
-
 /// Result of OAuth flow initiation
 #[derive(Debug, Clone)]
 pub struct OAuthFlowResult {
@@ -58,12 +58,6 @@ pub struct OAuthFlowResult {
     pub oauth_state: OAuthState,
 }
 
-/// Result of OAuth token refresh
-#[derive(Debug, Clone)]
-pub struct OAuthTokenRefreshResult {
-    pub session: VouchrsSession,
-    pub user_data: VouchrsUserData,
-}
 
 /// OAuth authentication service trait
 #[async_trait]
@@ -82,7 +76,7 @@ pub trait OAuthAuthenticationService {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
-    ) -> Result<OauthResult, OAuthError>;
+    ) -> Result<OAuthResult, OAuthError>;
 
     /// Initiate OAuth flow
     ///
@@ -110,7 +104,7 @@ pub trait OAuthAuthenticationService {
         &self,
         provider: &str,
         refresh_token: &str,
-    ) -> Result<OAuthTokenRefreshResult, OAuthError>;
+    ) -> Result<OAuthResult, OAuthError>;
 }
 
 /// OAuth authentication service implementation
@@ -146,7 +140,7 @@ impl OAuthAuthenticationService for OAuthAuthenticationServiceImpl {
         authorization_code: &str,
         oauth_state: &OAuthState,
         apple_user_info: Option<AppleUserInfo>,
-    ) -> Result<OauthResult, OAuthError> {
+    ) -> Result<OAuthResult, OAuthError> {
         self.process_oauth_callback_async(
             provider,
             authorization_code,
@@ -185,12 +179,30 @@ impl OAuthAuthenticationService for OAuthAuthenticationServiceImpl {
         &self,
         _provider: &str,
         _refresh_token: &str,
-    ) -> Result<OAuthTokenRefreshResult, OAuthError> {
+    ) -> Result<OAuthResult, OAuthError> {
         // TODO: Implement token refresh using the OAuth config
         // For now, return an error until this is implemented
         Err(OAuthError::Configuration(
             "Token refresh not yet implemented in the new service".to_string(),
         ))
+
+        // When implemented, it should look something like this:
+        // let oauth_config = self.get_oauth_config().await?;
+        // let (id_token, new_refresh_token, expires_at, _) = oauth_config
+        //     .refresh_tokens(_provider, _refresh_token)
+        //     .await
+        //     .map_err(|e| OAuthError::TokenExchange(format!("Token refresh failed: {e}")))?;
+        //
+        // Ok(OAuthResult {
+        //     provider: _provider.to_string(),
+        //     provider_id: "".to_string(), // This would need to be extracted from the token
+        //     email: None,
+        //     name: None,
+        //     id_token,
+        //     refresh_token: new_refresh_token,
+        //     expires_at,
+        //     authenticated_at: chrono::Utc::now(), // Current time as refresh time
+        // })
     }
 }
 
@@ -202,7 +214,7 @@ impl OAuthAuthenticationServiceImpl {
         authorization_code: &str,
         _oauth_state: &OAuthState, // redirect_url handled by session manager
         apple_user_info: Option<AppleUserInfo>,
-    ) -> Result<OauthResult, OAuthError> {
+    ) -> Result<OAuthResult, OAuthError> {
         // Get OAuth config with lazy initialization
         let oauth_config = self.get_oauth_config().await?;
 
@@ -215,11 +227,11 @@ impl OAuthAuthenticationServiceImpl {
         // Use the apple_user_info parameter if available, otherwise use fallback from token exchange
         let final_apple_user_info = apple_user_info.or(apple_user_info_fallback);
 
-        // Process ID token and create OAuth result using IdTokenProcessor (no session creation)
-        let oauth_result = IdTokenProcessor::process_id_token(
+        // Process ID token and create OAuth result using tokens module (no session creation)
+        let oauth_result = crate::oauth::tokens::process_id_token(
             provider,
             id_token.as_deref(),
-            refresh_token.clone(),
+            refresh_token,
             expires_at,
             final_apple_user_info.as_ref(),
         )

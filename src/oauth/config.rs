@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::models::VouchrsSession;
+use crate::oauth::OAuthResult;
 use crate::settings::{ProviderSettings, VouchrsSettings};
 use crate::utils::apple;
 
@@ -694,36 +694,38 @@ impl OAuthConfig {
 /// # Errors
 ///
 /// Returns an error HTTP response if:
-/// - Session tokens are expired and no refresh token is available
+/// - Tokens are expired and no refresh token is available
 /// - Token refresh operation fails
 /// - Provider is not configured for refresh
 pub async fn check_and_refresh_tokens(
-    mut session: VouchrsSession,
+    oauth_result: OAuthResult,
     oauth_config: &OAuthConfig,
     provider: &str,
-) -> Result<VouchrsSession, HttpResponse> {
+) -> Result<OAuthResult, HttpResponse> {
     // Check if tokens need refresh (within 5 minutes of expiry)
     let now = chrono::Utc::now();
     let buffer_time = chrono::Duration::minutes(5);
-    if session.expires_at > now + buffer_time {
-        return Ok(session);
+    if oauth_result.expires_at > now + buffer_time {
+        return Ok(oauth_result);
     }
 
     // Attempt to refresh tokens
-    let refresh_token = session.refresh_token.as_ref().ok_or_else(|| {
+    let refresh_token = oauth_result.refresh_token.as_ref().ok_or_else(|| {
         HttpResponse::Unauthorized().json(serde_json::json!({
             "error": "unauthorized",
             "message": "OAuth tokens expired and no refresh token available. Please re-authenticate."
         }))
     })?;
 
-    // Call refresh_oauth_tokens and update session fields
+    // Call refresh_oauth_tokens and update result fields
     match refresh_tokens(refresh_token, oauth_config, provider).await {
         Ok((new_id_token, new_refresh_token, new_expires_at)) => {
-            session.id_token = new_id_token;
-            session.refresh_token = new_refresh_token;
-            session.expires_at = new_expires_at;
-            Ok(session)
+            // Create new OAuthResult with updated tokens and expiration
+            let mut updated_result = oauth_result;
+            updated_result.id_token = new_id_token;
+            updated_result.refresh_token = new_refresh_token;
+            updated_result.expires_at = new_expires_at;
+            Ok(updated_result)
         }
         Err(err) => Err(HttpResponse::Unauthorized().json(serde_json::json!({
             "error": "token_refresh_failed",
