@@ -423,6 +423,114 @@ impl SessionManager {
     pub fn is_session_expired(&self, user_data: &VouchrsUserData) -> bool {
         crate::session::validation::is_session_expired(user_data, self.session_expiration_hours)
     }
+
+    /// Process session for proxy requests with type-aware token refresh
+    ///
+    /// This is the main entry point for proxy request session handling.
+    /// It extracts, validates, and conditionally refreshes sessions based on type.
+    /// OAuth sessions may be refreshed if needed, while Passkey sessions are passed through.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Session extraction fails
+    /// - Session validation fails
+    /// - OAuth refresh fails (for OAuth sessions)
+    pub async fn process_proxy_session(
+        &self,
+        req: &HttpRequest,
+    ) -> Result<(VouchrsSession, bool), crate::session::SessionError> {
+        // Extract session with comprehensive validation
+        let session = self
+            .extract_session(req)
+            .map_err(crate::session::SessionError::from)?;
+
+        // For Passkey sessions, no refresh is needed
+        if !session.is_oauth_session() {
+            return Ok((session, false));
+        }
+
+        // For OAuth sessions, check if refresh is needed and perform it
+        self.refresh_oauth_session_if_needed(&session).await
+    }
+
+    /// Refresh OAuth session tokens if needed (internal helper)
+    ///
+    /// This method handles OAuth-specific token refresh logic.
+    /// It checks if tokens need refreshing and performs the refresh if necessary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if OAuth service is unavailable or refresh fails
+    async fn refresh_oauth_session_if_needed(
+        &self,
+        session: &VouchrsSession,
+    ) -> Result<(VouchrsSession, bool), crate::session::SessionError> {
+        // Check if tokens need refreshing
+        if !self.needs_token_refresh(session) {
+            return Ok((session.clone(), false));
+        }
+
+        // Get OAuth service
+        let oauth_service = self.oauth_service().ok_or_else(|| {
+            crate::session::SessionError::from(anyhow::anyhow!("OAuth service not available"))
+        })?;
+
+        // Perform token refresh
+        let oauth_result = oauth_service
+            .refresh_oauth_tokens(
+                &session.provider,
+                &session.refresh_token.clone().unwrap_or_default(),
+            )
+            .await
+            .map_err(|e| {
+                crate::session::SessionError::from(anyhow::anyhow!("Token refresh failed: {e}"))
+            })?;
+
+        // Reconstruct session from OAuth result
+        let refreshed_session = crate::session::oauth::reconstruct_session_from_oauth_result(
+            &oauth_result,
+            session,
+            self.bind_session_to_ip,
+        );
+
+        Ok((refreshed_session, true))
+    }
+
+    /// Apply session refresh to HTTP response (unified session cookie handling)
+    ///
+    /// This method handles setting updated session cookies on responses
+    /// when sessions have been refreshed during proxy processing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cookie creation fails
+    pub fn apply_session_refresh(
+        &self,
+        response_builder: &mut actix_web::HttpResponseBuilder,
+        req: &HttpRequest,
+        session: &VouchrsSession,
+        tokens_were_refreshed: bool,
+    ) -> Result<(), crate::session::SessionError> {
+        // Only update cookies if tokens were refreshed (always refresh when tokens change)
+        if !tokens_were_refreshed {
+            return Ok(());
+        }
+
+        // Create updated session cookie
+        let cookie = if self.bind_session_to_ip {
+            self.cookie_factory()
+                .create_session_cookie_with_context(session, req)
+        } else {
+            self.cookie_factory().create_session_cookie(session)
+        }
+        .map_err(|e| {
+            crate::session::SessionError::from(anyhow::anyhow!("Cookie creation failed: {e}"))
+        })?;
+
+        response_builder.cookie(cookie);
+        Ok(())
+    }
 }
 
 // =============================================================================

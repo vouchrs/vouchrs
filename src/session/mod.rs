@@ -26,7 +26,8 @@ pub use cookie::{CookieFactory, CookieOptions, COOKIE_NAME, OAUTH_STATE_COOKIE, 
 pub use manager::{SessionError, SessionManager};
 pub use oauth::{
     create_minimal_oauth_result, create_oauth_session, extract_oauth_provider_info,
-    validate_oauth_refresh_requirements, validate_oauth_result_for_session,
+    reconstruct_session_from_oauth_result, validate_oauth_refresh_requirements,
+    validate_oauth_result_for_session,
 };
 pub use passkey::{
     convert_passkey_session_data, create_minimal_passkey_result,

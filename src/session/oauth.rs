@@ -264,6 +264,45 @@ pub fn validate_oauth_result_for_session(oauth_result: &OAuthResult) -> Result<(
     Ok(())
 }
 
+/// Reconstruct session from OAuth result after token refresh
+///
+/// This utility function creates a new `VouchrsSession` from an OAuth result,
+/// preserving the original session structure while updating tokens and timestamps.
+///
+/// # Arguments
+/// * `oauth_result` - The OAuth result containing updated tokens
+/// * `original_session` - The original session to preserve structure from
+/// * `ip_binding_enabled` - Whether IP binding is enabled for the session
+///
+/// # Returns
+/// * `VouchrsSession` with updated OAuth tokens and timestamps
+#[must_use]
+pub fn reconstruct_session_from_oauth_result(
+    oauth_result: &OAuthResult,
+    original_session: &VouchrsSession,
+    ip_binding_enabled: bool,
+) -> VouchrsSession {
+    VouchrsSession {
+        // Updated OAuth tokens from refresh
+        id_token: oauth_result.id_token.clone(),
+        refresh_token: oauth_result.refresh_token.clone(),
+        expires_at: oauth_result.expires_at,
+        authenticated_at: oauth_result.authenticated_at,
+
+        // Preserve non-OAuth fields from original session
+        credential_id: original_session.credential_id.clone(),
+        user_handle: original_session.user_handle.clone(),
+        provider: original_session.provider.clone(),
+
+        // Preserve client IP based on binding settings
+        client_ip: if ip_binding_enabled {
+            original_session.client_ip.clone()
+        } else {
+            None
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
