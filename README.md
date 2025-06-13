@@ -165,6 +165,15 @@ console.log(`SESSION_SECRET=${crypto.randomBytes(32).toString('base64')}`);
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8080` | Server bind port |
 
+### From Source
+
+1. **Build and run:**
+   ```bash
+   git clone https://github.com/vouchrs/vouchrs.git
+   cd vouchrs
+   cargo build --release
+   ```
+
 2. **Configure environment:**
    ```bash
    export SESSION_SECRET="your-256-bit-secret-key"
@@ -172,6 +181,11 @@ console.log(`SESSION_SECRET=${crypto.randomBytes(32).toString('base64')}`);
    export GOOGLE_CLIENT_SECRET="your-google-client-secret"
    export REDIRECT_BASE_URL="http://localhost:8080"
    # Add other OAuth variables as needed
+   ```
+
+3. **Start the service:**
+   ```bash
+   cargo run
    ```
 
 The service will start on `http://localhost:8080`.
@@ -184,7 +198,12 @@ The service will start on `http://localhost:8080`.
 | `/auth/oauth2/callback` | GET/POST | OAuth callback handler (Google=GET, Apple=POST) |
 | `/auth/oauth2/sign_out` | GET/POST | Sign out user and clear session |
 | `/auth/userinfo` | GET | Get user data from encrypted cookie (JSON) |
-| `/auth/debug` | GET | Debug endpoint with session and user data |
+| `/auth/debug` | GET | Debug endpoint (requires `OAUTH_DEBUG_ENABLED=true`) |
+| `/auth/passkey/register/start` | POST | Start passkey registration |
+| `/auth/passkey/register/complete` | POST | Complete passkey registration |
+| `/auth/passkey/auth/start` | POST | Start passkey authentication |
+| `/auth/passkey/auth/complete` | POST | Complete passkey authentication |
+| `/auth/static/{filename}` | GET | Serve static files (HTML, CSS, JS, images) |
 | `/ping` | GET | Health check and service status |
 
 ## Client Context and User Data
@@ -216,10 +235,11 @@ The sign-in page automatically generates authentication options for all availabl
 ## Documentation
 
 - 📖 **[Complete Documentation](./docs/README.md)** - Full documentation index
-- 🚀 **[Deployment Guide](./docs/DEPLOYMENT.md)** - Docker, environment setup, and production deployment
 - 🔌 **[API Reference](./docs/API_REFERENCE.md)** - Endpoint documentation and examples
 - 🎨 **[UI Customization](./docs/UI_CUSTOMIZATION.md)** - Custom branding and theming
-- 🔧 **[Implementation Details](./docs/IMPLEMENTATION_DETAILS.md)** - Technical details on config-driven providers and session management
+- 🔒 **[Security Features](./docs/REDIRECT_PROTECTION.md)** - Redirect protection and validation
+- ⚙️ **[OAuth Implementation](./docs/STATELESS_OAUTH_FLOW.md)** - Technical details on stateless OAuth flow
+- 🛠️ **[Development Guide](./docs/DEVELOPMENT_GUIDE.md)** - Development setup and architecture
 | `RUST_LOG` | No | Log level (error, warn, info, debug, trace) |
 
 ## Authentication Flow
@@ -278,6 +298,8 @@ curl -H "Cookie: vouchrs_session=...; vouchrs_user=..." http://localhost:8080/au
 ```
 
 Returns both session token data and user data for debugging purposes.
+
+**Note**: The debug endpoint requires `OAUTH_DEBUG_ENABLED=true` environment variable to be enabled.
 
 ## Development
 

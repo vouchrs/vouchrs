@@ -1,8 +1,6 @@
 # UI Customization Guide
 
-Vouchrs Authentication Gateway and Reverse Proxy supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
-<img src="/auth/static/logo.png" alt="Company Logo">
-<script src="/auth/static/custom.js"></script>thout rebuilding the application.
+Vouchrs supports complete UI customization through Docker volume mounting, allowing you to brand and customize the sign-in page without rebuilding the application.
 
 ## 🎨 How It Works
 
@@ -16,9 +14,12 @@ The application serves static files from the `/static` directory with automatic 
 
 ```
 static/
-├── sign-in.html    # Main sign-in page
-├── sign-in.css     # Stylesheet
-└── [custom files]  # Additional assets (images, JS, etc.)
+├── sign-in.html         # Main sign-in page
+├── sign-in.css          # Stylesheet
+├── passkey-register.html # Passkey registration page
+├── passkey-register.js   # Passkey registration JavaScript
+├── passkey-signin.js     # Passkey authentication JavaScript
+└── [custom files]       # Additional assets (images, JS, etc.)
 ```
 
 > **Example**: See the `/custom-ui` folder in the repository for a ready-to-use dark mode theme with Google and Apple provider styling.
@@ -51,26 +52,27 @@ services:
 
 ## 🎯 Customization Examples
 
-### 1. Dark Mode Theme with Brand-Specific Provider Styling
+### 1. Dark Mode Theme with Multi-Method Authentication
 
-Our repository includes a ready-to-use dark mode example in the `/custom-ui` folder that you can use as a starting point.
+Our repository includes a ready-to-use dark mode example in the `/custom-ui` folder that supports both OAuth providers and passkey authentication.
 
-Example `sign-in.html`:
+Example `sign-in.html` with OAuth and Passkey support:
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vouchrs Authentication Gateway - Sign In</title>
+    <title>Vouchrs - Sign In</title>
     <link rel="stylesheet" href="/auth/static/sign-in.css">
 </head>
 <body>
     <div class="container">
         <div class="login-box">
             <h1>🔐 Secure Authentication</h1>
-            <p class="subtitle">Choose a provider to continue</p>
+            <p class="subtitle">Choose your sign-in method</p>
 
+            <!-- OAuth Provider Buttons -->
             <div class="provider-buttons">
                 <a href="/auth/sign_in?provider=google" class="provider-btn google-btn">
                     <svg class="provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -87,11 +89,26 @@ Example `sign-in.html`:
                 </a>
             </div>
 
+            <!-- Passkey Authentication -->
+            <div class="passkey-section">
+                <div class="divider">
+                    <span>or</span>
+                </div>
+                <button id="passkey-signin" class="passkey-btn">
+                    <span>🔑</span>
+                    <span>Sign in with Passkey</span>
+                </button>
+                <p class="passkey-help">
+                    <a href="/auth/static/passkey-register.html">Create a new passkey</a>
+                </p>
+            </div>
+
             <div class="footer">
-                <p>Secured by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a> <span class="version">OIDC Proxy</span></p>
+                <p>Secured by <a href="https://github.com/vouchrs/vouchrs" target="_blank">Vouchrs</a></p>
             </div>
         </div>
     </div>
+    <script src="/auth/static/passkey-signin.js"></script>
 </body>
 </html>
 ```
@@ -230,8 +247,11 @@ This script:
 | Endpoint | Description |
 |----------|-------------|
 | `/auth/sign_in` | Main sign-in page (uses static files) |
-| `/auth/static/sign-in.html` | Direct access to HTML file |
-| `/auth/static/sign-in.css` | Direct access to CSS file |
+| `/auth/static/sign-in.html` | Direct access to sign-in page |
+| `/auth/static/sign-in.css` | Direct access to CSS stylesheet |
+| `/auth/static/passkey-register.html` | Direct access to passkey registration page |
+| `/auth/static/passkey-register.js` | Passkey registration JavaScript |
+| `/auth/static/passkey-signin.js` | Passkey authentication JavaScript |
 | `/auth/static/*` | Any file in static directory |
 
 ## ⚠️ Important Notes
