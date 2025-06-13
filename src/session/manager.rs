@@ -442,7 +442,7 @@ impl SessionManager {
         let oauth_result = oauth_service
             .refresh_oauth_tokens(
                 &session.provider,
-                &session.refresh_token.clone().unwrap_or_default(),
+                session.refresh_token.as_deref().unwrap_or_default(),
             )
             .await
             .map_err(|e| {

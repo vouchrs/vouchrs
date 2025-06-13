@@ -72,7 +72,7 @@ impl CookieFactory {
     /// Returns an error if encryption fails
     pub fn create_cookie<T: Serialize>(
         &self,
-        name: String,
+        name: &str,
         data: Option<&T>,
         options: CookieOptions,
     ) -> Result<Cookie<'static>> {
@@ -81,7 +81,7 @@ impl CookieFactory {
             None => String::new(),
         };
 
-        Ok(Cookie::build(name, value)
+        Ok(Cookie::build(name.to_owned(), value)
             .http_only(options.http_only)
             .secure(self.cookie_secure && options.secure)
             .same_site(options.same_site)
@@ -97,7 +97,7 @@ impl CookieFactory {
     /// Returns an error if encryption fails
     pub fn create_session_cookie(&self, session: &VouchrsSession) -> Result<Cookie> {
         self.create_cookie(
-            COOKIE_NAME.to_string(),
+            COOKIE_NAME,
             Some(session),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
@@ -123,7 +123,7 @@ impl CookieFactory {
         let refresh_duration = i64::try_from(self.session_refresh_hours).unwrap_or(1);
 
         self.create_cookie(
-            COOKIE_NAME.to_string(),
+            COOKIE_NAME,
             Some(session),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
@@ -157,7 +157,7 @@ impl CookieFactory {
             );
 
             self.create_cookie(
-                COOKIE_NAME.to_string(),
+                COOKIE_NAME,
                 Some(&bound_session),
                 CookieOptions {
                     same_site: actix_web::cookie::SameSite::Lax,
@@ -180,7 +180,7 @@ impl CookieFactory {
     /// Returns an error if encryption fails
     pub fn create_user_cookie(&self, user_data: &VouchrsUserData) -> Result<Cookie> {
         self.create_cookie(
-            USER_COOKIE_NAME.to_string(),
+            USER_COOKIE_NAME,
             Some(user_data),
             CookieOptions {
                 same_site: actix_web::cookie::SameSite::Lax,
@@ -255,7 +255,7 @@ impl CookieFactory {
             ..Default::default()
         };
 
-        let cookie = self.create_cookie(cookie_name.to_string(), Some(oauth_state), options)?;
+        let cookie = self.create_cookie(cookie_name, Some(oauth_state), options)?;
 
         log::info!(
             "Creating temporary state cookie: secure={}, name={}, encrypted_len={}",

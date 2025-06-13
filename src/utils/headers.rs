@@ -3,10 +3,32 @@
 //! This module consolidates all HTTP header processing logic and user agent
 //! detection utilities used throughout the application.
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 use actix_web::{HttpRequest, HttpResponseBuilder};
 use reqwest::RequestBuilder;
 
 use crate::session::cookie::filter_vouchrs_cookies;
+
+// Cache for common user-agent platform mappings to avoid repeated parsing
+static PLATFORM_CACHE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut cache = HashMap::new();
+
+    // Pre-populate with common user agents for faster lookup
+    cache.insert("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Windows");
+    cache.insert("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "macOS");
+    cache.insert("Mozilla/5.0 (X11; Linux x86_64)", "Linux");
+    cache.insert(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
+        "iOS",
+    );
+    cache.insert("Mozilla/5.0 (iPad; CPU OS 15_0 like Mac OS X)", "iOS");
+    cache.insert("Mozilla/5.0 (Linux; Android 11; SM-G991B)", "Android");
+    cache.insert("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)", "Chrome OS");
+
+    cache
+});
 
 // ===============================
 // USER AGENT UTILITIES
@@ -72,10 +94,16 @@ pub fn extract_user_agent_info(req: &HttpRequest) -> UserAgentInfo {
     }
 }
 
-/// Derive platform from User-Agent string
+/// Derive platform from User-Agent string with caching for performance
 /// Detects common platforms like Windows, macOS, Linux, Android, iOS, Chrome OS
 #[must_use]
 pub fn derive_platform_from_user_agent(user_agent: &str) -> String {
+    // Check cache first for exact matches (most common case)
+    if let Some(&cached) = PLATFORM_CACHE.get(user_agent) {
+        return cached.to_string();
+    }
+
+    // Fallback to pattern matching for non-cached user agents
     let ua_lower = user_agent.to_lowercase();
 
     if ua_lower.contains("android") {

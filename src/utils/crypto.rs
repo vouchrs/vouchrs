@@ -232,7 +232,7 @@ pub enum JwtAlgorithm {
 /// # Arguments
 ///
 /// * `header` - JWT header as a JSON value
-/// * `payload` - JWT payload/claims as a JSON value  
+/// * `payload` - JWT payload/claims as a JSON value
 /// * `algorithm` - The signing algorithm to use
 /// * `key_material` - Key material for signing:
 ///   - For HS256: The shared secret as bytes
@@ -367,7 +367,7 @@ pub fn create_jwt_header(algorithm: &JwtAlgorithm, key_id: Option<&str>) -> serd
 /// # Arguments
 ///
 /// * `issuer` - The issuer (iss) claim
-/// * `subject` - The subject (sub) claim  
+/// * `subject` - The subject (sub) claim
 /// * `audience` - The audience (aud) claim
 /// * `expiry_minutes` - Token expiry time in minutes from now
 /// * `additional_claims` - Additional custom claims to include
@@ -388,24 +388,43 @@ pub fn create_jwt_payload(
     let now = Utc::now();
     let exp = now + Duration::minutes(expiry_minutes);
 
-    let mut payload = serde_json::json!({
-        "iss": issuer,
-        "sub": subject,
-        "aud": audience,
-        "iat": now.timestamp(),
-        "exp": exp.timestamp()
-    });
+    // Pre-allocate with estimated capacity for better performance
+    let additional_size = additional_claims
+        .and_then(|claims| claims.as_object())
+        .map_or(0, serde_json::Map::len);
 
-    // Merge additional claims if provided
+    let mut payload_map = serde_json::Map::with_capacity(5 + additional_size);
+
+    // Insert standard claims directly into map to avoid intermediate JSON creation
+    payload_map.insert(
+        "iss".to_string(),
+        serde_json::Value::String(issuer.to_string()),
+    );
+    payload_map.insert(
+        "sub".to_string(),
+        serde_json::Value::String(subject.to_string()),
+    );
+    payload_map.insert(
+        "aud".to_string(),
+        serde_json::Value::String(audience.to_string()),
+    );
+    payload_map.insert(
+        "iat".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(now.timestamp())),
+    );
+    payload_map.insert(
+        "exp".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(exp.timestamp())),
+    );
+
+    // Merge additional claims if provided (avoid cloning keys/values when possible)
     if let Some(serde_json::Value::Object(additional_map)) = additional_claims {
-        if let serde_json::Value::Object(ref mut payload_map) = payload {
-            for (key, value) in additional_map {
-                payload_map.insert(key.clone(), value.clone());
-            }
+        for (key, value) in additional_map {
+            payload_map.insert(key.clone(), value.clone());
         }
     }
 
-    payload
+    serde_json::Value::Object(payload_map)
 }
 
 #[cfg(test)]

@@ -52,13 +52,13 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
     print_startup_info(&bind_address, "Stateless", &settings);
 
     // Initialize session manager with authentication services
-    let session_manager = create_session_manager(&settings);
+    let session_manager = Arc::new(create_session_manager(&settings));
 
     // Configure CORS for SPAs
-    let cors_origins = settings.get_cors_origins();
+    let cors_origins = Arc::new(settings.get_cors_origins());
 
     HttpServer::new(move || {
-        let cors_origins = cors_origins.clone();
+        let cors_origins = Arc::clone(&cors_origins);
         let cors = Cors::default()
             .allowed_origin_fn(move |origin, _| {
                 cors_origins
@@ -73,7 +73,7 @@ async fn start_server(oauth_config: OAuthConfig, settings: VouchrsSettings) -> s
         App::new()
             .app_data(web::Data::new(oauth_config.clone()))
             .app_data(web::Data::new(settings.clone()))
-            .app_data(web::Data::new(session_manager.clone()))
+            .app_data(web::Data::from(Arc::clone(&session_manager)))
             .wrap(cors)
             .wrap(Logger::default())
             .configure(configure_services)
