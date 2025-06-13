@@ -250,11 +250,14 @@ pub async fn complete_registration(
     };
 
     // Delegate to SessionManager for unified session handling
-    let mut response =
-        match session_manager.handle_passkey_registration(&req, registration_data, crate::session::manager::ResponseType::Json) {
-            Ok(response) => response,
-            Err(error_response) => error_response,
-        };
+    let mut response = match session_manager.handle_passkey_registration(
+        &req,
+        registration_data,
+        crate::session::manager::ResponseType::Json,
+    ) {
+        Ok(response) => response,
+        Err(error_response) => error_response,
+    };
 
     // Clear the registration state cookie on completion (success or failure)
     let clear_cookie = actix_web::cookie::Cookie::build(PASSKEY_REGISTRATION_STATE_COOKIE, "")
@@ -406,11 +409,14 @@ pub async fn complete_authentication(
     };
 
     // Delegate to SessionManager for unified session handling
-    let mut response =
-        match session_manager.handle_passkey_authentication(&req, authentication_data, crate::session::manager::ResponseType::Json) {
-            Ok(response) => response,
-            Err(error_response) => error_response,
-        };
+    let mut response = match session_manager.handle_passkey_authentication(
+        &req,
+        authentication_data,
+        crate::session::manager::ResponseType::Json,
+    ) {
+        Ok(response) => response,
+        Err(error_response) => error_response,
+    };
 
     // Clear the authentication state cookie on completion (success or failure)
     let clear_cookie = actix_web::cookie::Cookie::build(PASSKEY_AUTHENTICATION_STATE_COOKIE, "")

@@ -162,14 +162,20 @@ impl SessionManager {
 
     /// Get reference to OAuth service if available
     #[must_use]
-    pub fn oauth_service(&self) -> Option<&(dyn crate::oauth::OAuthAuthenticationService + Send + Sync)> {
+    pub fn oauth_service(
+        &self,
+    ) -> Option<&(dyn crate::oauth::OAuthAuthenticationService + Send + Sync)> {
         self.oauth_service.as_ref().map(std::convert::AsRef::as_ref)
     }
 
     /// Get reference to Passkey service if available
     #[must_use]
-    pub fn passkey_service(&self) -> Option<&(dyn crate::passkey::PasskeyAuthenticationService + Send + Sync)> {
-        self.passkey_service.as_ref().map(std::convert::AsRef::as_ref)
+    pub fn passkey_service(
+        &self,
+    ) -> Option<&(dyn crate::passkey::PasskeyAuthenticationService + Send + Sync)> {
+        self.passkey_service
+            .as_ref()
+            .map(std::convert::AsRef::as_ref)
     }
 
     /// Check if OAuth service is available
@@ -202,7 +208,8 @@ impl SessionManager {
     /// - Session decryption fails
     /// - Session validation fails (expired, IP mismatch, etc.)
     pub fn extract_session(&self, req: &HttpRequest) -> Result<VouchrsSession> {
-        let session = self.get_session_from_request(req)?
+        let session = self
+            .get_session_from_request(req)?
             .ok_or_else(|| anyhow!("No valid session found"))?;
 
         // Perform comprehensive session validation
@@ -220,7 +227,8 @@ impl SessionManager {
     ///
     /// Returns an error if decryption fails (expired sessions with refresh tokens are returned)
     pub fn get_session_from_request(&self, req: &HttpRequest) -> Result<Option<VouchrsSession>> {
-        let cookie = req.cookie(COOKIE_NAME)
+        let cookie = req
+            .cookie(COOKIE_NAME)
             .ok_or_else(|| anyhow!("No session cookie found"))?;
 
         let session = decrypt_data::<VouchrsSession>(cookie.value(), &self.encryption_key)?;
@@ -273,7 +281,8 @@ impl SessionManager {
     /// - User data decryption fails
     /// - User data validation fails
     pub fn extract_user_data(&self, req: &HttpRequest) -> Result<VouchrsUserData> {
-        let cookie = req.cookie(USER_COOKIE_NAME)
+        let cookie = req
+            .cookie(USER_COOKIE_NAME)
             .ok_or_else(|| anyhow!("No user cookie found"))?;
 
         let user_data = decrypt_data::<VouchrsUserData>(cookie.value(), &self.encryption_key)?;
@@ -302,7 +311,11 @@ impl SessionManager {
         let now = Utc::now();
 
         if session.expires_at <= now {
-            log::debug!("Session expired at {}, current time: {}", session.expires_at, now);
+            log::debug!(
+                "Session expired at {}, current time: {}",
+                session.expires_at,
+                now
+            );
 
             // Allow expired sessions with refresh tokens to be returned for token refresh
             if session.refresh_token.is_some() {
@@ -359,9 +372,14 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error if any validation check fails
-    pub fn validate_session_comprehensive(&self, session: &VouchrsSession, req: &HttpRequest) -> Result<()> {
+    pub fn validate_session_comprehensive(
+        &self,
+        session: &VouchrsSession,
+        req: &HttpRequest,
+    ) -> Result<()> {
         // IP binding validation (delegated to validation module)
-        if self.bind_session_to_ip && !crate::session::validation::validate_ip_binding(session, req) {
+        if self.bind_session_to_ip && !crate::session::validation::validate_ip_binding(session, req)
+        {
             return Err(anyhow!("Session IP validation failed"));
         }
 
@@ -431,10 +449,7 @@ impl SessionManager {
     /// the configured session expiration hours.
     #[must_use]
     pub fn is_session_expired(&self, user_data: &VouchrsUserData) -> bool {
-        crate::session::validation::is_session_expired(
-            user_data,
-            self.session_expiration_hours,
-        )
+        crate::session::validation::is_session_expired(user_data, self.session_expiration_hours)
     }
 }
 
@@ -463,7 +478,9 @@ impl SessionManager {
         apple_user_info: Option<crate::utils::apple::AppleUserInfo>,
         response_type: ResponseType,
     ) -> Result<HttpResponse, HttpResponse> {
-        let oauth_service = self.oauth_service.as_ref()
+        let oauth_service = self
+            .oauth_service
+            .as_ref()
             .ok_or_else(|| Self::create_service_unavailable_response("OAuth"))?;
 
         // Call OAuth service to get OAuth result (no session creation)
@@ -482,7 +499,13 @@ impl SessionManager {
         })?;
 
         // Create response with appropriate format
-        self.create_session_response(req, &session, &user_data, oauth_state.redirect_url.clone(), response_type)
+        self.create_session_response(
+            req,
+            &session,
+            &user_data,
+            oauth_state.redirect_url.clone(),
+            response_type,
+        )
     }
 
     /// Handle passkey registration (UNIFIED ENTRY POINT)
@@ -502,7 +525,9 @@ impl SessionManager {
         registration_data: crate::passkey::PasskeyRegistrationData,
         response_type: ResponseType,
     ) -> Result<HttpResponse, HttpResponse> {
-        let passkey_service = self.passkey_service.as_ref()
+        let passkey_service = self
+            .passkey_service
+            .as_ref()
             .ok_or_else(|| Self::create_service_unavailable_response("Passkey"))?;
 
         let passkey_result = passkey_service
@@ -513,10 +538,12 @@ impl SessionManager {
             })?;
 
         // Create session directly from passkey result
-        let (session, user_data) = self.create_passkey_session(passkey_result, req).map_err(|e| {
-            log::error!("Failed to create passkey session: {e}");
-            Self::create_service_error_response("Session creation failed")
-        })?;
+        let (session, user_data) =
+            self.create_passkey_session(passkey_result, req)
+                .map_err(|e| {
+                    log::error!("Failed to create passkey session: {e}");
+                    Self::create_service_error_response("Session creation failed")
+                })?;
 
         // Create response with appropriate format
         self.create_session_response(req, &session, &user_data, None, response_type)
@@ -539,7 +566,9 @@ impl SessionManager {
         authentication_data: crate::passkey::PasskeyAuthenticationData,
         response_type: ResponseType,
     ) -> Result<HttpResponse, HttpResponse> {
-        let passkey_service = self.passkey_service.as_ref()
+        let passkey_service = self
+            .passkey_service
+            .as_ref()
             .ok_or_else(|| Self::create_service_unavailable_response("Passkey"))?;
 
         let passkey_result = passkey_service
@@ -550,10 +579,12 @@ impl SessionManager {
             })?;
 
         // Create session directly from passkey result
-        let (session, user_data) = self.create_passkey_session(passkey_result, req).map_err(|e| {
-            log::error!("Failed to create passkey session: {e}");
-            Self::create_service_error_response("Session creation failed")
-        })?;
+        let (session, user_data) =
+            self.create_passkey_session(passkey_result, req)
+                .map_err(|e| {
+                    log::error!("Failed to create passkey session: {e}");
+                    Self::create_service_error_response("Session creation failed")
+                })?;
 
         // Create response with appropriate format
         self.create_session_response(req, &session, &user_data, None, response_type)
@@ -809,14 +840,7 @@ mod tests {
 
     #[test]
     fn test_session_manager_creation() {
-        let manager = SessionManager::new(
-            TEST_JWT_KEY,
-            true,
-            false,
-            24,
-            168,
-            1,
-        );
+        let manager = SessionManager::new(TEST_JWT_KEY, true, false, 24, 168, 1);
 
         assert!(manager.cookie_secure());
         assert!(!manager.is_session_ip_binding_enabled());
@@ -841,12 +865,12 @@ mod tests {
         let json_type = ResponseType::Json;
 
         match redirect_type {
-            ResponseType::Redirect => {},
+            ResponseType::Redirect => {}
             ResponseType::Json => panic!("Expected Redirect"),
         }
 
         match json_type {
-            ResponseType::Json => {},
+            ResponseType::Json => {}
             ResponseType::Redirect => panic!("Expected Json"),
         }
     }
@@ -858,7 +882,10 @@ mod tests {
 
         let result = manager.extract_session(&req);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No session cookie found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No session cookie found"));
     }
 
     #[test]
@@ -950,15 +977,24 @@ mod tests {
     #[test]
     fn test_service_unavailable_responses() {
         let response = SessionManager::create_service_unavailable_response("OAuth");
-        assert_eq!(response.status(), actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+        );
 
         let response = SessionManager::create_service_unavailable_response("Passkey");
-        assert_eq!(response.status(), actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     #[test]
     fn test_service_error_response() {
         let response = SessionManager::create_service_error_response("Test error");
-        assert_eq!(response.status(), actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }

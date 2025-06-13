@@ -26,23 +26,23 @@ use serde_json::Value;
 ///
 /// This function should not panic as we provide a default email fallback
 pub fn process_id_token(
-        provider: &str,
-        id_token: Option<&str>,
-        refresh_token: Option<String>,
-        expires_at: DateTime<Utc>,
-        apple_user_info: Option<&AppleUserInfo>,
-    ) -> Result<OAuthResult, OAuthError> {
-        let id_token_ref =
-            id_token.ok_or_else(|| OAuthError::IdToken("No ID token available".to_string()))?;
+    provider: &str,
+    id_token: Option<&str>,
+    refresh_token: Option<String>,
+    expires_at: DateTime<Utc>,
+    apple_user_info: Option<&AppleUserInfo>,
+) -> Result<OAuthResult, OAuthError> {
+    let id_token_ref =
+        id_token.ok_or_else(|| OAuthError::IdToken("No ID token available".to_string()))?;
 
-        let claims = decode_jwt_payload(id_token_ref)
-            .map_err(|e| OAuthError::IdToken(format!("Failed to decode ID token: {e}")))?;
+    let claims = decode_jwt_payload(id_token_ref)
+        .map_err(|e| OAuthError::IdToken(format!("Failed to decode ID token: {e}")))?;
 
-        info!("Processing ID token claims for provider: {provider}");
-        debug!(
-            "ID token claims: {}",
-            serde_json::to_string_pretty(&claims).unwrap_or_default()
-        );
+    info!("Processing ID token claims for provider: {provider}");
+    debug!(
+        "ID token claims: {}",
+        serde_json::to_string_pretty(&claims).unwrap_or_default()
+    );
 
     // Extract required claims
     let provider_id = extract_subject(&claims)?;
@@ -205,10 +205,7 @@ mod tests {
             "name": "John Doe"
         });
 
-        assert_eq!(
-            extract_name(&claims),
-            Some("John Doe".to_string())
-        );
+        assert_eq!(extract_name(&claims), Some("John Doe".to_string()));
     }
 
     #[test]
@@ -218,10 +215,7 @@ mod tests {
             "family_name": "Doe"
         });
 
-        assert_eq!(
-            extract_name(&claims),
-            Some("John Doe".to_string())
-        );
+        assert_eq!(extract_name(&claims), Some("John Doe".to_string()));
     }
 
     #[test]

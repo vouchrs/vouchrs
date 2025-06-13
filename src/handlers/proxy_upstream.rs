@@ -42,44 +42,49 @@ pub async fn proxy_upstream(
     };
 
     // Check and refresh tokens if necessary
-    let (updated_session, tokens_were_refreshed) =
-        match check_and_refresh_tokens(
-            crate::oauth::OAuthResult {
-                provider: session.provider.clone(),
-                provider_id: String::new(), // Not needed for refresh
-                email: None,                // Not needed for refresh
-                name: None,                 // Not needed for refresh
-                expires_at: session.expires_at,
-                authenticated_at: session.authenticated_at,
-                id_token: session.id_token.clone(),
-                refresh_token: session.refresh_token.clone(),
-            },
-            &oauth_config,
-            &session.provider
-        ).await {
-            Ok(oauth_result) => {
-                // Check if tokens were actually refreshed by comparing expires_at
-                let tokens_refreshed = oauth_result.expires_at != session.expires_at;
+    let (updated_session, tokens_were_refreshed) = match check_and_refresh_tokens(
+        crate::oauth::OAuthResult {
+            provider: session.provider.clone(),
+            provider_id: String::new(), // Not needed for refresh
+            email: None,                // Not needed for refresh
+            name: None,                 // Not needed for refresh
+            expires_at: session.expires_at,
+            authenticated_at: session.authenticated_at,
+            id_token: session.id_token.clone(),
+            refresh_token: session.refresh_token.clone(),
+        },
+        &oauth_config,
+        &session.provider,
+    )
+    .await
+    {
+        Ok(oauth_result) => {
+            // Check if tokens were actually refreshed by comparing expires_at
+            let tokens_refreshed = oauth_result.expires_at != session.expires_at;
 
-                if tokens_refreshed {
-                    // Use session manager to create a new session with refreshed tokens
-                    // This ensures consistent session creation with all proper validations
-                    match session_manager.create_oauth_session(oauth_result, &req) {
-                        Ok((new_session, _)) => (new_session, true),
-                        Err(e) => {
-                            log::error!("Failed to create OAuth session after token refresh: {e}");
-                            // Clear session and redirect to sign-in page
-                            let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
-                            return Ok(handle_session_failure_response(&req, &settings, clear_cookie));
-                        }
+            if tokens_refreshed {
+                // Use session manager to create a new session with refreshed tokens
+                // This ensures consistent session creation with all proper validations
+                match session_manager.create_oauth_session(oauth_result, &req) {
+                    Ok((new_session, _)) => (new_session, true),
+                    Err(e) => {
+                        log::error!("Failed to create OAuth session after token refresh: {e}");
+                        // Clear session and redirect to sign-in page
+                        let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
+                        return Ok(handle_session_failure_response(
+                            &req,
+                            &settings,
+                            clear_cookie,
+                        ));
                     }
-                } else {
-                    // No refresh needed, use original session
-                    (session, false)
                 }
+            } else {
+                // No refresh needed, use original session
+                (session, false)
             }
-            Err(response) => return Ok(response),
-        };
+        }
+        Err(response) => return Ok(response),
+    };
 
     // Build and execute upstream request
     let upstream_url = match build_upstream_url(&settings.proxy.upstream_url, req.path()) {

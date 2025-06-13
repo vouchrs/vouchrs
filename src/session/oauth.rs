@@ -5,16 +5,17 @@
 //! `SessionManager` can delegate to.
 
 use crate::models::{VouchrsSession, VouchrsUserData};
-use crate::oauth::{OAuthState, OAuthResult};
+use crate::oauth::{OAuthResult, OAuthState};
 use crate::session::utils::extract_client_info;
 use crate::utils::apple::AppleUserInfo;
 use actix_web::HttpRequest;
 use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
-use log::{debug, info, warn};
-use serde_json::Value;
+use log::info;
 
 /// Create session objects from OAuth authentication result
+///
+/// This utility function converts OAuth authentication results into session objects
+/// that `SessionManager` can use to create HTTP responses with cookies.
 ///
 /// # Errors
 ///
@@ -22,7 +23,7 @@ use serde_json::Value;
 /// - Session creation fails due to invalid data in the OAuth result
 /// - Client information extraction fails
 pub fn create_oauth_session(
-    oauth_result: &OauthResult,
+    oauth_result: &OAuthResult,
     req: &HttpRequest,
     bind_session_to_ip: bool,
 ) -> Result<(VouchrsSession, VouchrsUserData)> {
@@ -78,7 +79,7 @@ pub async fn process_oauth_callback(
     state: &OAuthState,
     apple_info: Option<AppleUserInfo>,
     oauth_service: &dyn crate::oauth::OAuthAuthenticationService,
-) -> Result<OauthResult> {
+) -> Result<OAuthResult> {
     info!("Processing OAuth callback for provider: {provider}");
 
     // Call OAuth service to get OAuth result (no session creation)
@@ -104,29 +105,170 @@ pub async fn process_oauth_callback(
 pub async fn handle_oauth_token_refresh(
     session: &VouchrsSession,
     oauth_service: &dyn crate::oauth::OAuthAuthenticationService,
-) -> Result<VouchrsSession> {
+) -> Result<OAuthResult> {
     // Check if we have a refresh token
     let Some(refresh_token) = &session.refresh_token else {
         return Err(anyhow::anyhow!("No refresh token available"));
     };
 
     // Call the OAuth service to refresh the token
-    let token_result = oauth_service
+    let oauth_result = oauth_service
         .refresh_oauth_tokens(&session.provider, refresh_token)
         .await
         .map_err(|e| anyhow::anyhow!("OAuth token refresh failed: {e}"))?;
 
-    // Return the refreshed session
-    Ok(token_result.session)
+    // Return the refreshed OAuth result
+    Ok(oauth_result)
+}
+
+/// Validate OAuth session for token refresh requirements
+///
+/// This utility function checks if an OAuth session needs token refresh and validates
+/// that the session has the necessary tokens for refresh operations.
+///
+/// # Arguments
+/// * `session` - The OAuth session to validate
+///
+/// # Returns
+/// * `Ok(true)` if refresh is needed and possible
+/// * `Ok(false)` if refresh is not needed
+/// * `Err(String)` if refresh is needed but not possible
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The session is not an OAuth session
+/// - Token refresh is needed but no refresh token is available
+pub fn validate_oauth_refresh_requirements(session: &VouchrsSession) -> Result<bool, String> {
+    // Check if this is an OAuth session
+    if !session.is_oauth_session() {
+        return Err("Not an OAuth session".to_string());
+    }
+
+    // Check if tokens need refresh using the validation module
+    let needs_refresh = crate::session::validation::needs_token_refresh(session);
+
+    if needs_refresh {
+        // Validate that we have a refresh token
+        if session.refresh_token.is_none() {
+            return Err("Token refresh needed but no refresh token available".to_string());
+        }
+    }
+
+    Ok(needs_refresh)
+}
+
+/// Extract OAuth provider information from session
+///
+/// Utility function to extract and validate OAuth provider information from a session.
+///
+/// # Arguments
+/// * `session` - The session to extract provider info from
+///
+/// # Returns
+/// * `Ok((provider, refresh_token))` if valid OAuth session with refresh token
+/// * `Err(String)` if session is invalid or missing required data
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The session is not an OAuth session
+/// - No refresh token is available in the session
+pub fn extract_oauth_provider_info(session: &VouchrsSession) -> Result<(String, String), String> {
+    // Validate this is an OAuth session
+    if !session.is_oauth_session() {
+        return Err("Not an OAuth session".to_string());
+    }
+
+    // Extract refresh token
+    let refresh_token = session
+        .refresh_token
+        .as_ref()
+        .ok_or("No refresh token available")?;
+
+    Ok((session.provider.clone(), refresh_token.clone()))
+}
+
+/// Create minimal OAuth result for testing or fallback scenarios
+///
+/// Utility function to create a minimal OAuth result with default values.
+/// Useful for testing or creating fallback authentication results.
+///
+/// # Arguments
+/// * `provider` - OAuth provider name
+/// * `provider_id` - Provider-specific user ID
+/// * `email` - User email address
+///
+/// # Returns
+/// * `OAuthResult` with minimal required fields
+#[must_use]
+pub fn create_minimal_oauth_result(
+    provider: &str,
+    provider_id: &str,
+    email: Option<&str>,
+) -> OAuthResult {
+    let now = chrono::Utc::now();
+
+    OAuthResult {
+        provider: provider.to_string(),
+        provider_id: provider_id.to_string(),
+        email: email.map(ToString::to_string),
+        name: None,
+        expires_at: now + chrono::Duration::hours(1), // 1 hour default
+        authenticated_at: now,
+        id_token: None,
+        refresh_token: None,
+    }
+}
+
+/// Validate OAuth result for session creation
+///
+/// Utility function to validate that an OAuth result has the required fields
+/// for successful session creation.
+///
+/// # Arguments
+/// * `oauth_result` - The OAuth result to validate
+///
+/// # Returns
+/// * `Ok(())` if validation passes
+/// * `Err(String)` with validation error message
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Provider name is empty
+/// - Provider ID is empty  
+/// - OAuth tokens are already expired
+/// - Authentication time is in the future
+pub fn validate_oauth_result_for_session(oauth_result: &OAuthResult) -> Result<(), String> {
+    // Check required fields
+    if oauth_result.provider.is_empty() {
+        return Err("Provider is required".to_string());
+    }
+
+    if oauth_result.provider_id.is_empty() {
+        return Err("Provider ID is required".to_string());
+    }
+
+    // Check token expiration
+    let now = chrono::Utc::now();
+    if oauth_result.expires_at <= now {
+        return Err("OAuth tokens are already expired".to_string());
+    }
+
+    // Validate authentication time
+    if oauth_result.authenticated_at > now {
+        return Err("Authentication time cannot be in the future".to_string());
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::create_oauth_session;
-    use crate::testing::TestFixtures;
+    use super::*;
     use base64::Engine as _;
     use chrono::Utc;
-    use serde_json::json;
 
     fn minimal_id_token(sub: &str) -> String {
         // JWT with only 'sub' claim, base64-encoded header and payload, signature ignored
@@ -138,7 +280,8 @@ mod tests {
 
     #[test]
     fn test_create_oauth_session() {
-        let oauth_result = TestFixtures::oauth_session_result();
+        let oauth_result =
+            create_minimal_oauth_result("google", "google_user_123", Some("user@example.com"));
         let req = crate::testing::RequestBuilder::new().build();
 
         let result = create_oauth_session(&oauth_result, &req, false);
@@ -177,5 +320,95 @@ mod tests {
         assert_eq!(result.provider_id, "apple-sub-123");
         assert!(result.id_token.is_some());
         assert!(result.refresh_token.is_some());
+    }
+
+    #[test]
+    fn test_validate_oauth_refresh_requirements() {
+        let mut session = crate::testing::TestFixtures::oauth_session();
+
+        // Session that needs refresh and has refresh token should return Ok(true)
+        session.expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
+        session.refresh_token = Some("refresh_token".to_string());
+        let result = validate_oauth_refresh_requirements(&session);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        // Session that doesn't need refresh should return Ok(false)
+        session.expires_at = chrono::Utc::now() + chrono::Duration::hours(2);
+        let result = validate_oauth_refresh_requirements(&session);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+
+        // Session that needs refresh but has no refresh token should return error
+        session.expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
+        session.refresh_token = None;
+        let result = validate_oauth_refresh_requirements(&session);
+        assert!(result.is_err());
+
+        // Non-OAuth session should return error
+        session.id_token = None;
+        session.refresh_token = None;
+        session.credential_id = Some("credential_id".to_string());
+        let result = validate_oauth_refresh_requirements(&session);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_oauth_provider_info() {
+        let mut session = crate::testing::TestFixtures::oauth_session();
+        session.provider = "google".to_string();
+        session.refresh_token = Some("refresh_token_123".to_string());
+
+        let result = extract_oauth_provider_info(&session);
+        assert!(result.is_ok());
+
+        let (provider, refresh_token) = result.unwrap();
+        assert_eq!(provider, "google");
+        assert_eq!(refresh_token, "refresh_token_123");
+
+        // Session without refresh token should fail
+        session.refresh_token = None;
+        assert!(extract_oauth_provider_info(&session).is_err());
+    }
+
+    #[test]
+    fn test_create_minimal_oauth_result() {
+        let result =
+            create_minimal_oauth_result("google", "google_user_123", Some("user@example.com"));
+
+        assert_eq!(result.provider, "google");
+        assert_eq!(result.provider_id, "google_user_123");
+        assert_eq!(result.email, Some("user@example.com".to_string()));
+        assert!(result.expires_at > chrono::Utc::now());
+        assert!(result.authenticated_at <= chrono::Utc::now());
+    }
+
+    #[test]
+    fn test_validate_oauth_result_for_session() {
+        let valid_result =
+            create_minimal_oauth_result("google", "google_user_123", Some("user@example.com"));
+
+        // Valid result should pass
+        assert!(validate_oauth_result_for_session(&valid_result).is_ok());
+
+        // Empty provider should fail
+        let mut invalid_result = valid_result.clone();
+        invalid_result.provider = String::new();
+        assert!(validate_oauth_result_for_session(&invalid_result).is_err());
+
+        // Empty provider_id should fail
+        let mut invalid_result = valid_result.clone();
+        invalid_result.provider_id = String::new();
+        assert!(validate_oauth_result_for_session(&invalid_result).is_err());
+
+        // Expired tokens should fail
+        let mut expired_result = valid_result.clone();
+        expired_result.expires_at = chrono::Utc::now() - chrono::Duration::hours(1);
+        assert!(validate_oauth_result_for_session(&expired_result).is_err());
+
+        // Future authentication time should fail
+        let mut future_result = valid_result.clone();
+        future_result.authenticated_at = chrono::Utc::now() + chrono::Duration::hours(1);
+        assert!(validate_oauth_result_for_session(&future_result).is_err());
     }
 }

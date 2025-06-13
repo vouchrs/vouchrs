@@ -58,7 +58,6 @@ pub struct OAuthFlowResult {
     pub oauth_state: OAuthState,
 }
 
-
 /// OAuth authentication service trait
 #[async_trait]
 pub trait OAuthAuthenticationService {
