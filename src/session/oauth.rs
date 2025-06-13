@@ -237,7 +237,7 @@ pub fn create_minimal_oauth_result(
 ///
 /// Returns an error if:
 /// - Provider name is empty
-/// - Provider ID is empty  
+/// - Provider ID is empty
 /// - OAuth tokens are already expired
 /// - Authentication time is in the future
 pub fn validate_oauth_result_for_session(oauth_result: &OAuthResult) -> Result<(), String> {
