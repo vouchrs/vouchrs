@@ -105,26 +105,26 @@ mod tests {
         let lazy = LazyFormat::new(move || format!("Result: {}", expensive_computation()));
 
         // Only formats when actually displayed
-        assert_eq!(format!("{}", lazy), "Result: expensive");
+        assert_eq!(format!("{lazy}"), "Result: expensive");
     }
 
     #[test]
     fn test_lazy_format_macro() {
         let value = 42;
         let lazy = lazy_format!("Value: {}", value);
-        assert_eq!(format!("{}", lazy), "Value: 42");
+        assert_eq!(format!("{lazy}"), "Value: 42");
     }
 
     #[test]
     fn test_lazy_error() {
         let lazy_err = LazyError::new(|| "Something went wrong".to_string());
-        assert_eq!(format!("{}", lazy_err), "Something went wrong");
+        assert_eq!(format!("{lazy_err}"), "Something went wrong");
     }
 
     #[test]
     fn test_lazy_error_macro() {
         let error_code = 404;
         let lazy_err = lazy_error!("Error {}: Not found", error_code);
-        assert_eq!(format!("{}", lazy_err), "Error 404: Not found");
+        assert_eq!(format!("{lazy_err}"), "Error 404: Not found");
     }
 }
