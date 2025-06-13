@@ -403,6 +403,7 @@ impl VouchrsSettings {
         Self::apply_session_env_overrides(&mut settings.session);
         Self::apply_cookie_env_overrides(&mut settings.cookies);
         Self::apply_logging_env_overrides(&mut settings.logging);
+        Self::apply_passkey_env_overrides(&mut settings.passkeys);
     }
 
     /// Apply environment overrides for application settings
@@ -521,6 +522,40 @@ impl VouchrsSettings {
     fn apply_logging_env_overrides(logging_settings: &mut LoggingSettings) {
         if let Ok(log_level) = std::env::var("RUST_LOG") {
             logging_settings.level = log_level;
+        }
+    }
+
+    /// Apply environment overrides for passkey settings
+    fn apply_passkey_env_overrides(passkey_settings: &mut PasskeySettings) {
+        if let Ok(enabled_str) = std::env::var("PASSKEYS_ENABLED") {
+            if let Ok(enabled) = enabled_str.parse::<bool>() {
+                passkey_settings.enabled = enabled;
+            }
+        }
+        if let Ok(rp_id) = std::env::var("PASSKEYS_RP_ID") {
+            passkey_settings.rp_id = rp_id;
+        }
+        if let Ok(rp_name) = std::env::var("PASSKEYS_RP_NAME") {
+            passkey_settings.rp_name = rp_name;
+        }
+        if let Ok(rp_origin) = std::env::var("PASSKEYS_RP_ORIGIN") {
+            passkey_settings.rp_origin = rp_origin;
+        }
+        if let Ok(timeout_str) = std::env::var("PASSKEYS_TIMEOUT_SECONDS") {
+            if let Ok(timeout) = timeout_str.parse::<u64>() {
+                passkey_settings.timeout_seconds = timeout;
+            }
+        }
+        if let Ok(user_verification) = std::env::var("PASSKEYS_USER_VERIFICATION") {
+            passkey_settings.user_verification = user_verification;
+        }
+        if let Ok(authenticator_attachment) = std::env::var("PASSKEYS_AUTHENTICATOR_ATTACHMENT") {
+            passkey_settings.authenticator_attachment = Some(authenticator_attachment);
+        }
+        if let Ok(session_duration_str) = std::env::var("PASSKEYS_SESSION_DURATION_SECONDS") {
+            if let Ok(session_duration) = session_duration_str.parse::<i64>() {
+                passkey_settings.session_duration_seconds = session_duration;
+            }
         }
     }
 
@@ -988,5 +1023,92 @@ mod tests {
         assert_eq!(config.clock_skew_seconds, 600);
         assert!(config.validate_issuer); // Default
         assert!(config.validate_expiration); // Default
+    }
+
+    #[test]
+    #[serial]
+    fn test_passkey_env_overrides() {
+        // Clean environment first
+        std::env::remove_var("PASSKEYS_ENABLED");
+        std::env::remove_var("PASSKEYS_RP_ID");
+        std::env::remove_var("PASSKEYS_RP_NAME");
+        std::env::remove_var("PASSKEYS_RP_ORIGIN");
+        std::env::remove_var("PASSKEYS_TIMEOUT_SECONDS");
+        std::env::remove_var("PASSKEYS_USER_VERIFICATION");
+        std::env::remove_var("PASSKEYS_AUTHENTICATOR_ATTACHMENT");
+        std::env::remove_var("PASSKEYS_SESSION_DURATION_SECONDS");
+
+        let mut passkey_settings = PasskeySettings::default();
+
+        // Test boolean override
+        std::env::set_var("PASSKEYS_ENABLED", "true");
+        std::env::set_var("PASSKEYS_RP_ID", "example.com");
+        std::env::set_var("PASSKEYS_RP_NAME", "Example Service");
+        std::env::set_var("PASSKEYS_RP_ORIGIN", "https://example.com");
+        std::env::set_var("PASSKEYS_TIMEOUT_SECONDS", "120");
+        std::env::set_var("PASSKEYS_USER_VERIFICATION", "required");
+        std::env::set_var("PASSKEYS_AUTHENTICATOR_ATTACHMENT", "platform");
+        std::env::set_var("PASSKEYS_SESSION_DURATION_SECONDS", "172800");
+
+        // Apply environment overrides
+        VouchrsSettings::apply_passkey_env_overrides(&mut passkey_settings);
+
+        // Verify overrides were applied
+        assert!(passkey_settings.enabled);
+        assert_eq!(passkey_settings.rp_id, "example.com");
+        assert_eq!(passkey_settings.rp_name, "Example Service");
+        assert_eq!(passkey_settings.rp_origin, "https://example.com");
+        assert_eq!(passkey_settings.timeout_seconds, 120);
+        assert_eq!(passkey_settings.user_verification, "required");
+        assert_eq!(
+            passkey_settings.authenticator_attachment,
+            Some("platform".to_string())
+        );
+        assert_eq!(passkey_settings.session_duration_seconds, 172_800);
+
+        // Clean up
+        std::env::remove_var("PASSKEYS_ENABLED");
+        std::env::remove_var("PASSKEYS_RP_ID");
+        std::env::remove_var("PASSKEYS_RP_NAME");
+        std::env::remove_var("PASSKEYS_RP_ORIGIN");
+        std::env::remove_var("PASSKEYS_TIMEOUT_SECONDS");
+        std::env::remove_var("PASSKEYS_USER_VERIFICATION");
+        std::env::remove_var("PASSKEYS_AUTHENTICATOR_ATTACHMENT");
+        std::env::remove_var("PASSKEYS_SESSION_DURATION_SECONDS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_passkey_env_integration() {
+        // Clean environment first
+        std::env::remove_var("PASSKEYS_ENABLED");
+        std::env::remove_var("PASSKEYS_RP_ID");
+        std::env::remove_var("PASSKEYS_RP_NAME");
+
+        // Set some environment variables
+        std::env::set_var("PASSKEYS_ENABLED", "true");
+        std::env::set_var("PASSKEYS_RP_ID", "integration-test.com");
+        std::env::set_var("PASSKEYS_RP_NAME", "Integration Test Service");
+
+        // Create settings with defaults
+        let mut settings = VouchrsSettings::default();
+
+        // Verify defaults first
+        assert!(!settings.passkeys.enabled);
+        assert_eq!(settings.passkeys.rp_id, "localhost");
+        assert_eq!(settings.passkeys.rp_name, "VouchRS");
+
+        // Apply environment overrides (simulating what happens in load())
+        VouchrsSettings::apply_env_overrides(&mut settings);
+
+        // Verify environment variables were applied
+        assert!(settings.passkeys.enabled);
+        assert_eq!(settings.passkeys.rp_id, "integration-test.com");
+        assert_eq!(settings.passkeys.rp_name, "Integration Test Service");
+
+        // Clean up
+        std::env::remove_var("PASSKEYS_ENABLED");
+        std::env::remove_var("PASSKEYS_RP_ID");
+        std::env::remove_var("PASSKEYS_RP_NAME");
     }
 }
