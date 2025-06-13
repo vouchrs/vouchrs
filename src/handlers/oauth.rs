@@ -206,6 +206,7 @@ pub async fn oauth_callback(
             &code,
             &oauth_state,
             processed_apple_info,
+            crate::session::manager::ResponseType::Redirect,
         )
         .await
     {

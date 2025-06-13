@@ -24,4 +24,12 @@ pub use cookie::{CookieFactory, CookieOptions, COOKIE_NAME, OAUTH_STATE_COOKIE, 
 pub use manager::{SessionError, SessionManager};
 pub use passkey::{PasskeySessionBuilder, PasskeySessionData};
 pub use utils::{create_error_response, extract_client_info, get_state_from_callback};
-pub use validation::{calculate_client_context_hash, validate_client_context};
+pub use validation::{
+    calculate_client_context_hash,
+    validate_client_context,
+    validate_session_security,
+    is_session_expired,
+    validate_ip_binding,
+    needs_token_refresh,
+    is_session_time_expired,
+};

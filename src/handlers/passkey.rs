@@ -251,7 +251,7 @@ pub async fn complete_registration(
 
     // Delegate to SessionManager for unified session handling
     let mut response =
-        match session_manager.handle_passkey_registration_json(&req, registration_data) {
+        match session_manager.handle_passkey_registration(&req, registration_data, crate::session::manager::ResponseType::Json) {
             Ok(response) => response,
             Err(error_response) => error_response,
         };
@@ -407,7 +407,7 @@ pub async fn complete_authentication(
 
     // Delegate to SessionManager for unified session handling
     let mut response =
-        match session_manager.handle_passkey_authentication_json(&req, authentication_data) {
+        match session_manager.handle_passkey_authentication(&req, authentication_data, crate::session::manager::ResponseType::Json) {
             Ok(response) => response,
             Err(error_response) => error_response,
         };

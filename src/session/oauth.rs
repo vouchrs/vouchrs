@@ -5,8 +5,7 @@
 //! `SessionManager` can delegate to.
 
 use crate::models::{VouchrsSession, VouchrsUserData};
-use crate::oauth::OAuthState;
-use crate::session::auth_results::OauthResult;
+use crate::oauth::{OAuthState, OAuthResult};
 use crate::session::utils::extract_client_info;
 use crate::utils::apple::AppleUserInfo;
 use actix_web::HttpRequest;
