@@ -492,20 +492,15 @@ impl SessionManager {
                 Self::create_service_error_response("OAuth authentication failed")
             })?;
 
-        // Create session directly from OAuth result
-        let (session, user_data) = self.create_oauth_session(oauth_result, req).map_err(|e| {
-            log::error!("Failed to create OAuth session: {e}");
-            Self::create_service_error_response("Session creation failed")
-        })?;
-
-        // Create response with appropriate format
-        self.create_session_response(
-            req,
-            &session,
-            &user_data,
-            oauth_state.redirect_url.clone(),
-            response_type,
-        )
+        // Create session directly from OAuth result and create response with appropriate format
+        match response_type {
+            ResponseType::Redirect => {
+                self.create_oauth_session(&oauth_result, req, oauth_state.redirect_url.clone())
+            }
+            ResponseType::Json => {
+                self.create_oauth_session_json(&oauth_result, req, oauth_state.redirect_url.clone())
+            }
+        }
     }
 
     /// Handle passkey registration (UNIFIED ENTRY POINT)
@@ -537,16 +532,11 @@ impl SessionManager {
                 Self::create_service_error_response("Passkey registration failed")
             })?;
 
-        // Create session directly from passkey result
-        let (session, user_data) =
-            self.create_passkey_session(passkey_result, req)
-                .map_err(|e| {
-                    log::error!("Failed to create passkey session: {e}");
-                    Self::create_service_error_response("Session creation failed")
-                })?;
-
-        // Create response with appropriate format
-        self.create_session_response(req, &session, &user_data, None, response_type)
+        // Create session directly from passkey result and create response with appropriate format
+        match response_type {
+            ResponseType::Redirect => self.create_passkey_session(&passkey_result, req, None),
+            ResponseType::Json => self.create_passkey_session_json(&passkey_result, req, None),
+        }
     }
 
     /// Handle passkey authentication (UNIFIED ENTRY POINT)
@@ -578,130 +568,133 @@ impl SessionManager {
                 Self::create_service_error_response("Passkey authentication failed")
             })?;
 
-        // Create session directly from passkey result
+        // Create session directly from passkey result and create response with appropriate format
+        match response_type {
+            ResponseType::Redirect => self.create_passkey_session(&passkey_result, req, None),
+            ResponseType::Json => self.create_passkey_session_json(&passkey_result, req, None),
+        }
+    }
+
+    /// Create OAuth session with HTTP response (ONLY session creation method for OAuth)
+    ///
+    /// This is one of the two main session creation entry points for OAuth authentication.
+    /// It creates session objects from OAuth results and returns an HTTP response with cookies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error response if session creation fails
+    pub fn create_oauth_session(
+        &self,
+        oauth_result: &crate::oauth::OAuthResult,
+        req: &HttpRequest,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Delegate to oauth utility for session object creation
         let (session, user_data) =
-            self.create_passkey_session(passkey_result, req)
+            crate::session::oauth::create_oauth_session(oauth_result, req, self.bind_session_to_ip)
                 .map_err(|e| {
-                    log::error!("Failed to create passkey session: {e}");
+                    log::error!("Failed to create OAuth session: {e}");
                     Self::create_service_error_response("Session creation failed")
                 })?;
 
-        // Create response with appropriate format
-        self.create_session_response(req, &session, &user_data, None, response_type)
+        // Create HTTP response with cookies (default to redirect)
+        self.create_session_response(
+            req,
+            &session,
+            &user_data,
+            redirect_url,
+            ResponseType::Redirect,
+        )
     }
 
-    /// Create session objects directly from OAuth result
+    /// Create OAuth session with JSON response (for AJAX endpoints)
     ///
-    /// This method bypasses the `AuthenticationResult` abstraction and creates
-    /// session objects directly from OAuth authentication results.
+    /// This provides a JSON response variant for OAuth session creation, primarily
+    /// used by AJAX/API clients that need JSON responses instead of redirects.
     ///
     /// # Errors
     ///
-    /// Returns a session creation error if the input is invalid
-    pub fn create_oauth_session(
+    /// Returns an error response if session creation fails
+    pub fn create_oauth_session_json(
         &self,
-        oauth_result: crate::oauth::OAuthResult,
+        oauth_result: &crate::oauth::OAuthResult,
         req: &HttpRequest,
-    ) -> Result<
-        (
-            crate::models::VouchrsSession,
-            crate::models::VouchrsUserData,
-        ),
-        anyhow::Error,
-    > {
-        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Delegate to oauth utility for session object creation
+        let (session, user_data) =
+            crate::session::oauth::create_oauth_session(oauth_result, req, self.bind_session_to_ip)
+                .map_err(|e| {
+                    log::error!("Failed to create OAuth session: {e}");
+                    Self::create_service_error_response("Session creation failed")
+                })?;
 
-        let session = crate::models::VouchrsSession {
-            // OAuth-specific fields
-            id_token: oauth_result.id_token,
-            refresh_token: oauth_result.refresh_token,
-
-            // No Passkey fields
-            credential_id: None,
-            user_handle: None,
-
-            // Common fields
-            provider: oauth_result.provider.clone(),
-            expires_at: oauth_result.expires_at,
-            authenticated_at: oauth_result.authenticated_at,
-            client_ip: if self.bind_session_to_ip {
-                client_ip.clone()
-            } else {
-                None
-            },
-        };
-
-        let user_data = crate::models::VouchrsUserData {
-            email: oauth_result.email.unwrap_or_default(),
-            name: oauth_result.name,
-            provider: oauth_result.provider,
-            provider_id: oauth_result.provider_id,
-            client_ip,
-            user_agent: user_agent_info.user_agent,
-            platform: user_agent_info.platform,
-            lang: user_agent_info.lang,
-            mobile: i32::from(user_agent_info.mobile),
-            session_start: Some(oauth_result.authenticated_at.timestamp()),
-        };
-
-        Ok((session, user_data))
+        // Create JSON response with cookies
+        self.create_session_response(req, &session, &user_data, redirect_url, ResponseType::Json)
     }
 
-    /// Create session objects directly from Passkey result
+    /// Create Passkey session with HTTP response (ONLY session creation method for Passkey)
     ///
-    /// This method bypasses the `AuthenticationResult` abstraction and creates
-    /// session objects directly from Passkey authentication results.
+    /// This is one of the two main session creation entry points for Passkey authentication.
+    /// It creates session objects from Passkey results and returns an HTTP response with cookies.
     ///
     /// # Errors
     ///
-    /// Returns a session creation error if the input is invalid
+    /// Returns an error response if session creation fails
     pub fn create_passkey_session(
         &self,
-        passkey_result: crate::passkey::PasskeyResult,
+        passkey_result: &crate::passkey::PasskeyResult,
         req: &HttpRequest,
-    ) -> Result<
-        (
-            crate::models::VouchrsSession,
-            crate::models::VouchrsUserData,
-        ),
-        anyhow::Error,
-    > {
-        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Delegate to passkey utility for session object creation
+        let (session, user_data) = crate::session::passkey::create_passkey_session_from_result(
+            passkey_result,
+            req,
+            self.bind_session_to_ip,
+        )
+        .map_err(|e| {
+            log::error!("Failed to create passkey session: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
 
-        let session = crate::models::VouchrsSession {
-            // No OAuth fields
-            id_token: None,
-            refresh_token: None,
+        // Create HTTP response with cookies (default to redirect)
+        self.create_session_response(
+            req,
+            &session,
+            &user_data,
+            redirect_url,
+            ResponseType::Redirect,
+        )
+    }
 
-            // Passkey-specific fields
-            credential_id: Some(passkey_result.credential_id),
-            user_handle: Some(passkey_result.user_handle),
+    /// Create Passkey session with JSON response (for AJAX endpoints)
+    ///
+    /// This provides a JSON response variant for Passkey session creation, primarily
+    /// used by AJAX/API clients that need JSON responses instead of redirects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error response if session creation fails
+    pub fn create_passkey_session_json(
+        &self,
+        passkey_result: &crate::passkey::PasskeyResult,
+        req: &HttpRequest,
+        redirect_url: Option<String>,
+    ) -> Result<HttpResponse, HttpResponse> {
+        // Delegate to passkey utility for session object creation
+        let (session, user_data) = crate::session::passkey::create_passkey_session_from_result(
+            passkey_result,
+            req,
+            self.bind_session_to_ip,
+        )
+        .map_err(|e| {
+            log::error!("Failed to create passkey session: {e}");
+            Self::create_service_error_response("Session creation failed")
+        })?;
 
-            // Common fields
-            provider: passkey_result.provider.clone(),
-            expires_at: passkey_result.expires_at,
-            authenticated_at: passkey_result.authenticated_at,
-            client_ip: if self.bind_session_to_ip {
-                client_ip.clone()
-            } else {
-                None
-            },
-        };
-
-        let user_data = crate::models::VouchrsUserData {
-            email: passkey_result.email.unwrap_or_default(),
-            name: passkey_result.name,
-            provider: passkey_result.provider,
-            provider_id: passkey_result.provider_id,
-            client_ip,
-            user_agent: user_agent_info.user_agent,
-            platform: user_agent_info.platform,
-            lang: user_agent_info.lang,
-            mobile: i32::from(user_agent_info.mobile),
-            session_start: Some(passkey_result.authenticated_at.timestamp()),
-        };
-
-        Ok((session, user_data))
+        // Create JSON response with cookies
+        self.create_session_response(req, &session, &user_data, redirect_url, ResponseType::Json)
     }
 }
 

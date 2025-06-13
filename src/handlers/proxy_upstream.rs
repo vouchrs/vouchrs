@@ -63,21 +63,29 @@ pub async fn proxy_upstream(
             let tokens_refreshed = oauth_result.expires_at != session.expires_at;
 
             if tokens_refreshed {
-                // Use session manager to create a new session with refreshed tokens
-                // This ensures consistent session creation with all proper validations
-                match session_manager.create_oauth_session(oauth_result, &req) {
-                    Ok((new_session, _)) => (new_session, true),
-                    Err(e) => {
-                        log::error!("Failed to create OAuth session after token refresh: {e}");
-                        // Clear session and redirect to sign-in page
-                        let clear_cookie = session_manager.cookie_factory().create_expired_cookie();
-                        return Ok(handle_session_failure_response(
-                            &req,
-                            &settings,
-                            clear_cookie,
-                        ));
-                    }
-                }
+                // Tokens were refreshed, but we're already in a proxy call so we can't return
+                // a new response. We need to use the updated session data for future requests.
+                // Create updated session from the OAuth result for internal tracking
+                log::info!("OAuth tokens were refreshed during proxy request");
+
+                // Extract the updated session data manually since we can't return a full response
+                let (client_ip, _) = crate::session::utils::extract_client_info(&req);
+                let updated_session = VouchrsSession {
+                    id_token: oauth_result.id_token,
+                    refresh_token: oauth_result.refresh_token,
+                    credential_id: None,
+                    user_handle: None,
+                    provider: oauth_result.provider,
+                    expires_at: oauth_result.expires_at,
+                    authenticated_at: oauth_result.authenticated_at,
+                    client_ip: if session_manager.is_session_ip_binding_enabled() {
+                        client_ip
+                    } else {
+                        None
+                    },
+                };
+
+                (updated_session, true)
             } else {
                 // No refresh needed, use original session
                 (session, false)
@@ -300,30 +308,6 @@ fn extract_session_from_request(
     // Client context validation (session hijacking detection) should only be used
     // for sensitive operations like passkey registration, not regular proxy requests
     Ok(session)
-}
-
-/// Handle session failure by clearing cookies and redirecting appropriately
-fn handle_session_failure_response(
-    req: &HttpRequest,
-    settings: &VouchrsSettings,
-    clear_cookie: actix_web::cookie::Cookie<'static>,
-) -> HttpResponse {
-    if is_browser_request(req) {
-        // Redirect browser requests to sign-in page with cleared session
-        let sign_in_url = format!("{}/auth/sign_in", settings.application.redirect_base_url);
-        HttpResponse::Found()
-            .insert_header(("Location", sign_in_url))
-            .cookie(clear_cookie)
-            .finish()
-    } else {
-        // For non-browser requests, return 401 with JSON error and cleared cookie
-        HttpResponse::Unauthorized()
-            .cookie(clear_cookie)
-            .json(serde_json::json!({
-                "error": "session_expired",
-                "message": "Session has expired. Please authenticate again."
-            }))
-    }
 }
 
 #[cfg(test)]
