@@ -19,7 +19,7 @@ PROJECT_KEY="vouchr"
 
 # Check if token is provided
 if [ -z "$SONAR_TOKEN" ]; then
-    print_error "SONAR_TOKEN environment variable is required"
+    echo "SONAR_TOKEN environment variable is required"
     echo "Please set SONAR_TOKEN with a valid SonarQube authentication token:"
     echo "  export SONAR_TOKEN='your_sonarqube_token_here'"
     echo
@@ -57,7 +57,7 @@ print_step "Checking SonarQube status..."
 if ! curl -s "$SONAR_URL/api/system/status" > /dev/null 2>&1; then
     print_warning "SonarQube is not running. Starting services..."
     docker-compose -f docker/docker-compose.sonarqube.yml up -d
-    
+
     print_step "Waiting for SonarQube to be ready..."
     for i in {1..30}; do
         if curl -s "$SONAR_URL/api/system/status" | grep -q '"status":"UP"'; then
@@ -68,7 +68,7 @@ if ! curl -s "$SONAR_URL/api/system/status" > /dev/null 2>&1; then
         sleep 2
     done
     echo
-    
+
     if [ $i -eq 30 ]; then
         print_error "SonarQube failed to start within 60 seconds"
         exit 1

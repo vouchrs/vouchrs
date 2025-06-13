@@ -325,7 +325,7 @@ impl PasskeyRequestBuilder {
     }
 }
 
-// Legacy function aliases for backward compatibility
+// Convenience function aliases for common request patterns
 #[must_use]
 pub fn create_test_request() -> HttpRequest {
     RequestBuilder::browser("/")
@@ -348,6 +348,6 @@ pub fn create_mobile_request(uri: &str) -> HttpRequest {
 
 #[must_use]
 pub fn oauth_callback(_code: &str, _state: &str) -> HttpRequest {
-    // Simplified version for backward compatibility
+    // Simplified OAuth callback request for testing
     RequestBuilder::browser("/oauth/callback")
 }

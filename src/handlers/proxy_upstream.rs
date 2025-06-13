@@ -7,15 +7,83 @@ use crate::{
     models::VouchrsSession,
     oauth::check_and_refresh_tokens,
     oauth::OAuthConfig,
-    session::cookie::COOKIE_NAME,
     session::SessionManager,
     settings::VouchrsSettings,
-    utils::headers::{forward_request_headers, forward_response_headers, is_browser_request},
+    utils::headers::{is_browser_request, RequestHeaderProcessor, ResponseHeaderProcessor},
     utils::responses::{build_upstream_url, convert_http_method, ResponseBuilder},
 };
 
 /// HTTP client for making upstream requests
 static CLIENT: std::sync::LazyLock<Client> = std::sync::LazyLock::new(Client::new);
+
+/// Reconstruct session from OAuth result after token refresh
+fn reconstruct_session_from_oauth_result(
+    oauth_result: &crate::oauth::OAuthResult,
+    req: &HttpRequest,
+    session_manager: &SessionManager,
+) -> VouchrsSession {
+    let (client_ip, _) = crate::session::utils::extract_client_info(req);
+    VouchrsSession {
+        id_token: oauth_result.id_token.clone(),
+        refresh_token: oauth_result.refresh_token.clone(),
+        credential_id: None,
+        user_handle: None,
+        provider: oauth_result.provider.clone(),
+        expires_at: oauth_result.expires_at,
+        authenticated_at: oauth_result.authenticated_at,
+        client_ip: if session_manager.is_session_ip_binding_enabled() {
+            client_ip
+        } else {
+            None
+        },
+    }
+}
+
+/// Handle token refresh for proxy requests
+async fn handle_token_refresh(
+    session: &VouchrsSession,
+    oauth_config: &OAuthConfig,
+) -> Result<(crate::oauth::OAuthResult, bool), HttpResponse> {
+    let oauth_result = check_and_refresh_tokens(
+        crate::oauth::OAuthResult {
+            provider: session.provider.clone(),
+            provider_id: String::new(), // Not needed for refresh
+            email: None,                // Not needed for refresh
+            name: None,                 // Not needed for refresh
+            expires_at: session.expires_at,
+            authenticated_at: session.authenticated_at,
+            id_token: session.id_token.clone(),
+            refresh_token: session.refresh_token.clone(),
+        },
+        oauth_config,
+        &session.provider,
+    )
+    .await?;
+
+    // Check if tokens were actually refreshed by comparing expires_at
+    let tokens_refreshed = oauth_result.expires_at != session.expires_at;
+
+    Ok((oauth_result, tokens_refreshed))
+}
+
+/// Process OAuth result and determine if session needs updating
+fn process_oauth_result(
+    oauth_result: &crate::oauth::OAuthResult,
+    original_session: VouchrsSession,
+    req: &HttpRequest,
+    session_manager: &SessionManager,
+) -> (VouchrsSession, bool) {
+    let tokens_refreshed = oauth_result.expires_at != original_session.expires_at;
+
+    if tokens_refreshed {
+        log::info!("OAuth tokens were refreshed during proxy request");
+        let updated_session =
+            reconstruct_session_from_oauth_result(oauth_result, req, session_manager);
+        (updated_session, true)
+    } else {
+        (original_session, false)
+    }
+}
 
 /// Generic catch-all proxy handler that forwards requests as-is to upstream
 /// Proxy requests with authentication
@@ -42,57 +110,13 @@ pub async fn proxy_upstream(
     };
 
     // Check and refresh tokens if necessary
-    let (updated_session, tokens_were_refreshed) = match check_and_refresh_tokens(
-        crate::oauth::OAuthResult {
-            provider: session.provider.clone(),
-            provider_id: String::new(), // Not needed for refresh
-            email: None,                // Not needed for refresh
-            name: None,                 // Not needed for refresh
-            expires_at: session.expires_at,
-            authenticated_at: session.authenticated_at,
-            id_token: session.id_token.clone(),
-            refresh_token: session.refresh_token.clone(),
-        },
-        &oauth_config,
-        &session.provider,
-    )
-    .await
-    {
-        Ok(oauth_result) => {
-            // Check if tokens were actually refreshed by comparing expires_at
-            let tokens_refreshed = oauth_result.expires_at != session.expires_at;
-
-            if tokens_refreshed {
-                // Tokens were refreshed, but we're already in a proxy call so we can't return
-                // a new response. We need to use the updated session data for future requests.
-                // Create updated session from the OAuth result for internal tracking
-                log::info!("OAuth tokens were refreshed during proxy request");
-
-                // Extract the updated session data manually since we can't return a full response
-                let (client_ip, _) = crate::session::utils::extract_client_info(&req);
-                let updated_session = VouchrsSession {
-                    id_token: oauth_result.id_token,
-                    refresh_token: oauth_result.refresh_token,
-                    credential_id: None,
-                    user_handle: None,
-                    provider: oauth_result.provider,
-                    expires_at: oauth_result.expires_at,
-                    authenticated_at: oauth_result.authenticated_at,
-                    client_ip: if session_manager.is_session_ip_binding_enabled() {
-                        client_ip
-                    } else {
-                        None
-                    },
-                };
-
-                (updated_session, true)
-            } else {
-                // No refresh needed, use original session
-                (session, false)
+    let (updated_session, tokens_were_refreshed) =
+        match handle_token_refresh(&session, &oauth_config).await {
+            Ok((oauth_result, _tokens_refreshed)) => {
+                process_oauth_result(&oauth_result, session, &req, &session_manager)
             }
-        }
-        Err(response) => return Ok(response),
-    };
+            Err(response) => return Ok(response),
+        };
 
     // Build and execute upstream request
     let upstream_url = match build_upstream_url(&settings.proxy.upstream_url, req.path()) {
@@ -206,7 +230,8 @@ async fn forward_upstream_response(
     let mut response_builder = HttpResponse::build(actix_status);
 
     // Forward relevant headers (excluding hop-by-hop headers)
-    forward_response_headers(&upstream_response, &mut response_builder);
+    ResponseHeaderProcessor::for_proxy()
+        .forward_response_headers(&upstream_response, &mut response_builder);
 
     // Check if session cookie should be updated due to token refresh or regular refresh
     update_session_cookie_if_needed(
@@ -245,7 +270,8 @@ async fn execute_upstream_request(
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
     // Forward headers
-    request_builder = forward_request_headers(req, request_builder);
+    request_builder =
+        RequestHeaderProcessor::for_proxy().forward_request_headers(req, request_builder);
 
     // Forward query parameters
     if !query_params.is_empty() {
@@ -292,17 +318,10 @@ fn extract_session_from_request(
         }
     };
 
-    // Extract session cookie
-    let cookie = req
-        .cookie(COOKIE_NAME)
-        .ok_or_else(|| handle_auth_error("No session cookie found. Please authenticate first."))?;
-
-    // Decrypt and validate session
-    let session = session_manager
-        .decrypt_and_validate_session_with_ip(cookie.value(), req)
-        .map_err(|_| {
-            handle_auth_error("Session is invalid or expired. Please authenticate again.")
-        })?;
+    // Extract and validate session using modern method
+    let session = session_manager.extract_session(req).map_err(|_| {
+        handle_auth_error("Session is invalid or expired. Please authenticate again.")
+    })?;
 
     // For proxy requests, we only need basic session validation
     // Client context validation (session hijacking detection) should only be used

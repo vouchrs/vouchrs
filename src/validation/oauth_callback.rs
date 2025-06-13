@@ -23,8 +23,8 @@ pub struct ValidatedCallback {
 impl CallbackValidator {
     /// Main validation entry point for OAuth callbacks
     ///
-    /// This replaces the large inline validation logic in `oauth_callback` handlers
-    /// with a structured approach that separates concerns.
+    /// This provides structured validation logic for OAuth callback handling
+    /// with separated concerns for better maintainability.
     ///
     /// # Errors
     ///

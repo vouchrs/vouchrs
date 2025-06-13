@@ -179,12 +179,6 @@ impl RequestHeaderProcessor {
         Self::default()
     }
 
-    /// Create a new processor for testing that allows more control
-    #[must_use]
-    pub fn for_testing() -> Self {
-        Self::default()
-    }
-
     /// Forward headers from an Actix `HttpRequest` to a reqwest `RequestBuilder`
     ///
     /// This function handles:
@@ -300,27 +294,6 @@ impl ResponseHeaderProcessor {
             }
         }
     }
-}
-
-// ===============================
-// CONVENIENCE FUNCTIONS
-// ===============================
-
-/// Convenience function for basic request header forwarding (most common use case)
-pub fn forward_request_headers(
-    req: &HttpRequest,
-    request_builder: RequestBuilder,
-) -> RequestBuilder {
-    RequestHeaderProcessor::for_proxy().forward_request_headers(req, request_builder)
-}
-
-/// Convenience function for basic response header forwarding (most common use case)
-pub fn forward_response_headers(
-    upstream_response: &reqwest::Response,
-    response_builder: &mut HttpResponseBuilder,
-) {
-    ResponseHeaderProcessor::for_proxy()
-        .forward_response_headers(upstream_response, response_builder);
 }
 
 #[cfg(test)]

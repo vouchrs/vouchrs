@@ -329,34 +329,6 @@ impl SessionManager {
             Some(session)
         }
     }
-
-    /// Legacy method for backward compatibility with existing code
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if session decryption or validation fails
-    pub fn decrypt_and_validate_session(&self, cookie_value: &str) -> Result<VouchrsSession> {
-        decrypt_data::<VouchrsSession>(cookie_value, &self.encryption_key)
-    }
-
-    /// Legacy method for session decryption with IP context
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if session decryption or IP validation fails
-    pub fn decrypt_and_validate_session_with_ip(
-        &self,
-        cookie_value: &str,
-        req: &HttpRequest,
-    ) -> Result<VouchrsSession> {
-        let session = decrypt_data::<VouchrsSession>(cookie_value, &self.encryption_key)?;
-
-        if self.bind_session_to_ip && !self.validate_session_ip_binding(&session, req) {
-            return Err(anyhow!("Session IP validation failed"));
-        }
-
-        Ok(session)
-    }
 }
 
 // =============================================================================
@@ -454,14 +426,14 @@ impl SessionManager {
 }
 
 // =============================================================================
-// 5. Session Creation (UNIFIED ENTRY POINTS - No More Wrapper Chains)
+// 5. Session Creation (UNIFIED ENTRY POINTS)
 // =============================================================================
 
 impl SessionManager {
     /// Handle OAuth authentication flow (UNIFIED ENTRY POINT)
     ///
-    /// This REPLACES the wrapper chain:
-    /// `handle_oauth_callback()` → `create_session_from_oauth_result()` → `handle_oauth_callback_direct()`
+    /// This method provides a unified interface for processing OAuth callbacks
+    /// and creating sessions with appropriate response formats.
     ///
     /// # Errors
     ///
@@ -505,8 +477,8 @@ impl SessionManager {
 
     /// Handle passkey registration (UNIFIED ENTRY POINT)
     ///
-    /// This REPLACES `handle_passkey_registration()` and `handle_passkey_registration_json()`
-    /// by using a `ResponseType` parameter.
+    /// This method provides unified passkey registration processing
+    /// with configurable response formats.
     ///
     /// # Errors
     ///
@@ -541,8 +513,8 @@ impl SessionManager {
 
     /// Handle passkey authentication (UNIFIED ENTRY POINT)
     ///
-    /// This REPLACES `handle_passkey_authentication()` and `handle_passkey_authentication_json()`
-    /// by using a `ResponseType` parameter.
+    /// This method provides unified passkey authentication processing
+    /// with configurable response formats.
     ///
     /// # Errors
     ///
@@ -705,8 +677,8 @@ impl SessionManager {
 impl SessionManager {
     /// Create session response with unified response type handling
     ///
-    /// This REPLACES the duplicate `create_session_response()` and `create_json_session_response()`
-    /// methods with a single unified method using `ResponseType` enum.
+    /// This method provides unified session response creation with
+    /// configurable response formats (Redirect or JSON).
     ///
     /// # Errors
     ///
@@ -792,8 +764,7 @@ impl SessionManager {
 
     /// Get reference to cookie factory for direct cookie operations
     ///
-    /// Use this when you need direct access to cookie creation methods
-    /// or want to avoid the convenience wrapper methods in `SessionManager`.
+    /// Use this when you need direct access to cookie creation methods.
     /// This provides access to all cookie factory functionality without
     /// the additional session management context.
     #[must_use]

@@ -77,10 +77,11 @@ Handles HTTP header forwarding and processing for the proxy functionality.
 ### Usage
 
 ```rust
-use crate::utils::headers::{forward_request_headers, is_browser_request};
+use crate::utils::headers::{RequestHeaderProcessor, is_browser_request};
 
 // Forward headers to upstream (filters auth/session cookies)
-let request_builder = forward_request_headers(&req, request_builder);
+let request_builder = RequestHeaderProcessor::for_proxy()
+    .forward_request_headers(&req, request_builder);
 
 // Detect request type
 if is_browser_request(&req) {
@@ -230,7 +231,7 @@ Always validate sessions appropriately:
 
 ```rust
 // For proxy requests (basic validation)
-let session = session_manager.decrypt_and_validate_session(cookie_value)?;
+let session = session_manager.extract_session(&req)?;
 
 // For sensitive operations (with hijacking protection)
 session_manager.validate_session_security(&user_data, &req)?;

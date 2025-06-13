@@ -5,7 +5,7 @@ use crate::session::cookie::{create_expired_cookie, COOKIE_NAME, USER_COOKIE_NAM
 use crate::session::SessionManager;
 use crate::settings::VouchrsSettings;
 use crate::utils::crypto::{encrypt_data, generate_csrf_token};
-use crate::utils::responses::{redirect_with_cookie, success_redirect_with_cookies};
+use crate::utils::responses::ResponseBuilder;
 use actix_web::{web, HttpRequest, HttpResponse, Result};
 use log::{debug, error, info};
 
@@ -86,17 +86,20 @@ pub async fn oauth_sign_in(
                     error!("Failed to get auth URL for {provider}: {e}");
                     let error_clear_cookie =
                         create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
-                    Ok(redirect_with_cookie(
-                        "/auth/sign_in?error=oauth_config",
-                        Some(error_clear_cookie),
-                    ))
+                    Ok(
+                        ResponseBuilder::redirect("/auth/sign_in?error=oauth_config")
+                            .with_cookie(error_clear_cookie)
+                            .build(),
+                    )
                 }
             }
         }
         Some(provider) => {
             let clear_cookie = create_expired_cookie(COOKIE_NAME, session_manager.cookie_secure());
             let error_url = format!("/auth/sign_in?error=unsupported_provider&provider={provider}");
-            Ok(redirect_with_cookie(&error_url, Some(clear_cookie)))
+            Ok(ResponseBuilder::redirect(&error_url)
+                .with_cookie(clear_cookie)
+                .build())
         }
         None => {
             // Return login page HTML
@@ -134,19 +137,17 @@ pub async fn oauth_sign_out(
     if let Some(provider_name) = provider {
         if let Some(signout_url) = oauth_config.get_signout_url(&provider_name) {
             info!("Redirecting to {provider_name} sign-out: {signout_url}");
-            return Ok(success_redirect_with_cookies(
-                &signout_url,
-                vec![clear_session_cookie, clear_user_cookie],
-            ));
+            return Ok(ResponseBuilder::redirect(&signout_url)
+                .with_cookies(vec![clear_session_cookie, clear_user_cookie])
+                .build());
         }
         debug!("Provider {provider_name} does not support automatic sign-out");
     }
 
     // Default: redirect to login page
-    Ok(success_redirect_with_cookies(
-        "/auth/sign_in",
-        vec![clear_session_cookie, clear_user_cookie],
-    ))
+    Ok(ResponseBuilder::redirect("/auth/sign_in")
+        .with_cookies(vec![clear_session_cookie, clear_user_cookie])
+        .build())
 }
 
 /// OAuth callback handler

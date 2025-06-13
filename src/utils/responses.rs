@@ -714,48 +714,6 @@ pub fn build_upstream_url(base_url: &str, request_path: &str) -> Result<String, 
     Ok(final_url.to_string())
 }
 
-// ===============================
-// BACKWARD COMPATIBILITY ALIASES
-// ===============================
-
-/// Backward compatibility function aliases
-#[must_use]
-pub fn redirect(location: &str, cookies: Option<Vec<Cookie<'static>>>) -> HttpResponse {
-    match cookies {
-        Some(cookies) => ResponseBuilder::redirect(location)
-            .with_cookies(cookies)
-            .build(),
-        None => ResponseBuilder::redirect(location).build(),
-    }
-}
-
-#[must_use]
-pub fn redirect_with_cookie(location: &str, cookie: Option<Cookie<'static>>) -> HttpResponse {
-    match cookie {
-        Some(cookie) => ResponseBuilder::redirect(location)
-            .with_cookie(cookie)
-            .build(),
-        None => ResponseBuilder::redirect(location).build(),
-    }
-}
-
-#[must_use]
-pub fn error_redirect(location: &str, error_param: &str) -> HttpResponse {
-    ResponseBuilder::redirect(location)
-        .with_error(error_param)
-        .build()
-}
-
-#[must_use]
-pub fn success_redirect_with_cookies(
-    location: &str,
-    cookies: Vec<Cookie<'static>>,
-) -> HttpResponse {
-    ResponseBuilder::redirect(location)
-        .with_cookies(cookies)
-        .build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,16 +791,6 @@ mod tests {
 
         let response = ResponseBuilder::created().json(&data);
         assert_eq!(response.status(), StatusCode::CREATED);
-    }
-
-    #[test]
-    fn test_backward_compatibility() {
-        // Test old function signatures still work
-        let response = redirect("https://example.com", None);
-        assert_eq!(response.status(), StatusCode::FOUND);
-
-        let response = error_redirect("https://example.com", "invalid_token");
-        assert_eq!(response.status(), StatusCode::FOUND);
     }
 
     #[test]

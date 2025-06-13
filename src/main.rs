@@ -168,9 +168,8 @@ fn print_startup_info(bind_address: &str, session_backend: &str, settings: &Vouc
 
 /// Create a session manager with authentication services based on settings
 ///
-/// This function replaces the complex factory pattern with a simple, direct approach.
-/// It creates a `SessionManager` and conditionally adds OAuth and Passkey services
-/// based on the application settings.
+/// This function provides a simple, direct approach to creating a `SessionManager`
+/// and conditionally adds OAuth and Passkey services based on the application settings.
 ///
 /// # Arguments
 /// * `settings` - The application settings containing authentication configuration
