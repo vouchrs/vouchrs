@@ -36,5 +36,5 @@ pub use oauth::{
     OAuthState, OidcDiscoveryDocument,
 };
 pub use session::SessionManager;
-pub use session::{get_state_from_callback, PasskeySessionBuilder, PasskeySessionData};
+pub use session::{get_state_from_callback, PasskeySessionData};
 pub use settings::VouchrsSettings;

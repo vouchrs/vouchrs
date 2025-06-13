@@ -240,104 +240,6 @@ pub fn to_vouchrs_session(
     (vouchrs_session, vouchrs_user_data)
 }
 
-/// Passkey session builder methods for creating `WebAuthn` sessions
-pub struct PasskeySessionBuilder;
-
-impl PasskeySessionBuilder {
-    /// Create passkey session data structure
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the session duration calculation overflows or if required
-    /// parameters are invalid.
-    pub fn build_passkey_session(
-        user_email: Option<String>,
-        user_name: Option<String>,
-        user_handle: String,
-        credential_id: String,
-        session_duration_hours: Option<u64>,
-    ) -> Result<PasskeySessionData, String> {
-        let now = Utc::now();
-        let duration_hours = session_duration_hours.unwrap_or(168); // Default 7 days
-
-        // Safely convert u64 to i64, preventing overflow
-        let duration_hours_i64 =
-            i64::try_from(duration_hours).map_err(|_| "Session duration too large".to_string())?;
-
-        let expires_at = now + chrono::Duration::hours(duration_hours_i64);
-
-        Ok(PasskeySessionData {
-            user_email,
-            user_name,
-            provider: "passkey".to_string(),
-            provider_id: user_handle,
-            credential_id,
-            authenticated_at: now,
-            expires_at,
-        })
-    }
-
-    /// Finalize passkey session and create response with cookies
-    #[must_use]
-    pub fn finalize_passkey_session(
-        req: &actix_web::HttpRequest,
-        session_manager: &crate::session::SessionManager,
-        passkey_session: &PasskeySessionData,
-        redirect_url: Option<String>,
-    ) -> actix_web::HttpResponse {
-        use crate::validation::validate_post_auth_redirect;
-
-        // Extract client information from the request
-        let (client_ip, user_agent_info) = crate::session::utils::extract_client_info(req);
-
-        // Convert to standard session format
-        let session = passkey_session.to_session();
-        let user_data = passkey_session.to_user_data(client_ip.as_deref(), Some(&user_agent_info));
-
-        // Create session cookies - use IP binding if enabled
-        match (
-            if session_manager.is_session_ip_binding_enabled() {
-                session_manager
-                    .cookie_factory()
-                    .create_session_cookie_with_context(&session, req)
-            } else {
-                session_manager
-                    .cookie_factory()
-                    .create_session_cookie(&session)
-            },
-            session_manager
-                .cookie_factory()
-                .create_user_cookie_with_persistence(req, &user_data),
-        ) {
-            (Ok(session_cookie), Ok(user_cookie)) => {
-                let redirect_to = redirect_url.unwrap_or_else(|| "/".to_string());
-
-                // Validate the redirect URL to prevent open redirect attacks
-                let validated_redirect = if let Ok(s) = validate_post_auth_redirect(&redirect_to) {
-                    s.to_string()
-                } else {
-                    log::error!(
-                        "Invalid post-authentication redirect URL '{redirect_to}': rejecting"
-                    );
-                    // Fallback to safe default on validation failure
-                    "/".to_string()
-                };
-
-                // Manual HttpResponse construction (best approach for lifetime safety)
-                actix_web::HttpResponse::Found()
-                    .append_header(("Location", validated_redirect))
-                    .cookie(session_cookie)
-                    .cookie(user_cookie)
-                    .finish()
-            }
-            _ => crate::session::utils::create_error_response(
-                session_manager,
-                "Failed to create session cookies",
-            ),
-        }
-    }
-}
-
 /// Validate passkey result for session creation
 ///
 /// Utility function to validate that a passkey result has the required fields
@@ -514,14 +416,16 @@ mod tests {
 
     #[test]
     fn test_passkey_session_creation() {
-        let session_data = PasskeySessionBuilder::build_passkey_session(
-            Some("user@example.com".to_string()),
-            Some("John Doe".to_string()),
-            "user_handle_123".to_string(),
-            "credential_456".to_string(),
-            Some(168), // 7 days
-        )
-        .expect("Passkey session should be created successfully");
+        let now = Utc::now();
+        let session_data = PasskeySessionData {
+            user_email: Some("user@example.com".to_string()),
+            user_name: Some("John Doe".to_string()),
+            provider: "passkey".to_string(),
+            provider_id: "user_handle_123".to_string(),
+            credential_id: "credential_456".to_string(),
+            authenticated_at: now,
+            expires_at: now + chrono::Duration::hours(168), // 7 days
+        };
 
         assert_eq!(
             session_data.user_email,
@@ -544,14 +448,16 @@ mod tests {
 
     #[test]
     fn test_passkey_session_user_data_conversion() {
-        let session_data = PasskeySessionBuilder::build_passkey_session(
-            Some("user@example.com".to_string()),
-            Some("John Doe".to_string()),
-            "user_handle_123".to_string(),
-            "credential_456".to_string(),
-            None, // Use default duration
-        )
-        .expect("Passkey session should be created successfully");
+        let now = Utc::now();
+        let session_data = PasskeySessionData {
+            user_email: Some("user@example.com".to_string()),
+            user_name: Some("John Doe".to_string()),
+            provider: "passkey".to_string(),
+            provider_id: "user_handle_123".to_string(),
+            credential_id: "credential_456".to_string(),
+            authenticated_at: now,
+            expires_at: now + chrono::Duration::hours(168), // Default 7 days
+        };
 
         let user_data = session_data.to_user_data(Some("192.168.1.1"), None);
 
@@ -569,14 +475,16 @@ mod tests {
     #[test]
     fn test_usernameless_passkey_session_creation() {
         // Test creating a session without email or name (usernameless authentication)
-        let session_data = PasskeySessionBuilder::build_passkey_session(
-            None, // No email
-            None, // No name
-            "user_handle_123".to_string(),
-            "credential_456".to_string(),
-            Some(168), // 7 days
-        )
-        .expect("Usernameless passkey session should be created successfully");
+        let now = Utc::now();
+        let session_data = PasskeySessionData {
+            user_email: None, // No email
+            user_name: None,  // No name
+            provider: "passkey".to_string(),
+            provider_id: "user_handle_123".to_string(),
+            credential_id: "credential_456".to_string(),
+            authenticated_at: now,
+            expires_at: now + chrono::Duration::hours(168), // 7 days
+        };
 
         assert_eq!(session_data.user_email, None);
         assert_eq!(session_data.user_name, None);

@@ -32,7 +32,7 @@ pub use oauth::{
 pub use passkey::{
     convert_passkey_session_data, create_minimal_passkey_result,
     create_passkey_session_from_result, extract_passkey_auth_info,
-    validate_passkey_result_for_session, PasskeySessionBuilder, PasskeySessionData,
+    validate_passkey_result_for_session, PasskeySessionData,
 };
 pub use utils::{create_error_response, extract_client_info, get_state_from_callback};
 pub use validation::{

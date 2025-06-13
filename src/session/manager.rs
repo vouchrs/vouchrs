@@ -363,47 +363,12 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Validate client context using user data (delegates to validation module)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if client context validation fails
-    pub fn validate_client_context_only(
-        &self,
-        user_data: &VouchrsUserData,
-        req: &HttpRequest,
-    ) -> Result<()> {
-        if crate::session::validation::validate_client_context(user_data, req) {
-            Ok(())
-        } else {
-            Err(anyhow!("Client context validation failed"))
-        }
-    }
-
     /// Validate session IP binding (delegates to validation module)
-    #[must_use]
-    pub fn validate_session_ip_binding(&self, session: &VouchrsSession, req: &HttpRequest) -> bool {
+    fn validate_session_ip_binding(&self, session: &VouchrsSession, req: &HttpRequest) -> bool {
         if !self.bind_session_to_ip {
             return true;
         }
         crate::session::validation::validate_ip_binding(session, req)
-    }
-
-    /// Validate session for security (delegates to validation module)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if validation fails
-    pub fn validate_session_security(
-        &self,
-        user_data: &VouchrsUserData,
-        req: &HttpRequest,
-    ) -> Result<bool, &'static str> {
-        crate::session::validation::validate_session_security(
-            user_data,
-            req,
-            self.session_expiration_hours,
-        )
     }
 
     /// Check if a session needs token refresh (delegates to validation module)
@@ -415,13 +380,10 @@ impl SessionManager {
         crate::session::validation::needs_token_refresh(session)
     }
 
-    /// Check if session has expired (delegates to validation module)
-    ///
-    /// This method checks if user data indicates an expired session based on
-    /// the configured session expiration hours.
+    /// Get session expiration hours setting
     #[must_use]
-    pub fn is_session_expired(&self, user_data: &VouchrsUserData) -> bool {
-        crate::session::validation::is_session_expired(user_data, self.session_expiration_hours)
+    pub fn session_expiration_hours(&self) -> u64 {
+        self.session_expiration_hours
     }
 
     /// Process session for proxy requests with type-aware token refresh
@@ -695,7 +657,7 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error response if session creation fails
-    pub fn create_oauth_session_json(
+    fn create_oauth_session_json(
         &self,
         oauth_result: &crate::oauth::OAuthResult,
         req: &HttpRequest,
@@ -756,7 +718,7 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error response if session creation fails
-    pub fn create_passkey_session_json(
+    fn create_passkey_session_json(
         &self,
         passkey_result: &crate::passkey::PasskeyResult,
         req: &HttpRequest,
