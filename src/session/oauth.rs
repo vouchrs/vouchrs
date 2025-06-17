@@ -49,18 +49,18 @@ pub fn create_oauth_session(
         },
     };
 
-    let user_data = VouchrsUserData {
-        email: oauth_result.email.clone().unwrap_or_default(),
-        name: oauth_result.name.clone(),
-        provider: oauth_result.provider.clone(),
-        provider_id: oauth_result.provider_id.clone(),
+    let user_data = VouchrsUserData::new(
+        oauth_result.email.clone().unwrap_or_default(),
+        oauth_result.name.clone(),
+        oauth_result.provider.clone(),
+        oauth_result.provider_id.clone(),
         client_ip,
-        user_agent: user_agent_info.user_agent,
-        platform: user_agent_info.platform,
-        lang: user_agent_info.lang,
-        mobile: i32::from(user_agent_info.mobile),
-        session_start: Some(oauth_result.authenticated_at.timestamp()),
-    };
+        user_agent_info.user_agent,
+        user_agent_info.platform,
+        user_agent_info.lang,
+        i32::from(user_agent_info.mobile),
+        Some(oauth_result.authenticated_at.timestamp()),
+    );
 
     Ok((session, user_data))
 }

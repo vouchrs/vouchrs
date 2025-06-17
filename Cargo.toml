@@ -118,7 +118,7 @@ webauthn-rs = { version = "0.5.1", features = [
     "danger-credential-internals",
 ] }
 webauthn-rs-proto = "0.5.1" # For direct access to WebAuthn protocol structures
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { version = "1.17.0", features = ["v4", "v5"] }
 
 [dev-dependencies]
 serial_test = "3.2.0"
@@ -136,4 +136,3 @@ required-features = ["testing"]
 [[test]]
 name = "apple_jwt_integration_test"
 required-features = ["testing"]
-

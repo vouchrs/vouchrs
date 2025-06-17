@@ -89,18 +89,18 @@ pub fn create_passkey_session_from_result(
         },
     };
 
-    let user_data = VouchrsUserData {
-        email: passkey_result.email.clone().unwrap_or_default(),
-        name: passkey_result.name.clone(),
-        provider: passkey_result.provider.clone(),
-        provider_id: passkey_result.provider_id.clone(),
+    let user_data = VouchrsUserData::new(
+        passkey_result.email.clone().unwrap_or_default(),
+        passkey_result.name.clone(),
+        passkey_result.provider.clone(),
+        passkey_result.provider_id.clone(),
         client_ip,
-        user_agent: user_agent_info.user_agent,
-        platform: user_agent_info.platform,
-        lang: user_agent_info.lang,
-        mobile: i32::from(user_agent_info.mobile),
-        session_start: Some(passkey_result.authenticated_at.timestamp()),
-    };
+        user_agent_info.user_agent,
+        user_agent_info.platform,
+        user_agent_info.lang,
+        i32::from(user_agent_info.mobile),
+        Some(passkey_result.authenticated_at.timestamp()),
+    );
 
     Ok((session, user_data))
 }
@@ -143,18 +143,18 @@ impl PasskeySessionData {
         client_ip: Option<&str>,
         user_agent_info: Option<&crate::utils::headers::UserAgentInfo>,
     ) -> VouchrsUserData {
-        VouchrsUserData {
-            email: self.user_email.clone().unwrap_or_default(),
-            name: self.user_name.clone(),
-            provider: self.provider.clone(),
-            provider_id: self.provider_id.clone(),
-            client_ip: client_ip.map(std::string::ToString::to_string),
-            user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-            platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-            lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-            mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-            session_start: Some(self.authenticated_at.timestamp()),
-        }
+        VouchrsUserData::new(
+            self.user_email.clone().unwrap_or_default(),
+            self.user_name.clone(),
+            self.provider.clone(),
+            self.provider_id.clone(),
+            client_ip.map(std::string::ToString::to_string),
+            user_agent_info.and_then(|ua| ua.user_agent.clone()),
+            user_agent_info.and_then(|ua| ua.platform.clone()),
+            user_agent_info.and_then(|ua| ua.lang.clone()),
+            user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
+            Some(self.authenticated_at.timestamp()),
+        )
     }
 }
 
@@ -224,18 +224,18 @@ pub fn to_vouchrs_session(
     };
 
     // Create VouchrsUserData for cookie storage
-    let vouchrs_user_data = VouchrsUserData {
-        email: session.user_email.clone().unwrap_or_default(),
-        name: session.user_name.clone(),
-        provider: session.provider.clone(),
-        provider_id: session.provider_id.clone(),
-        client_ip: client_ip.map(String::from),
-        user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-        platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-        lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-        mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-        session_start: Some(session.authenticated_at.timestamp()),
-    };
+    let vouchrs_user_data = VouchrsUserData::new(
+        session.user_email.clone().unwrap_or_default(),
+        session.user_name.clone(),
+        session.provider.clone(),
+        session.provider_id.clone(),
+        client_ip.map(String::from),
+        user_agent_info.and_then(|ua| ua.user_agent.clone()),
+        user_agent_info.and_then(|ua| ua.platform.clone()),
+        user_agent_info.and_then(|ua| ua.lang.clone()),
+        user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
+        Some(session.authenticated_at.timestamp()),
+    );
 
     (vouchrs_session, vouchrs_user_data)
 }
@@ -394,18 +394,18 @@ pub fn convert_passkey_session_data(
         },
     };
 
-    let user_data = VouchrsUserData {
-        email: session_data.user_email.clone().unwrap_or_default(),
-        name: session_data.user_name.clone(),
-        provider: session_data.provider.clone(),
-        provider_id: session_data.provider_id.clone(),
+    let user_data = VouchrsUserData::new(
+        session_data.user_email.clone().unwrap_or_default(),
+        session_data.user_name.clone(),
+        session_data.provider.clone(),
+        session_data.provider_id.clone(),
         client_ip,
-        user_agent: user_agent_info.user_agent,
-        platform: user_agent_info.platform,
-        lang: user_agent_info.lang,
-        mobile: i32::from(user_agent_info.mobile),
-        session_start: Some(session_data.authenticated_at.timestamp()),
-    };
+        user_agent_info.user_agent,
+        user_agent_info.platform,
+        user_agent_info.lang,
+        i32::from(user_agent_info.mobile),
+        Some(session_data.authenticated_at.timestamp()),
+    );
 
     (session, user_data)
 }

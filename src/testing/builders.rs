@@ -230,18 +230,18 @@ impl TestUserDataBuilder {
     /// Build the user data
     #[must_use]
     pub fn build(self) -> VouchrsUserData {
-        VouchrsUserData {
-            email: self.email,
-            name: self.name,
-            provider: self.provider,
-            provider_id: self.provider_id,
-            client_ip: self.client_ip,
-            user_agent: self.user_agent,
-            platform: self.platform,
-            lang: self.lang,
-            mobile: self.mobile,
-            session_start: self.session_start,
-        }
+        VouchrsUserData::new(
+            self.email,
+            self.name,
+            self.provider,
+            self.provider_id,
+            self.client_ip,
+            self.user_agent,
+            self.platform,
+            self.lang,
+            self.mobile,
+            self.session_start,
+        )
     }
 }
 

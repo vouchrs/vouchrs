@@ -16,18 +16,18 @@ async fn test_persistent_user_data_preservation() {
     );
 
     // Create initial user data with email and name populated
-    let initial_user_data = VouchrsUserData {
-        email: "user@example.com".to_string(),
-        name: Some("John Doe".to_string()),
-        provider: "google".to_string(),
-        provider_id: "12345".to_string(),
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let initial_user_data = VouchrsUserData::new(
+        "user@example.com".to_string(),
+        Some("John Doe".to_string()),
+        "google".to_string(),
+        "12345".to_string(),
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     // Create an initial user cookie
     let initial_cookie = session_manager
@@ -42,18 +42,18 @@ async fn test_persistent_user_data_preservation() {
         .to_http_request();
 
     // Create new user data with empty email and no name (simulating usernameless auth)
-    let new_user_data = VouchrsUserData {
-        email: String::new(), // Empty email
-        name: None,           // No name
-        provider: "google".to_string(),
-        provider_id: "12345".to_string(), // Same provider_id
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let new_user_data = VouchrsUserData::new(
+        String::new(), // Empty email
+        None,          // No name
+        "google".to_string(),
+        "12345".to_string(), // Same provider_id
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     // Create user cookie with persistence - should preserve existing email and name
     let persistent_cookie = session_manager
@@ -92,18 +92,18 @@ async fn test_no_persistence_different_provider_id() {
     let session_manager = SessionManager::new(test_key, false, false, 24, 24, 0);
 
     // Create initial user data with a different provider_id
-    let initial_user_data = VouchrsUserData {
-        email: "user@example.com".to_string(),
-        name: Some("John Doe".to_string()),
-        provider: "google".to_string(),
-        provider_id: "different_id".to_string(),
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let initial_user_data = VouchrsUserData::new(
+        "user@example.com".to_string(),
+        Some("John Doe".to_string()),
+        "google".to_string(),
+        "different_id".to_string(),
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     let initial_cookie = session_manager
         .cookie_factory()
@@ -116,18 +116,18 @@ async fn test_no_persistence_different_provider_id() {
         .to_http_request();
 
     // Create new user data with different provider_id
-    let new_user_data = VouchrsUserData {
-        email: String::new(),
-        name: None,
-        provider: "google".to_string(),
-        provider_id: "12345".to_string(), // Different provider_id
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let new_user_data = VouchrsUserData::new(
+        String::new(),
+        None,
+        "google".to_string(),
+        "12345".to_string(), // Different provider_id
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     let new_cookie = session_manager
         .cookie_factory()
@@ -157,18 +157,18 @@ async fn test_new_values_override_existing() {
     let session_manager = SessionManager::new(test_key, false, false, 24, 24, 0);
 
     // Create initial user data
-    let initial_user_data = VouchrsUserData {
-        email: "old@example.com".to_string(),
-        name: Some("Old Name".to_string()),
-        provider: "google".to_string(),
-        provider_id: "12345".to_string(),
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let initial_user_data = VouchrsUserData::new(
+        "old@example.com".to_string(),
+        Some("Old Name".to_string()),
+        "google".to_string(),
+        "12345".to_string(),
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     let initial_cookie = session_manager
         .cookie_factory()
@@ -181,18 +181,18 @@ async fn test_new_values_override_existing() {
         .to_http_request();
 
     // Create new user data with non-empty values
-    let new_user_data = VouchrsUserData {
-        email: "new@example.com".to_string(), // Non-empty email
-        name: Some("New Name".to_string()),   // Non-empty name
-        provider: "google".to_string(),
-        provider_id: "12345".to_string(),
-        client_ip: Some("192.168.1.1".to_string()),
-        user_agent: Some("Mozilla/5.0".to_string()),
-        platform: Some("macOS".to_string()),
-        lang: Some("en-US".to_string()),
-        mobile: 0,
-        session_start: Some(Utc::now().timestamp()),
-    };
+    let new_user_data = VouchrsUserData::new(
+        "new@example.com".to_string(), // Non-empty email
+        Some("New Name".to_string()),  // Non-empty name
+        "google".to_string(),
+        "12345".to_string(),
+        Some("192.168.1.1".to_string()),
+        Some("Mozilla/5.0".to_string()),
+        Some("macOS".to_string()),
+        Some("en-US".to_string()),
+        0,
+        Some(Utc::now().timestamp()),
+    );
 
     let result_cookie = session_manager
         .cookie_factory()

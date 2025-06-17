@@ -142,18 +142,18 @@ impl TestFixtures {
         client_ip: Option<&str>,
         user_agent_info: Option<&UserAgentInfo>,
     ) -> VouchrsUserData {
-        VouchrsUserData {
-            email: TEST_EMAIL.to_string(),
-            name: Some(TEST_USER_NAME.to_string()),
-            provider: "google".to_string(),
-            provider_id: TEST_PROVIDER_ID.to_string(),
-            client_ip: client_ip.map(ToString::to_string),
-            user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-            platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-            lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-            mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-            session_start: Some(Utc::now().timestamp()),
-        }
+        VouchrsUserData::new(
+            TEST_EMAIL.to_string(),
+            Some(TEST_USER_NAME.to_string()),
+            "google".to_string(),
+            TEST_PROVIDER_ID.to_string(),
+            client_ip.map(ToString::to_string),
+            user_agent_info.and_then(|ua| ua.user_agent.clone()),
+            user_agent_info.and_then(|ua| ua.platform.clone()),
+            user_agent_info.and_then(|ua| ua.lang.clone()),
+            user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
+            Some(Utc::now().timestamp()),
+        )
     }
 
     /// Create test user agent information

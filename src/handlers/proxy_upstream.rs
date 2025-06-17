@@ -40,19 +40,34 @@ pub async fn proxy_upstream(
         return Ok(handle_authentication_error(&req, &settings));
     };
 
-    // 2. Execute upstream request
-    let upstream_response =
-        match execute_upstream_request(&req, &query_params, &body, &settings).await {
-            Ok(response) => response,
-            Err(err_response) => return Ok(err_response),
-        };
+    // 2. Extract user data for auth headers
+    let user_data = if let Ok(data) = session_manager.extract_user_data(&req) {
+        Some(data)
+    } else {
+        log::warn!("Failed to extract user data for auth headers");
+        None
+    };
 
-    // 3. Handle 401 responses
+    // 3. Execute upstream request with auth headers
+    let upstream_response = match execute_upstream_request(
+        &req,
+        &query_params,
+        &body,
+        &settings,
+        user_data.as_ref(),
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err_response) => return Ok(err_response),
+    };
+
+    // 4. Handle 401 responses
     if upstream_response.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Ok(handle_authentication_error(&req, &settings));
     }
 
-    // 4. Forward response with automatic session refresh
+    // 5. Forward response with automatic session refresh
     forward_response_with_session_refresh(
         upstream_response,
         &req,
@@ -89,6 +104,7 @@ async fn execute_upstream_request(
     query_params: &web::Query<HashMap<String, String>>,
     body: &web::Bytes,
     settings: &VouchrsSettings,
+    user_data: Option<&crate::models::VouchrsUserData>,
 ) -> Result<reqwest::Response, HttpResponse> {
     // Build upstream URL
     let upstream_url = build_upstream_url(&settings.proxy.upstream_url, req.path())
@@ -99,6 +115,13 @@ async fn execute_upstream_request(
     let mut request_builder = CLIENT
         .request(reqwest_method, &upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
+
+    // Add auth headers if user data is available
+    if let Some(data) = user_data {
+        request_builder = request_builder
+            .header("X-Auth-Request-User", data.uid.to_string())
+            .header("X-Auth-Request-Session", data.session_id.to_string());
+    }
 
     // Forward headers
     request_builder =

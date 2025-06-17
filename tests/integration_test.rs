@@ -12,18 +12,18 @@ fn create_test_user_data(
     client_ip: Option<&str>,
     user_agent_info: Option<&UserAgentInfo>,
 ) -> VouchrsUserData {
-    VouchrsUserData {
-        email: email.to_string(),
+    VouchrsUserData::new(
+        email.to_string(),
         name,
-        provider: provider.to_string(),
-        provider_id: provider_id.to_string(),
-        client_ip: client_ip.map(std::string::ToString::to_string),
-        user_agent: user_agent_info.and_then(|ua| ua.user_agent.clone()),
-        platform: user_agent_info.and_then(|ua| ua.platform.clone()),
-        lang: user_agent_info.and_then(|ua| ua.lang.clone()),
-        mobile: user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
-        session_start: Some(chrono::Utc::now().timestamp()), // Adding session_start as Unix timestamp for test
-    }
+        provider.to_string(),
+        provider_id.to_string(),
+        client_ip.map(std::string::ToString::to_string),
+        user_agent_info.and_then(|ua| ua.user_agent.clone()),
+        user_agent_info.and_then(|ua| ua.platform.clone()),
+        user_agent_info.and_then(|ua| ua.lang.clone()),
+        user_agent_info.map_or(0, |ua| i32::from(ua.mobile)),
+        Some(chrono::Utc::now().timestamp()), // Adding session_start as Unix timestamp for test
+    )
 }
 
 #[test]
