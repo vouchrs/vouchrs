@@ -182,19 +182,31 @@ pub fn is_hop_by_hop_header(name: &str) -> bool {
 /// Header Processing Strategy for request forwarding
 #[derive(Debug, Clone)]
 pub struct RequestHeaderProcessor {
-    /// Whether to filter the authorization header
-    pub skip_authorization: bool,
-    /// Whether to filter hop-by-hop headers
-    pub skip_hop_by_hop: bool,
+    /// Headers to skip during forwarding
+    pub skip_headers: HeaderSkipConfig,
     /// Whether to filter vouchrs session cookies
     pub filter_session_cookies: bool,
+}
+
+/// Configuration for which headers to skip during forwarding
+#[derive(Debug, Clone)]
+pub struct HeaderSkipConfig {
+    /// Whether to filter the authorization header
+    pub authorization: bool,
+    /// Whether to filter hop-by-hop headers
+    pub hop_by_hop: bool,
+    /// Whether to filter auth request headers (X-Auth-Request-*)
+    pub auth_request: bool,
 }
 
 impl Default for RequestHeaderProcessor {
     fn default() -> Self {
         Self {
-            skip_authorization: true,
-            skip_hop_by_hop: true,
+            skip_headers: HeaderSkipConfig {
+                authorization: true,
+                hop_by_hop: true,
+                auth_request: true,
+            },
             filter_session_cookies: true,
         }
     }
@@ -244,11 +256,15 @@ impl RequestHeaderProcessor {
 
     /// Check if a header should be skipped based on processor configuration
     fn should_skip_header(&self, name_str: &str) -> bool {
-        if self.skip_authorization && name_str == "authorization" {
+        if self.skip_headers.authorization && name_str == "authorization" {
             return true;
         }
 
-        if self.skip_hop_by_hop && is_hop_by_hop_header(name_str) {
+        if self.skip_headers.hop_by_hop && is_hop_by_hop_header(name_str) {
+            return true;
+        }
+
+        if self.skip_headers.auth_request && name_str.starts_with("x-auth-request-") {
             return true;
         }
 
@@ -558,12 +574,12 @@ mod tests {
         let mut processor = RequestHeaderProcessor::default();
 
         // Test default configuration
-        assert!(processor.skip_authorization);
-        assert!(processor.skip_hop_by_hop);
+        assert!(processor.skip_headers.authorization);
+        assert!(processor.skip_headers.hop_by_hop);
         assert!(processor.filter_session_cookies);
 
         // Test that we can disable filtering
-        processor.skip_authorization = false;
+        processor.skip_headers.authorization = false;
         processor.filter_session_cookies = false;
 
         assert!(!processor.should_skip_header("authorization"));

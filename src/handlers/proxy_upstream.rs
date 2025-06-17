@@ -111,16 +111,17 @@ async fn execute_upstream_request(
         .request(reqwest_method, &upstream_url)
         .header("User-Agent", "Vouchrs-Proxy/1.0");
 
-    // Add auth headers if user data is available
+    // Forward headers first
+    request_builder =
+        RequestHeaderProcessor::for_proxy().forward_request_headers(req, request_builder);
+
+    // Add auth headers AFTER forwarding original headers to prevent header spoofing
+    // This ensures our legitimate auth headers always take precedence
     if let Some(data) = user_data {
         request_builder = request_builder
             .header("X-Auth-Request-User", data.uid.to_string())
             .header("X-Auth-Request-Session", data.session_id.to_string());
     }
-
-    // Forward headers
-    request_builder =
-        RequestHeaderProcessor::for_proxy().forward_request_headers(req, request_builder);
 
     // Forward query parameters
     if !query_params.is_empty() {
@@ -187,6 +188,7 @@ mod tests {
     use super::*;
     use crate::testing::{RequestBuilder, TestFixtures};
     use crate::utils::headers::{is_hop_by_hop_header, RequestHeaderProcessor};
+    use std::collections::HashMap;
 
     #[test]
     fn test_hop_by_hop_headers() {
@@ -267,6 +269,178 @@ mod tests {
                 cookie_str.contains("another_cookie=value"),
                 "Other cookies should be preserved"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auth_header_security() {
+        use crate::models::VouchrsUserData;
+        use uuid::Uuid;
+
+        // Create test user data
+        let user_data = VouchrsUserData {
+            email: "test@example.com".to_string(),
+            name: Some("Test User".to_string()),
+            provider: "google".to_string(),
+            provider_id: "123456789".to_string(),
+            uid: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap(),
+            session_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440002").unwrap(),
+            client_ip: Some("192.168.1.1".to_string()),
+            user_agent: Some("Mozilla/5.0".to_string()),
+            platform: Some("Windows".to_string()),
+            lang: Some("en".to_string()),
+            mobile: 0,
+            session_start: Some(1_700_000_000),
+        };
+
+        // Create a mock HTTP request with malicious auth headers
+        let req = RequestBuilder::new()
+            .header("X-Auth-Request-User", "malicious-user-id")
+            .header("X-Auth-Request-Session", "malicious-session-id")
+            .header("User-Agent", "Test Client")
+            .build();
+
+        let _query_params = web::Query::<HashMap<String, String>>::from_query("").unwrap();
+        let _body = web::Bytes::new();
+        let settings = TestFixtures::settings();
+
+        // Test the FIXED logic: headers AFTER forwarding (current implementation)
+        let client = Client::new();
+        let mut request_builder = client
+            .get(format!("{}/test", settings.proxy.upstream_url))
+            .header("User-Agent", "Vouchrs-Proxy/1.0");
+
+        // Forward headers first (including malicious auth headers)
+        request_builder =
+            RequestHeaderProcessor::for_proxy().forward_request_headers(&req, request_builder);
+
+        // Add legitimate auth headers AFTER forwarding (this should override malicious ones)
+        request_builder = request_builder
+            .header("X-Auth-Request-User", user_data.uid.to_string())
+            .header("X-Auth-Request-Session", user_data.session_id.to_string());
+
+        // Build the request and verify headers
+        let request = request_builder.build().expect("Failed to build request");
+        let headers = request.headers();
+
+        // Verify that our legitimate auth headers are present and override malicious ones
+        assert_eq!(
+            headers
+                .get("X-Auth-Request-User")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            user_data.uid.to_string(),
+            "Legitimate user ID should override malicious header"
+        );
+
+        assert_eq!(
+            headers
+                .get("X-Auth-Request-Session")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            user_data.session_id.to_string(),
+            "Legitimate session ID should override malicious header"
+        );
+
+        // Also test that if NO malicious headers are present, our headers are still added
+        let clean_req = RequestBuilder::new()
+            .header("User-Agent", "Test Client")
+            .build();
+
+        let mut clean_request_builder = client
+            .get(format!("{}/test", settings.proxy.upstream_url))
+            .header("User-Agent", "Vouchrs-Proxy/1.0");
+
+        clean_request_builder = RequestHeaderProcessor::for_proxy()
+            .forward_request_headers(&clean_req, clean_request_builder);
+
+        clean_request_builder = clean_request_builder
+            .header("X-Auth-Request-User", user_data.uid.to_string())
+            .header("X-Auth-Request-Session", user_data.session_id.to_string());
+
+        let clean_request = clean_request_builder
+            .build()
+            .expect("Failed to build request");
+        let clean_headers = clean_request.headers();
+
+        assert_eq!(
+            clean_headers
+                .get("X-Auth-Request-User")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            user_data.uid.to_string(),
+            "Auth headers should be present even without malicious headers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auth_header_filtering() {
+        // Test that malicious auth headers are filtered out during forwarding
+        let req = RequestBuilder::new()
+            .header("X-Auth-Request-User", "malicious-user-id")
+            .header("X-Auth-Request-Session", "malicious-session-id")
+            .header("User-Agent", "Test Client")
+            .header("Content-Type", "application/json")
+            .build();
+
+        let client = Client::new();
+        let request_builder = client.get("http://example.com");
+
+        // Forward headers - malicious auth headers should be filtered out
+        let request_builder =
+            RequestHeaderProcessor::for_proxy().forward_request_headers(&req, request_builder);
+
+        let request = request_builder.build().expect("Failed to build request");
+        let headers = request.headers();
+
+        // Verify that auth headers were filtered out
+        assert!(
+            headers.get("X-Auth-Request-User").is_none(),
+            "Malicious X-Auth-Request-User header should be filtered out"
+        );
+
+        assert!(
+            headers.get("X-Auth-Request-Session").is_none(),
+            "Malicious X-Auth-Request-Session header should be filtered out"
+        );
+
+        // Verify that other headers are preserved
+        assert!(
+            headers.get("Content-Type").is_some(),
+            "Other headers should be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reqwest_header_replacement() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+
+        // Test building headers manually to ensure override
+        let client = Client::new();
+
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Test-Header", HeaderValue::from_static("first-value"));
+        headers.insert("X-Test-Header", HeaderValue::from_static("second-value")); // This should replace
+
+        let request_builder = client.get("http://example.com").headers(headers);
+
+        let request = request_builder.build().expect("Failed to build request");
+        let request_headers = request.headers();
+
+        if let Some(header_value) = request_headers.get("X-Test-Header") {
+            let value_str = header_value.to_str().unwrap();
+            println!("HeaderMap replacement value: {value_str}");
+
+            // HeaderMap.insert should replace the value
+            assert_eq!(
+                value_str, "second-value",
+                "HeaderMap insert should replace the value"
+            );
+        } else {
+            panic!("Header should be present");
         }
     }
 }
