@@ -8,6 +8,9 @@
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
 		"ghcr.io/devcontainers/features/github-cli:1": {}
 	},
+	"workspaceMount": "source=vouchrs,target=/vouchrs,type=volume",
+	"workspaceFolder": "/vouchrs",
+
 	// Use 'mounts' to make the cargo cache persistent in a Docker Volume.
 	"mounts": [
 		{
