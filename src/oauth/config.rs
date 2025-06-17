@@ -306,10 +306,12 @@ impl OAuthConfig {
             }
         }
         if self.providers.is_empty() {
-            return Err("No OAuth providers are configured. Please configure at least one provider in Settings.toml and set the required environment variables.".to_string());
+            warn!("No OAuth providers are configured. If passkeys are enabled, this is acceptable for passkey-only authentication.");
+            info!("🎯 OAuth providers: none configured");
+        } else {
+            let provider_names: Vec<_> = self.providers.keys().collect();
+            info!("🎯 Configured OAuth providers: {provider_names:?}");
         }
-        let provider_names: Vec<_> = self.providers.keys().collect();
-        info!("🎯 Configured OAuth providers: {provider_names:?}");
 
         Ok(())
     }

@@ -27,10 +27,28 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize OAuth configuration with config-driven providers
     let mut oauth_config = OAuthConfig::new();
-    oauth_config
-        .initialize_from_settings(&settings)
-        .await
-        .map_err(|e| std::io::Error::other(format!("Failed to initialize OAuth providers: {e}")))?;
+
+    // Check if we have at least one authentication method enabled
+    let has_oauth_providers = !settings.get_enabled_providers().is_empty();
+    let has_passkeys = settings.passkeys.enabled;
+
+    if !has_oauth_providers && !has_passkeys {
+        return Err(std::io::Error::other(
+            "No authentication methods configured. Please enable either OAuth providers or passkeys in Settings.toml"
+        ));
+    }
+
+    // Initialize OAuth providers if any are configured
+    if has_oauth_providers {
+        oauth_config
+            .initialize_from_settings(&settings)
+            .await
+            .map_err(|e| {
+                std::io::Error::other(format!("Failed to initialize OAuth providers: {e}"))
+            })?;
+    } else {
+        println!("ℹ️  No OAuth providers configured, using passkey-only authentication");
+    }
 
     // Initialize static files from templates
     initialize_static_files(&settings)
@@ -129,6 +147,27 @@ fn configure_services(cfg: &mut web::ServiceConfig) {
 fn print_startup_info(bind_address: &str, session_backend: &str, settings: &VouchrsSettings) {
     println!("Starting Vouchrs OIDC Reverse Proxy on http://{bind_address}");
     println!("Session Backend: {session_backend}");
+
+    // Show authentication methods
+    let oauth_enabled = !settings.get_enabled_providers().is_empty();
+    let passkey_enabled = settings.passkeys.enabled;
+
+    println!();
+    println!("Authentication methods:");
+    if oauth_enabled {
+        println!(
+            "  ✅ OAuth2 ({} providers configured)",
+            settings.get_enabled_providers().len()
+        );
+    } else {
+        println!("  ❌ OAuth2 (no providers configured)");
+    }
+    if passkey_enabled {
+        println!("  ✅ Passkeys/WebAuthn");
+    } else {
+        println!("  ❌ Passkeys/WebAuthn (disabled)");
+    }
+
     println!();
     println!("OAuth2 endpoints:");
     println!("  GET  /auth/sign_in  - Login/logout page");
