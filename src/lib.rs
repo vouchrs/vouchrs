@@ -24,9 +24,6 @@ pub mod validation;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-
-
-
 /// Re-export commonly used items
 pub use handlers::{
     health, oauth_callback, oauth_debug, oauth_sign_in, oauth_sign_out, oauth_userinfo,

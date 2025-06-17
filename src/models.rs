@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use sha2::{Sha256, Digest};
 
 pub mod auth;
 
@@ -309,10 +309,10 @@ mod tests {
         // so we need to test with a fixed timestamp
         let session_id_none_values = VouchrsUserData::generate_session_id(
             &uid,
-            None, // No IP
-            None, // No user agent
-            None, // No platform
-            1,    // Mobile
+            None,                // No IP
+            None,                // No user agent
+            None,                // No platform
+            1,                   // Mobile
             Some(9_999_999_999), // Fixed timestamp for deterministic testing
         );
         assert_ne!(session_id1, session_id_none_values);
@@ -327,7 +327,8 @@ mod tests {
             Some(9_999_999_999), // Same fixed timestamp
         );
         assert_eq!(session_id_none_values, session_id_none_values2);
-    }    #[test]
+    }
+    #[test]
     fn test_vouchrs_user_data_new() {
         let user_data = VouchrsUserData::new(
             "test@example.com".to_string(),

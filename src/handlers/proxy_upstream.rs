@@ -49,18 +49,13 @@ pub async fn proxy_upstream(
     };
 
     // 3. Execute upstream request with auth headers
-    let upstream_response = match execute_upstream_request(
-        &req,
-        &query_params,
-        &body,
-        &settings,
-        user_data.as_ref(),
-    )
-    .await
-    {
-        Ok(response) => response,
-        Err(err_response) => return Ok(err_response),
-    };
+    let upstream_response =
+        match execute_upstream_request(&req, &query_params, &body, &settings, user_data.as_ref())
+            .await
+        {
+            Ok(response) => response,
+            Err(err_response) => return Ok(err_response),
+        };
 
     // 4. Handle 401 responses
     if upstream_response.status() == reqwest::StatusCode::UNAUTHORIZED {
