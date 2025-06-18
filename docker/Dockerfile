@@ -29,13 +29,15 @@ RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 WORKDIR /app
 
 # Copy dependency files first for better caching
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY custom-ui ./custom-ui
+COPY src/static ./src/static
 
 # Create a temporary Cargo.toml without test configurations for dependency build
 RUN sed '/^# Integration tests require/,$d' Cargo.toml > Cargo-deps.toml && mv Cargo-deps.toml Cargo.toml
 
 # Create a dummy main.rs to build dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies with static OpenSSL and musl
 ENV RUSTFLAGS="-C target-feature=+crt-static"
@@ -52,8 +54,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --target $TARGET --locked --bin vouchrs
 RUN rm src/main.rs
 
-# Copy source code and restore filtered Cargo.toml without test configurations
+# Copy source code, custom-ui directory, and restore filtered Cargo.toml without test configurations
 COPY src ./src
+COPY custom-ui ./custom-ui
 COPY Cargo.toml Settings.toml ./
 RUN sed '/^# Integration tests require/,$d' Cargo.toml > Cargo-filtered.toml && mv Cargo-filtered.toml Cargo.toml
 
@@ -67,14 +70,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     "aarch64-unknown-linux-musl") export CC_aarch64_unknown_linux_musl=musl-gcc ;; \
     esac && \
     cargo build --release --target $TARGET --locked --bin vouchrs && \
-    cp /app/target/$TARGET/release/vouchrs /app/vouchrs
-
-# Copy the static files that were built
-RUN TARGET=$(cat /target.txt) && \
+    cp /app/target/$TARGET/release/vouchrs /app/vouchrs && \
     if [ -d "/app/target/$TARGET/release/static" ]; then \
-    cp -r /app/target/$TARGET/release/static /app/static; \
+    cp -r /app/target/$TARGET/release/static /app/static-temp; \
+    fi
+
+# Copy the static files that were built by build.rs
+RUN if [ -d "/app/static-temp" ]; then \
+    mv /app/static-temp /app/static; \
     elif [ -d "src/static" ]; then \
     cp -r src/static /app/static; \
+    else \
+    mkdir -p /app/static; \
     fi
 
 # Runtime stage - distroless static (smallest possible)
