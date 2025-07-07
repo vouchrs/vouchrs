@@ -363,12 +363,12 @@ checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 
 [[package]]
 name = "base64urlsafedata"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f0ad38ce7fbed55985ad5b2197f05cff8324ee6eb6638304e78f0108fae56c"
+checksum = "e5913e643e4dfb43d5908e9e6f1386f8e0dfde086ecef124a6450c6195d89160"
 dependencies = [
  "base64 0.21.7",
- "paste",
+ "pastey",
  "serde",
 ]
 
@@ -514,23 +514,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compact_jwt"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bbab6445446e8d0b07468a01d0bfdae15879de5c440c5e47ae4ae0e18a1fba"
-dependencies = [
- "base64 0.21.7",
- "base64urlsafedata",
- "hex",
- "openssl",
- "serde",
- "serde_json",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -585,9 +568,9 @@ checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
 name = "crypto-bigint"
-version = "0.7.0-pre.4"
+version = "0.7.0-pre.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edaae5fb9dac79a07260e0b2006799ff4f1d342ab243fd7d0892215113b27904"
+checksum = "a06a5e703b883b3744ddac8b7c5eade2d800d6559ef99760566f8103e3ad39bf"
 dependencies = [
  "hybrid-array",
  "num-traits",
@@ -643,9 +626,9 @@ dependencies = [
 
 [[package]]
 name = "der"
-version = "0.8.0-rc.3"
+version = "0.8.0-rc.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b00a9651bf9c00a38b7c383073cb22fb42f20a5f978c9f97ad5c7128cbd3c1bd"
+checksum = "a7d571780ddd86c50ecbcf7099a945804a55e39c5d13f27d0225c1acecbae248"
 dependencies = [
  "const-oid 0.10.1",
  "pem-rfc7468 1.0.0-rc.3",
@@ -733,11 +716,11 @@ dependencies = [
 
 [[package]]
 name = "ecdsa"
-version = "0.17.0-rc.0"
+version = "0.17.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abbc927a7e946a78fbff19c283bc5d4f8960d9000049a7e2b0d84cb2730613c4"
+checksum = "908741ea702207ae9456173adf9aaa8fffdd3a057e55ca9c77f62a05b9ad08d1"
 dependencies = [
- "der 0.8.0-rc.3",
+ "der 0.8.0-rc.6",
  "digest 0.11.0-rc.0",
  "elliptic-curve",
  "rfc6979",
@@ -747,9 +730,9 @@ dependencies = [
 
 [[package]]
 name = "elliptic-curve"
-version = "0.14.0-rc.5"
+version = "0.14.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "541598dba361b5ba0321caad955ba99ae82a604f4047c4f2743724996abf62f4"
+checksum = "eb5fad57f7e416b8f8e81df65daa6a87e402a4469990fd1ba36a8c79515a5fbf"
 dependencies = [
  "base16ct",
  "crypto-bigint",
@@ -1320,6 +1303,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b86e202f00093dcba4275d4636b93ef9dd75d025ae560d2521b45ea28ab49013"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1621,9 +1615,9 @@ dependencies = [
 
 [[package]]
 name = "p256"
-version = "0.14.0-pre.5"
+version = "0.14.0-pre.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b42c06f1f28ff328cb76c95cb7aebd6734a8333b98bdac393bdc124d16561dcb"
+checksum = "ce3867083c909bbfd0ae070e20a9bb0f3dbce6f8e1fc4441cc01bda4951eeebe"
 dependencies = [
  "ecdsa",
  "elliptic-curve",
@@ -1656,10 +1650,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
+name = "pastey"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+checksum = "b3a8cb46bdc156b1c90460339ae6bfd45ba0394e5effbaa640badb4987fdc261"
 
 [[package]]
 name = "pem-rfc7468"
@@ -1724,7 +1718,7 @@ version = "0.11.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f1843d4345dfe1a55e487db747a04c01af50415b03e937410e0a41d8cc24ec7"
 dependencies = [
- "der 0.8.0-rc.3",
+ "der 0.8.0-rc.6",
  "spki 0.8.0-rc.2",
 ]
 
@@ -1772,9 +1766,9 @@ dependencies = [
 
 [[package]]
 name = "primefield"
-version = "0.14.0-pre.2"
+version = "0.14.0-pre.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bbeb92947a0d0d4b0cab5e2e6749acc44c81461eb3b1aff4dbb7acd0eb9f0ab"
+checksum = "0ad88338273bf095e74dc9b4fa9e68474980af715d4374ecffae09513ab85f6c"
 dependencies = [
  "crypto-bigint",
  "ff",
@@ -1785,9 +1779,9 @@ dependencies = [
 
 [[package]]
 name = "primeorder"
-version = "0.14.0-pre.4"
+version = "0.14.0-pre.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "979936340c6e8b108ad132b395a1682f02a0b179080ed3380320c2c888728429"
+checksum = "c6e217447f8603744210c50e4c065b2e5a66b04f5d8279f33032fdb0fde6fabb"
 dependencies = [
  "elliptic-curve",
 ]
@@ -1972,9 +1966,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.19"
+version = "0.12.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2f8e5513d63f2e5b386eb5106dc67eaf3f84e95258e210489136b8b92ad6119"
+checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1985,11 +1979,8 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
- "ipnet",
  "js-sys",
  "log",
- "mime",
- "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -2165,7 +2156,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4855dd9b15e8e469fad23529698f7f7b7a6b250a81c88b1f9d7efe1abca7717"
 dependencies = [
  "base16ct",
- "der 0.8.0-rc.3",
+ "der 0.8.0-rc.6",
  "hybrid-array",
  "pkcs8 0.11.0-rc.4",
  "subtle",
@@ -2367,7 +2358,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2f0e2bdca9b00f5be6dd3bb6647d50fd0f24a508a95f78e3bb2fe98d0403c85"
 dependencies = [
  "base64ct",
- "der 0.8.0-rc.3",
+ "der 0.8.0-rc.6",
 ]
 
 [[package]]
@@ -2524,17 +2515,19 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.45.1"
+version = "1.46.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
+checksum = "0cc3a2344dafbe23a245241fe8b09735b521110d30fcefbbd5feb1797ca35d17"
 dependencies = [
  "backtrace",
  "bytes",
+ "io-uring",
  "libc",
  "mio",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
+ "slab",
  "socket2",
  "tokio-macros",
  "windows-sys 0.52.0",
@@ -2769,7 +2762,7 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "url",
  "urlencoding",
@@ -2895,12 +2888,13 @@ dependencies = [
 
 [[package]]
 name = "webauthn-attestation-ca"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29e77e8859ecb93b00e4a8e56ae45f8a8dd69b1539e3d32cf4cce1db9a3a0b99"
+checksum = "384e43534efe4e8f56c4eb1615a27e24d2ff29281385c843cf9f16ac1077dbdc"
 dependencies = [
  "base64urlsafedata",
  "openssl",
+ "openssl-sys",
  "serde",
  "tracing",
  "uuid",
@@ -2908,9 +2902,9 @@ dependencies = [
 
 [[package]]
 name = "webauthn-rs"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b44347ee0d66f222043663a6aaf5ec78022b9b11c3a9ed488c21f2bd5680856"
+checksum = "ed1f861a94557baeb0cf711e3e55d623c46b68f4aab7aa932562f785b8b5f1ab"
 dependencies = [
  "base64urlsafedata",
  "serde",
@@ -2922,17 +2916,17 @@ dependencies = [
 
 [[package]]
 name = "webauthn-rs-core"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ef48f07ed8f3dfe304d6c48e85317feba0439675f31a13063b2936c9b4eaf0d"
+checksum = "269c210cd5f183aaca860bb5733187d1dd110ebed54640f8fc1aca31a04aa4dc"
 dependencies = [
  "base64 0.21.7",
  "base64urlsafedata",
- "compact_jwt",
  "der-parser",
  "hex",
  "nom",
  "openssl",
+ "openssl-sys",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
@@ -2949,9 +2943,9 @@ dependencies = [
 
 [[package]]
 name = "webauthn-rs-proto"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14e1367f70e7dc7b83afc971ce8a54d578f4fdf488ea093021180e073744a69f"
+checksum = "144dbee9abb4bfad78fd283a2613f0312a0ed5955051b7864cfc98679112ae60"
 dependencies = [
  "base64 0.21.7",
  "base64urlsafedata",
