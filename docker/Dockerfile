@@ -1,5 +1,5 @@
 # Ultra-minimal distroless static Dockerfile with vendored OpenSSL
-FROM rust:1.87-slim AS builder
+FROM rust:1.89-slim AS builder
 
 # Define build arguments for multiplatform support
 ARG TARGETPLATFORM
