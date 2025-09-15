@@ -42,7 +42,7 @@ actix-web = { version = "4.4", default-features = false, features = [
     "cookies",
 ] }
 actix-cors = { version = "0.7", default-features = false }
-tokio = { version = "1.0", default-features = false, features = [
+tokio = { version = "1.47", default-features = false, features = [
     "macros",
     "rt-multi-thread",
 ] }
@@ -54,11 +54,11 @@ basic-toml = { version = "0.1", default-features = false }
 
 
 # HTTP client
-reqwest = { version = "0.12.19", default-features = false, features = [
+reqwest = { version = "0.12.23", default-features = false, features = [
     "json",
     "rustls-tls",
 ] }
-url = { version = "2.4", default-features = false }
+url = { version = "2.5", default-features = false }
 
 # Utilities
 async-trait = { version = "0.1", default-features = false }
@@ -69,10 +69,10 @@ chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ] }
 anyhow = { version = "1.0", default-features = false }
-thiserror = { version = "1.0", default-features = false }
+thiserror = { version = "2.0", default-features = false }
 log = { version = "0.4", default-features = false }
 env_logger = { version = "0.11", default-features = false }
-regex = { version = "1.10", default-features = false, features = [
+regex = { version = "1.11", default-features = false, features = [
     "unicode-case",
     "unicode-perl",
 ] }
@@ -83,7 +83,7 @@ aes-gcm = { version = "0.10", default-features = false, features = [
     "aes",
     "alloc",
 ] }
-p256 = { version = "0.14.0-pre.5", default-features = false, features = [
+p256 = { version = "0.14.0-pre.11", default-features = false, features = [
     "ecdsa",
     "pem",
     "pkcs8",
@@ -113,16 +113,16 @@ openssl = { version = "0.10", features = ["vendored"] }
 ciborium = { version = "0.2", optional = true }
 cbor-codec = { version = "0.7", optional = true }
 ring = "0.17.14"
-webauthn-rs = { version = "0.5.1", features = [
+webauthn-rs = { version = "0.5.2", features = [
     "danger-allow-state-serialisation",
     "danger-credential-internals",
 ] }
 webauthn-rs-proto = "0.5.1" # For direct access to WebAuthn protocol structures
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
 serial_test = "3.2.0"
-tempfile = "3.20.0"
+tempfile = "3.22.0"
 
 # Integration tests require the testing feature to access test utilities
 [[test]]
