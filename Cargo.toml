@@ -121,7 +121,7 @@ webauthn-rs-proto = "0.5.1" # For direct access to WebAuthn protocol structures
 uuid = { version = "1.17.0", features = ["v4"] }
 
 [dev-dependencies]
-serial_test = "3.2.0"
+serial_test = "3.3.1"
 tempfile = "3.20.0"
 
 # Integration tests require the testing feature to access test utilities
